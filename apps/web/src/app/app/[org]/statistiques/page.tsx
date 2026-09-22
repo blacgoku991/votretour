@@ -86,7 +86,7 @@ export default async function StatsPage({
   const stats = data as Stats | null;
   const completed = stats?.totals.completed ?? 0;
   const googleClicks = reviewClicks ?? 0;
-  const reviewClickRate = completed > 0 ? googleClicks / completed : null;
+  const reviewClickRate = completed > 0 ? (googleClicks / completed) * 100 : null;
 
   const byDay = (stats?.byDay ?? []).map((d) => {
     const date = new Date(d.day);
