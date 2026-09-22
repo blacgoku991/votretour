@@ -82,7 +82,7 @@ const stateSchema = z.object({
 async function readEvent(eventId: string) {
   const { data, error } = await supabaseAdmin()
     .from('event_campaigns')
-    .select('id, queue_id, organization_id, location_id, name, status')
+    .select('id, queue_id, organization_id, location_id, name, status, locations(slug)')
     .eq('id', eventId)
     .maybeSingle();
   if (error || !data) throw new AppError('not_found', 'Événement introuvable.', 404);
@@ -159,6 +159,8 @@ export async function changeEventState(
     if (error) throw error;
 
     const affected = (data ?? []) as { entry_id: string; entry_public_id: string }[];
+    const locationRelation = Array.isArray(event.locations) ? event.locations[0] : event.locations;
+    const locationSlug = locationRelation?.slug ?? '';
     let notified = 0;
     const kind = parsed.action === 'sold_out' ? 'event_sold_out' as const : 'event_ended' as const;
 
@@ -166,7 +168,7 @@ export async function changeEventState(
       const summary = await dispatchEventEntryNotification(
         row.entry_id,
         kind,
-        `${env.siteUrl}/e/${event.location_id}`,
+        `${env.siteUrl}/e/${locationSlug}`,
       );
       notified += summary.sent;
     }
