@@ -71,7 +71,8 @@ struct DoneScreen: View {
             }
 
             Button("Revenir plus tard") {
-                Task { await model.refresh() }
+                notifications.pendingReviewURL = nil
+                model.dismissCompleted()
             }
             .font(VT.Type.body(14))
             .foregroundStyle(VT.Color.textFaint)
