@@ -5,6 +5,7 @@
 alter type public.notification_kind add value if not exists 'event_access';
 alter type public.notification_kind add value if not exists 'event_sold_out';
 alter type public.notification_kind add value if not exists 'event_ended';
+alter type public.activity_type add value if not exists 'event';
 
 create table if not exists public.event_campaigns (
   id                  uuid primary key default extensions.gen_random_uuid(),
