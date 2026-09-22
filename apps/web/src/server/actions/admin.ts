@@ -9,6 +9,7 @@ import { audit } from '@/server/audit';
 import { propagate, setQueueStatus } from '@/server/queue';
 import { dispatchEventEntryNotification } from '@/server/notifications/dispatch';
 import { env } from '@/lib/env';
+import { eventAccessPath } from '@/lib/event-pass';
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string; code: string };
 
@@ -709,14 +710,18 @@ export async function adminEventAction(
       });
       if (error) throw error;
 
-      const rows = (data ?? []) as { entry_id: string; raw_token: string }[];
+      const rows = (data ?? []) as {
+        entry_id: string;
+        pass_public_id: string;
+        grace_until: string;
+      }[];
       let sent = 0;
 
       for (const row of rows) {
         const summary = await dispatchEventEntryNotification(
           row.entry_id,
           'event_access',
-          `${env.siteUrl}/pass/${encodeURIComponent(row.raw_token)}`,
+          `${env.siteUrl}${eventAccessPath(row.pass_public_id, row.grace_until)}`,
         );
         sent += summary.sent;
       }
