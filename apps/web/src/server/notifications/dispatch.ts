@@ -86,6 +86,24 @@ function ticketUrl(slug: string, kind: NotificationKind): string {
 export async function dispatchQueueNotifications(queueId: string): Promise<DispatchSummary> {
   const db = supabaseAdmin();
 
+  // En mode Event / Drop, l'organisateur contrôle explicitement les
+  // vagues. Les notifications classiques "1 personne devant" /
+  // "c'est votre tour" seraient dangereuses car elles pourraient faire
+  // revenir une foule avant qu'un laisser-passer ait été émis.
+  const { data: runningEvent, error: eventError } = await db
+    .from('event_campaigns')
+    .select('id')
+    .eq('queue_id', queueId)
+    .in('status', ['live', 'paused'])
+    .limit(1)
+    .maybeSingle();
+
+  if (eventError) {
+    console.error('[notifications] détection event impossible', eventError);
+    return { ...EMPTY, reasons: [eventError.message] };
+  }
+  if (runningEvent) return EMPTY;
+
   const { data, error } = await db.rpc('claim_pending_notifications', { p_queue_id: queueId });
   if (error) {
     console.error('[notifications] réclamation impossible', error);
