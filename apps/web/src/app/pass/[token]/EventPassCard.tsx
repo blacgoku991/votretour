@@ -4,10 +4,9 @@ import { useEffect, useMemo, useState } from 'react';
 import styles from './pass.module.css';
 
 export function EventPassCard({
-  token, passId, status, eventName, eventStatus, locationName, city,
+  passId, status, eventName, eventStatus, locationName, city,
   logoUrl, clientName, validUntil, graceUntil, redeemedAt,
 }: {
-  token: string;
   passId: string;
   status: string;
   eventName: string;
@@ -72,7 +71,7 @@ export function EventPassCard({
 
             <div className={styles.qrWrap}>
               <img
-                src={`/api/pass/${encodeURIComponent(token)}/qr?v=${qrTick}`}
+                src={`/api/pass/qr?v=${qrTick}`}
                 alt="QR de contrôle d'accès"
                 className={styles.qr}
               />
