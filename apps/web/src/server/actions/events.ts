@@ -224,7 +224,6 @@ export async function callEventWave(
       entry_id: string;
       entry_public_id: string;
       pass_public_id: string;
-      raw_token: string;
       valid_until: string;
       grace_until: string;
     }[];
