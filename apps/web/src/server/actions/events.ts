@@ -10,7 +10,7 @@ import { assertQueueAccess } from '@/server/auth';
 import { propagate, setQueueStatus } from '@/server/queue';
 import { dispatchEventEntryNotification } from '@/server/notifications/dispatch';
 import { enforceRateLimit, LIMITS } from '@/server/ratelimit';
-import { hashEventPassToken, verifyEventPassSignature } from '@/lib/event-pass';
+import { eventAccessPath, verifyEventPassSignature } from '@/lib/event-pass';
 
 type Result<T> =
   | { ok: true; data: T }
@@ -233,9 +233,9 @@ export async function callEventWave(
     let failed = 0;
 
     for (const row of issued) {
-      // Le bearer token n'est présent qu'ici et dans l'URL remise au client.
-      // La base ne possède que son SHA-256.
-      const passUrl = `${env.siteUrl}/pass/${encodeURIComponent(row.raw_token)}`;
+      // Aucun bearer brut ne quitte le serveur : l'URL d'accès est
+      // régénérable et signée HMAC jusqu'à la fin de la grâce.
+      const passUrl = `${env.siteUrl}${eventAccessPath(row.pass_public_id, row.grace_until)}`;
       const summary = await dispatchEventEntryNotification(
         row.entry_id,
         'event_access',
