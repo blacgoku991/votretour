@@ -61,7 +61,8 @@ begin;
     tables text[] := array[
       'organizations','locations','staff','queues','queue_entries','queue_events',
       'client_sessions','notification_subscriptions','plates','profiles',
-      'organization_members','audit_logs','system_errors','rate_limits'
+      'organization_members','audit_logs','system_errors','rate_limits',
+      'event_campaigns','event_access_passes'
     ];
   begin
     foreach t in array tables loop
