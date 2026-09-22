@@ -159,6 +159,19 @@ public final class QueueModel: ObservableObject {
     public func markReturning() async { await act("returning") }
     public func leaveQueue() async { await act("leave") }
 
+    /// Ferme explicitement l'écran de fin de visite.
+    ///
+    /// Le ticket terminé reste dans l'historique serveur mais n'est plus
+    /// considéré comme la session à reprendre sur cet appareil.
+    public func dismissCompleted() {
+        guard ticket?.entry.status == .completed else { return }
+        teardown()
+        store.rememberEntry(nil)
+        ticket = nil
+        errorMessage = nil
+        phase = .join
+    }
+
     private func act(_ action: String) async {
         guard let point = entryPoint,
               let entryId = ticket?.entry.id,
@@ -299,7 +312,16 @@ public final class QueueModel: ObservableObject {
         let previousAhead = self.ticket?.entry.peopleAhead
         self.ticket = ticket
         self.waitingCount = ticket.queue.waiting
-        store.rememberEntry(ticket.entry.id)
+
+        // Un ticket terminé ne doit jamais bloquer l'App Clip sur
+        // "Merci pour votre visite" au prochain lancement. On garde
+        // l'écran de fin pour le lancement courant, mais on oublie
+        // immédiatement l'identifiant persistant du ticket.
+        if ticket.entry.status == .completed {
+            store.rememberEntry(nil)
+        } else {
+            store.rememberEntry(ticket.entry.id)
+        }
 
         if let previousAhead, ticket.entry.peopleAhead < previousAhead {
             Haptics.advance(reachedTurn: ticket.entry.peopleAhead == 0)
