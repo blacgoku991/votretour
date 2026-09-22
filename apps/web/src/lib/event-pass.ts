@@ -16,7 +16,10 @@ export function hashEventPassToken(token: string): string {
  * du pass en base avant validation.
  */
 export function signEventPassSlot(tokenHash: string, slot: number): string {
-  return createHmac('sha256', env.sessionSecret ?? '')
+  if (!env.sessionSecret) {
+    throw new Error('SESSION_HASH_SECRET est requis pour signer les laisser-passer Event.');
+  }
+  return createHmac('sha256', env.sessionSecret)
     .update(`event-pass:${tokenHash}:${slot}`, 'utf8')
     .digest('base64url')
     .slice(0, 32);
