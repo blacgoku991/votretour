@@ -1,0 +1,24 @@
+.plan { border-bottom: 1px solid var(--line); }
+.plan:last-child { border-bottom: 0; }
+
+.planHead {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); flex-wrap: wrap;
+  padding: var(--sp-4) var(--sp-5);
+}
+.planTitle { min-width: 0; }
+.planName { font-variation-settings: 'wght' 660; font-size: 0.9375rem; }
+
+.planForm {
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
+  border-top: 1px solid var(--line);
+  background: var(--surface-sunken);
+  display: flex; flex-direction: column; gap: var(--sp-4);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--sp-3);
+}
+.grid .input { min-height: 42px; }

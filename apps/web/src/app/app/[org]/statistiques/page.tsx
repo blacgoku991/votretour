@@ -172,13 +172,14 @@ export default async function StatsPage({
                 hint: s.avgServiceSeconds ? formatDuration(s.avgServiceSeconds) : undefined,
               }))}
               caption="Passages terminés par professionnel"
+              token="--chart-2"
             />
           </div>
         </Section>
 
         <Section title="Comment ils arrivent" description="Plaque NFC, QR code, App Clip ou comptoir.">
           <div className={styles.chartCard}>
-            <BarList rows={bySource} caption="Origine des inscriptions" token="--chart-2" />
+            <BarList rows={bySource} caption="Origine des inscriptions" token="--chart-1" />
           </div>
         </Section>
       </div>
