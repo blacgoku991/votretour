@@ -97,7 +97,7 @@ begin
   from public.event_access_passes
   where queue_entry_id = v_entry1 and event_id = v_event;
 
-  if v_hash is null or length(v_hash) <> 64 or v_hash !~ '^[0-9a-f]{64}$' then
+  if v_hash is null or length(v_hash) <> 64 or v_hash ~ '[^0-9a-f]' then
     raise exception 'ÉCHEC: secret de pass Event mal stocké';
   end if;
   if to_jsonb(v_wave) ? 'raw_token' then
