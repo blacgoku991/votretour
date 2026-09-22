@@ -281,6 +281,27 @@ export async function setQueueStatus(params: {
    Maintenance
    ==================================================================== */
 
+/** Expire les laisser-passer Event dont la fenêtre de grâce est dépassée.
+ * Exécutée chaque minute par le cron notifications afin qu'un absent ne
+ * bloque jamais une vague suivante.
+ */
+export async function expireEventPasses(): Promise<{ queues: number; expired: number }> {
+  const rows = await rpc<{ queue_id: string; expired: number }[]>('expire_event_passes', {});
+  const queueIds = new Set<string>();
+  let expired = 0;
+
+  for (const row of rows ?? []) {
+    expired += row.expired ?? 0;
+    if (row.queue_id) queueIds.add(row.queue_id);
+  }
+
+  for (const queueId of queueIds) {
+    await propagate(queueId);
+  }
+
+  return { queues: queueIds.size, expired };
+}
+
 /** Expire les tickets oubliés, puis rafraîchit les files concernées. */
 export async function expireStaleEntries(): Promise<{ queues: number; expired: number }> {
   const rows = await rpc<{ queue_id: string; expired: number }[]>('expire_stale_entries', {});
