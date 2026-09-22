@@ -18,19 +18,19 @@ const archivo = Archivo({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'),
   title: {
-    default: 'VotreTour — la file d\'attente qui vous laisse partir',
-    template: '%s · VotreTour',
+    default: 'Rangvia — la file d\'attente qui vous laisse partir',
+    template: '%s · Rangvia',
   },
   description:
     "Vos clients approchent leur téléphone d'une plaque, rejoignent la file et sortent. Ils voient combien de personnes sont devant eux et reçoivent une notification quand c'est leur tour.",
-  applicationName: 'VotreTour',
-  appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'VotreTour' },
+  applicationName: 'Rangvia',
+  appleWebApp: { capable: true, statusBarStyle: 'black-translucent', title: 'Rangvia' },
   manifest: '/manifest.webmanifest',
   openGraph: {
     type: 'website',
     locale: 'fr_FR',
-    siteName: 'VotreTour',
-    title: "VotreTour — la file d'attente qui vous laisse partir",
+    siteName: 'Rangvia',
+    title: "Rangvia — la file d'attente qui vous laisse partir",
     description:
       'File d\'attente virtuelle pour les commerces sans rendez-vous. Plaque NFC, QR code, App Clip iPhone.',
   },
@@ -42,15 +42,12 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#FAF9F6' },
-    { media: '(prefers-color-scheme: dark)', color: '#0B0E13' },
-  ],
+  themeColor: '#0B0E13',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={archivo.variable} suppressHydrationWarning>
+    <html lang="fr" className={archivo.variable} data-theme="dark" suppressHydrationWarning>
       <body>{children}</body>
     </html>
   );
