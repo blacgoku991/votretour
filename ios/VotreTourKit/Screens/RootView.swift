@@ -54,10 +54,14 @@ public struct RootView: View {
             Task {
                 await model.refresh()
                 await openPendingReviewIfNeeded()
+                await openPendingEventPassIfNeeded()
             }
         }
         .onChange(of: notifications.pendingAutoOpenReviewURL) { _ in
             Task { await openPendingReviewIfNeeded() }
+        }
+        .onChange(of: notifications.pendingEventPassURL) { _ in
+            Task { await openPendingEventPassIfNeeded() }
         }
         .sheet(
             isPresented: Binding(
@@ -89,6 +93,15 @@ public struct RootView: View {
         openURL(url)
         notifications.pendingAutoOpenReviewURL = nil
         notifications.pendingReviewURL = nil
+    }
+
+    @MainActor
+    private func openPendingEventPassIfNeeded() async {
+        guard scenePhase == .active,
+              let url = notifications.pendingEventPassURL else { return }
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        openURL(url)
+        notifications.pendingEventPassURL = nil
     }
 
     @ViewBuilder
