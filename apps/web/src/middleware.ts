@@ -42,12 +42,13 @@ export async function middleware(request: NextRequest) {
   const isPrivate =
     pathname.startsWith('/app') ||
     pathname.startsWith('/admin') ||
+    pathname.startsWith('/scan') ||
     pathname.startsWith('/bienvenue');
 
   if (isPrivate && !user) {
     const url = request.nextUrl.clone();
     url.pathname = '/connexion';
-    url.searchParams.set('next', pathname);
+    url.searchParams.set('next', `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(url);
   }
 
