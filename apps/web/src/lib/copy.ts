@@ -101,6 +101,21 @@ export function notificationCopy(
         title: context.locationName,
         body: 'La file vient de fermer.',
       };
+    case 'event_access':
+      return {
+        title: 'Votre accès est prêt 🎟️',
+        body: `Présentez votre laisser-passer chez ${context.locationName} dans le délai indiqué.`,
+      };
+    case 'event_sold_out':
+      return {
+        title: 'Stock épuisé',
+        body: `Désolé, le stock disponible chez ${context.locationName} est désormais épuisé.`,
+      };
+    case 'event_ended':
+      return {
+        title: 'Événement terminé',
+        body: `L’événement chez ${context.locationName} est maintenant terminé. Merci d’avoir participé.`,
+      };
     default:
       return { title: context.locationName, body: 'Mise à jour de votre place.' };
   }
@@ -120,6 +135,7 @@ export const ACTIVITY_LABEL: Record<string, string> = {
   counter: 'Guichet / comptoir',
   admin_service: 'Service administratif',
   health: 'Santé',
+  event: 'Événement / Drop',
   other: 'Autre',
 };
 
