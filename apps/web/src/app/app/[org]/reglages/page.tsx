@@ -10,10 +10,10 @@ export default async function SettingsPage({
   params, searchParams,
 }: {
   params: Promise<{ org: string }>;
-  searchParams: Promise<{ lieu?: string }>;
+  searchParams: Promise<{ lieu?: string; file?: string }>;
 }) {
   const { org } = await params;
-  const { lieu } = await searchParams;
+  const { lieu, file } = await searchParams;
   const access = await requireOrgAccess(org);
   const organizationId = access.organization.organization_id;
   const db = supabaseAdmin();
@@ -51,6 +51,7 @@ export default async function SettingsPage({
       currentLocation={current as never}
       settings={settings as never}
       queues={(queues ?? []) as never}
+      selectedQueueId={file ?? null}
       hours={(hours ?? []) as never}
       services={(services ?? []) as never}
     />

@@ -1,0 +1,29 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  padding-top: var(--sp-5);
+  max-width: 960px;
+}
+
+.head { display: flex; flex-direction: column; gap: var(--sp-2); }
+.title { height: 30px; width: 220px; border-radius: 8px; }
+.sub { height: 14px; width: 320px; max-width: 80%; border-radius: 6px; }
+
+.card { height: 190px; border-radius: var(--r-card); }
+
+.rang {
+  position: relative;
+  padding-left: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--slat-gap);
+}
+.rail {
+  position: absolute;
+  left: 0; top: 2px; bottom: 2px;
+  width: var(--rail-w);
+  border-radius: var(--rail-w);
+  background: var(--rail);
+}
+.slat { height: 52px; border-radius: var(--r-slat); }

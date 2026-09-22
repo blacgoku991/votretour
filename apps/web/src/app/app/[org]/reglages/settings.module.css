@@ -28,3 +28,22 @@
 }
 .addRow .input { flex: 2 1 180px; }
 .addRow .input[type='number'] { flex: 1 1 110px; }
+
+/* Sélecteur de file, quand un établissement en compte plusieurs. */
+.queueTabs {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+}
+
+.queueTab {
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  font-size: 0.75rem;
+  font-variation-settings: 'wght' 620;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.queueTabActive { background: var(--surface-raised); color: var(--text); box-shadow: var(--shadow-1); }

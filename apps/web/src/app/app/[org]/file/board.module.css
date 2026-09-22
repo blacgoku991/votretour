@@ -379,3 +379,17 @@
   .statusActions { width: 100%; }
   .statusActions > * { flex: 1; }
 }
+
+/* Saisie du motif de pause, affiché ensuite sur l'écran des clients. */
+.pauseForm {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.pauseForm .input { min-height: 38px; min-width: 200px; flex: 1; font-size: 0.875rem; }
+
+@media (max-width: 600px) {
+  .pauseForm { width: 100%; }
+  .pauseForm .input { flex-basis: 100%; }
+}

@@ -347,6 +347,8 @@ function StatusBar({
 }) {
   const { queue, counts, location } = snapshot;
   const open = queue.status === 'open';
+  const [pausing, setPausing] = useState(false);
+  const [reason, setReason] = useState('');
 
   return (
     <header className={styles.status}>
@@ -384,14 +386,42 @@ function StatusBar({
       {canOperate && (
         <div className={styles.statusActions}>
           {open ? (
-            <>
-              <button type="button" className="btn btn--ghost btn--sm" onClick={() => onStatus('paused')}>
-                Pause
-              </button>
-              <button type="button" className="btn btn--ghost btn--sm" onClick={() => onStatus('closed')}>
-                Fermer
-              </button>
-            </>
+            pausing ? (
+              // Le motif s'affiche sur l'écran du client : « File en
+              // pause : retour dans 10 min » vaut mieux qu'un écran muet.
+              <form
+                className={styles.pauseForm}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  onStatus('paused', reason.trim() || undefined);
+                  setPausing(false);
+                  setReason('');
+                }}
+              >
+                <input
+                  className="input"
+                  autoFocus
+                  maxLength={120}
+                  placeholder="Motif — visible par vos clients"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  aria-label="Motif de la pause"
+                />
+                <button type="submit" className="btn btn--signal btn--sm">Mettre en pause</button>
+                <button type="button" className="btn btn--quiet btn--sm" onClick={() => setPausing(false)}>
+                  Annuler
+                </button>
+              </form>
+            ) : (
+              <>
+                <button type="button" className="btn btn--ghost btn--sm" onClick={() => setPausing(true)}>
+                  Pause
+                </button>
+                <button type="button" className="btn btn--ghost btn--sm" onClick={() => onStatus('closed')}>
+                  Fermer
+                </button>
+              </>
+            )
           ) : (
             <button type="button" className="btn btn--signal btn--sm" onClick={() => onStatus('open')}>
               Ouvrir la file

@@ -40,7 +40,8 @@ interface Service {
 }
 
 export function SettingsManager({
-  orgSlug, organizationId, canManage, locations, currentLocation, settings, queues, hours, services,
+  orgSlug, organizationId, canManage, locations, currentLocation, settings,
+  queues, selectedQueueId, hours, services,
 }: {
   orgSlug: string;
   organizationId: string;
@@ -49,6 +50,7 @@ export function SettingsManager({
   currentLocation: Location | null;
   settings: OrgSettings | null;
   queues: Queue[];
+  selectedQueueId: string | null;
   hours: { weekday: number; opens_at: string | null; closes_at: string | null; is_closed: boolean }[];
   services: Service[];
 }) {
@@ -57,7 +59,9 @@ export function SettingsManager({
   const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  const queue = queues[0] ?? null;
+  // Un établissement peut avoir plusieurs files (comptoir et atelier,
+  // par exemple) : on règle celle que l'on regarde, pas la première.
+  const queue = queues.find((q) => q.id === selectedQueueId) ?? queues[0] ?? null;
 
   const [place, setPlace] = useState({
     name: currentLocation?.name ?? '',
@@ -202,7 +206,23 @@ export function SettingsManager({
 
       {/* ---------------- File ---------------- */}
       {queue && (
-        <Section title="Fonctionnement de la file">
+        <Section
+          title="Fonctionnement de la file"
+          actions={queues.length > 1 ? (
+            <div className={styles.queueTabs} role="group" aria-label="File à régler">
+              {queues.map((q) => (
+                <a
+                  key={q.id}
+                  href={`/app/${orgSlug}/reglages?lieu=${currentLocation.id}&file=${q.id}`}
+                  className={`${styles.queueTab} ${q.id === queue.id ? styles.queueTabActive : ''}`}
+                  aria-current={q.id === queue.id ? 'true' : undefined}
+                >
+                  {q.name}
+                </a>
+              ))}
+            </div>
+          ) : undefined}
+        >
           <SettingRow label="Mode" hint="File commune, ou une file par professionnel.">
             <select className="select" value={queue.mode} disabled={!canManage}
               onChange={(e) => run(() => updateQueueSettings({
