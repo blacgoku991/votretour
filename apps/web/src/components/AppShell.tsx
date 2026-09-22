@@ -32,6 +32,7 @@ export function buildNav(orgSlug: string): NavItem[] {
     { href: `${base}/equipe`,        label: 'Équipe',        short: 'Équipe',  icon: 'team', primary: true },
     { href: `${base}/statistiques`,  label: 'Statistiques',  short: 'Stats',   icon: 'chart', primary: true },
     { href: `${base}/ecran`,         label: 'Écran TV',      short: 'TV',      icon: 'screen', primary: true },
+    { href: `${base}/evenements`,    label: 'Événements',    short: 'Events',  icon: 'ticket' },
     { href: `${base}/historique`,    label: 'Historique',    short: 'Historique', icon: 'history' },
     { href: `${base}/notifications`, label: 'Notifications', short: 'Notifs',  icon: 'bell' },
     { href: `${base}/reglages`,      label: 'Réglages',      short: 'Réglages', icon: 'settings' },
@@ -239,6 +240,12 @@ const ICONS = {
       <rect x="3" y="11" width="3.4" height="6" rx="1.2" />
       <rect x="8.3" y="6" width="3.4" height="11" rx="1.2" />
       <rect x="13.6" y="8.5" width="3.4" height="8.5" rx="1.2" />
+    </>
+  ),
+  ticket: (
+    <>
+      <path d="M3 5.5A2.5 2.5 0 0 1 5.5 3h9A2.5 2.5 0 0 1 17 5.5v2a2.5 2.5 0 0 0 0 5v2a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 3 14.5v-2a2.5 2.5 0 0 0 0-5v-2Z" />
+      <path d="M10 5v10" strokeDasharray="2 2" />
     </>
   ),
   history: (
