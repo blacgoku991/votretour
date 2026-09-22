@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { verifyEventPassCookie } from '@/lib/event-pass';
-import { EventPassCard } from './[token]/EventPassCard';
+import { EventPassCard } from './EventPassCard';
 
 export const metadata: Metadata = {
   title: 'Laisser-passer',
