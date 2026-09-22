@@ -4,7 +4,11 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { hashEventPassToken } from '@/lib/event-pass';
 import { EventPassCard } from './EventPassCard';
 
-export const metadata: Metadata = { title: 'Laisser-passer', robots: { index: false } };
+export const metadata: Metadata = {
+  title: 'Laisser-passer',
+  robots: { index: false, follow: false },
+  referrer: 'no-referrer',
+};
 export const dynamic = 'force-dynamic';
 
 export default async function PassPage({ params }: { params: Promise<{ token: string }> }) {
