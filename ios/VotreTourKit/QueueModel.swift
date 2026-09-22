@@ -90,6 +90,11 @@ public final class QueueModel: ObservableObject {
             if let existing = try await currentTicket(organizationId: point.organization.id) {
                 apply(ticket: existing)
                 await openChannel()
+                // Un App Clip relancé depuis TestFlight / notification peut
+                // reprendre directement un ticket existant sans repasser par join().
+                // On doit quand même (ré)enregistrer APNs à chaque lancement afin
+                // d'obtenir/rafraîchir le jeton et la fenêtre de notification.
+                await registerForPush()
             } else {
                 phase = .join
             }
