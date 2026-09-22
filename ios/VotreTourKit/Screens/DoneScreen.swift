@@ -14,10 +14,20 @@ struct DoneScreen: View {
     @State private var appeared = false
 
     private var reviewURL: URL? {
-        // Le lien peut arriver par deux chemins : l'état du ticket, ou la
-        // charge utile de la notification de fin de visite.
-        if let fromTicket = model.ticket?.location.googleReviewUrl,
-           let url = URL(string: fromTicket) { return url }
+        // Pour un passage terminé affiché dans l'App Clip, on passe par
+        // Rangvia avant Google afin de mesurer un clic unique par visite.
+        if model.ticket?.location.googleReviewUrl != nil,
+           let entryId = model.ticket?.entry.id {
+            var components = URLComponents(
+                url: Configuration.apiBaseURL.appendingPathComponent("api/client/review/click"),
+                resolvingAgainstBaseURL: false
+            )
+            components?.queryItems = [
+                URLQueryItem(name: "entry", value: entryId),
+                URLQueryItem(name: "source", value: "appclip_done"),
+            ]
+            if let url = components?.url { return url }
+        }
         return notifications.pendingReviewURL
     }
 
