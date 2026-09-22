@@ -43,3 +43,42 @@ export function verifyEventPassSignature(
   const b = Buffer.from(signature);
   return a.length === b.length && timingSafeEqual(a, b);
 }
+
+
+const EVENT_COOKIE_PREFIX = 'event-session';
+
+export function signEventPassCookie(publicId: string, expiresAt: number): string {
+  if (!env.sessionSecret) {
+    throw new Error('SESSION_HASH_SECRET est requis pour les sessions Event.');
+  }
+  return createHmac('sha256', env.sessionSecret)
+    .update(`${EVENT_COOKIE_PREFIX}:${publicId}:${expiresAt}`, 'utf8')
+    .digest('base64url');
+}
+
+export function makeEventPassCookie(publicId: string, expiresAt: number): string {
+  const signature = signEventPassCookie(publicId, expiresAt);
+  return `${publicId}.${expiresAt}.${signature}`;
+}
+
+export function verifyEventPassCookie(
+  value: string | null | undefined,
+  now = Date.now(),
+): { publicId: string; expiresAt: number } | null {
+  if (!value) return null;
+  const parts = value.split('.');
+  if (parts.length !== 3) return null;
+
+  const [publicId, expiresRaw, signature] = parts;
+  if (!publicId || !/^[0-9A-Za-z]{12,32}$/.test(publicId)) return null;
+
+  const expiresAt = Number(expiresRaw);
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(now / 1000)) return null;
+
+  const expected = signEventPassCookie(publicId, expiresAt);
+  const a = Buffer.from(expected);
+  const b = Buffer.from(signature ?? '');
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+
+  return { publicId, expiresAt };
+}
