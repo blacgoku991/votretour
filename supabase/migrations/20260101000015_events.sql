@@ -133,7 +133,7 @@ create trigger event_access_passes_tenant_guard
 create or replace function internal.assign_event_ticket_number()
 returns trigger
 language plpgsql
-as $
+as $$
 declare
   v_event public.event_campaigns;
   v_number int;
@@ -165,7 +165,7 @@ begin
 
   return new;
 end;
-$;
+$$;
 
 create trigger queue_entries_event_ticket_number
   after insert on public.queue_entries
@@ -177,7 +177,7 @@ create or replace function internal.entry_json_client(e public.queue_entries)
 returns jsonb
 language sql
 stable
-as $
+as $$
   select jsonb_build_object(
     'id',          e.public_id,
     'name',        e.client_name,
@@ -192,13 +192,13 @@ as $
     'eventId',     e.metadata ->> 'eventId',
     'eventTicketNumber', nullif(e.metadata ->> 'eventTicketNumber', '')::int
   );
-$;
+$$;
 
 create or replace function internal.entry_json_staff(e public.queue_entries)
 returns jsonb
 language sql
 stable
-as $
+as $$
   select jsonb_build_object(
     'id',            e.public_id,
     'name',          e.client_name,
@@ -220,7 +220,7 @@ as $
     'eventId',       e.metadata ->> 'eventId',
     'eventTicketNumber', nullif(e.metadata ->> 'eventTicketNumber', '')::int
   );
-$;
+$$;
 
 alter table public.event_campaigns enable row level security;
 alter table public.event_access_passes enable row level security;
