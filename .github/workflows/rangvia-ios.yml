@@ -32,11 +32,46 @@ jobs:
 
       - name: Corriger les entitlements
         run: |
-          /usr/libexec/PlistBuddy -c "Delete :keychain-access-groups" \
+          /usr/libexec/PlistBuddy \
+            -c "Delete :keychain-access-groups" \
             ios/VotreTour/VotreTour.entitlements || true
 
-          /usr/libexec/PlistBuddy -c "Delete :keychain-access-groups" \
+          /usr/libexec/PlistBuddy \
+            -c "Delete :keychain-access-groups" \
             ios/VotreTourClip/VotreTourClip.entitlements || true
+
+      - name: Corriger Swift pour Xcode 16
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          for p in Path("ios").rglob("*.swift"):
+              s = p.read_text()
+
+              # Swift 6 / Xcode 16 n'accepte plus VT.Type comme namespace.
+              s = s.replace("VT.Type.", "VT.Typography.")
+
+              if p.name == "Design.swift":
+                  s = s.replace(
+                      "public enum Type {",
+                      "public enum Typography {"
+                  )
+
+                  # Evite le conflit avec VotreTourKit.Configuration
+                  s = s.replace(
+                      "makeBody(configuration: Configuration)",
+                      "makeBody(configuration: ButtonStyleConfiguration)"
+                  )
+
+              p.write_text(s)
+
+          print("Correctifs Swift appliques")
+          PY
+
+          if grep -R "VT\.Type\." ios --include="*.swift"; then
+            echo "ERREUR : il reste des VT.Type"
+            exit 1
+          fi
 
       - name: Installer la cle App Store Connect
         env:
