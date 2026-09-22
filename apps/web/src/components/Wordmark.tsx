@@ -7,7 +7,7 @@ import styles from './Wordmark.module.css';
  */
 export function Wordmark({ compact = false }: { compact?: boolean }) {
   return (
-    <span className={styles.mark} aria-label="VotreTour">
+    <span className={styles.mark} aria-label="Rangvia">
       <svg
         width="26" height="26" viewBox="0 0 26 26" fill="none"
         className={styles.glyph} aria-hidden="true"
@@ -25,7 +25,7 @@ export function Wordmark({ compact = false }: { compact?: boolean }) {
       </svg>
       {!compact && (
         <span className={styles.text}>
-          Votre<span className={styles.tour}>Tour</span>
+          Rang<span className={styles.tour}>via</span>
         </span>
       )}
     </span>
