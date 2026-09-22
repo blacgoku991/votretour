@@ -64,6 +64,67 @@ create index if not exists event_access_passes_event_idx
 create index if not exists event_access_passes_hash_idx
   on public.event_access_passes(token_hash);
 
+-- Garde-fou multi-tenant : même le service_role ne peut pas créer un
+-- événement ou un pass reliant des ressources de deux organisations.
+create or replace function internal.assert_event_campaign_consistency()
+returns trigger
+language plpgsql
+as $
+declare
+  v_queue public.queues;
+begin
+  select * into v_queue from public.queues where id = new.queue_id;
+  if not found then
+    raise exception 'File introuvable pour événement';
+  end if;
+  if v_queue.organization_id <> new.organization_id
+     or v_queue.location_id <> new.location_id then
+    raise exception 'Incohérence multi-tenant événement';
+  end if;
+  return new;
+end;
+$;
+
+create trigger event_campaigns_tenant_guard
+  before insert or update of organization_id, location_id, queue_id
+  on public.event_campaigns
+  for each row execute function internal.assert_event_campaign_consistency();
+
+create or replace function internal.assert_event_pass_consistency()
+returns trigger
+language plpgsql
+as $
+declare
+  v_event public.event_campaigns;
+  v_entry public.queue_entries;
+begin
+  select * into v_event from public.event_campaigns where id = new.event_id;
+  if not found then
+    raise exception 'Événement introuvable pour laisser-passer';
+  end if;
+
+  select * into v_entry from public.queue_entries where id = new.queue_entry_id;
+  if not found then
+    raise exception 'Ticket introuvable pour laisser-passer';
+  end if;
+
+  if v_event.organization_id <> new.organization_id
+     or v_event.location_id <> new.location_id
+     or v_entry.organization_id <> new.organization_id
+     or v_entry.location_id <> new.location_id
+     or v_entry.queue_id <> v_event.queue_id then
+    raise exception 'Incohérence multi-tenant laisser-passer';
+  end if;
+
+  return new;
+end;
+$;
+
+create trigger event_access_passes_tenant_guard
+  before insert or update of event_id, organization_id, location_id, queue_entry_id
+  on public.event_access_passes
+  for each row execute function internal.assert_event_pass_consistency();
+
 alter table public.event_campaigns enable row level security;
 alter table public.event_access_passes enable row level security;
 revoke all on table public.event_campaigns from anon, authenticated;
