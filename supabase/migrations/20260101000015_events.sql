@@ -70,7 +70,7 @@ create index if not exists event_access_passes_hash_idx
 create or replace function internal.assert_event_campaign_consistency()
 returns trigger
 language plpgsql
-as $
+as $$
 declare
   v_queue public.queues;
 begin
@@ -84,7 +84,7 @@ begin
   end if;
   return new;
 end;
-$;
+$$;
 
 create trigger event_campaigns_tenant_guard
   before insert or update of organization_id, location_id, queue_id
@@ -94,7 +94,7 @@ create trigger event_campaigns_tenant_guard
 create or replace function internal.assert_event_pass_consistency()
 returns trigger
 language plpgsql
-as $
+as $$
 declare
   v_event public.event_campaigns;
   v_entry public.queue_entries;
@@ -119,7 +119,7 @@ begin
 
   return new;
 end;
-$;
+$$;
 
 create trigger event_access_passes_tenant_guard
   before insert or update of event_id, organization_id, location_id, queue_entry_id
@@ -405,7 +405,7 @@ returns table(queue_id uuid, expired int)
 language plpgsql
 security definer
 set search_path = public, internal, extensions
-as $
+as $$
 declare
   v_pass public.event_access_passes;
   v_entry public.queue_entries;
@@ -458,7 +458,7 @@ begin
     return next;
   end loop;
 end;
-$;
+$$;
 
 revoke all on function public.issue_event_wave(uuid, uuid, int) from public, anon, authenticated;
 revoke all on function public.redeem_event_pass(text, uuid) from public, anon, authenticated;
