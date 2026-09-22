@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createPlate, updatePlate, requestPhysicalPlates } from '@/server/actions/plates';
 import { relativeTime, formatNumber } from '@/lib/format';
+import { useMounted } from '@/hooks/useMounted';
 import styles from './plates.module.css';
 
 /**
@@ -167,6 +168,7 @@ function PlateDetail({
   pending: boolean;
 }) {
   const url = `${siteUrl}/e/${plate.code}`;
+  const mounted = useMounted();
   const [copied, setCopied] = useState<'url' | 'nfc' | null>(null);
   const [label, setLabel] = useState(plate.label);
   const [showOrder, setShowOrder] = useState(false);
@@ -323,7 +325,7 @@ function PlateDetail({
       <div className={styles.metaRow}>
         <span className="t-micro t-faint">
           {formatNumber(plate.scan_count)} scan{plate.scan_count > 1 ? 's' : ''}
-          {plate.last_scanned_at ? ` · dernier ${relativeTime(plate.last_scanned_at)}` : ''}
+          {mounted && plate.last_scanned_at ? ` · dernier ${relativeTime(plate.last_scanned_at)}` : ''}
         </span>
         {plate.order_status !== 'none' && plate.order_reference && (
           <span className="chip chip--copper">Commande {plate.order_reference}</span>

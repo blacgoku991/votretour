@@ -9,6 +9,7 @@ import {
 import type { StaffAction } from '@/server/queue';
 import { STAFF_STATUS_LABEL, SOURCE_LABEL } from '@/lib/copy';
 import { formatTime, elapsedSeconds, formatDuration, initials, relativeTime } from '@/lib/format';
+import { useMounted } from '@/hooks/useMounted';
 import type { QueueSnapshot, StaffEntry, QueueStatus } from '@/lib/types';
 import styles from './board.module.css';
 
@@ -42,6 +43,7 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
   const [flash, setFlash] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const queueId = snapshot?.queue.id ?? null;
+  const mounted = useMounted();
 
   /* ---------------------------------------------------------------
      Temps réel : Postgres Changes sous RLS.
@@ -288,7 +290,9 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
               <div key={entry.id} className={styles.parkedRow}>
                 <span className={styles.parkedName}>{entry.name ?? 'Sans prénom'}</span>
                 <span className="chip chip--brique">{STAFF_STATUS_LABEL[entry.status]}</span>
-                <span className="t-micro t-faint">{relativeTime(entry.absentAt ?? entry.joinedAt)}</span>
+                <span className="t-micro t-faint">
+                  {mounted ? relativeTime(entry.absentAt ?? entry.joinedAt) : ''}
+                </span>
                 {canOperate && (
                   <button
                     type="button"
@@ -716,9 +720,16 @@ function StaffChip({
   );
 }
 
-/** Compteur vivant : la durée de prestation s'incrémente à l'écran. */
+/**
+ * Compteur vivant : la durée de prestation s'incrémente à l'écran.
+ *
+ * Le premier rendu reste volontairement vide. Le serveur et le
+ * navigateur ne calculent jamais la durée au même instant : « 59 s »
+ * côté serveur et « 1 min » une seconde plus tard côté client suffisent
+ * à casser l'hydratation de React. On ne compte donc qu'une fois monté.
+ */
 function useLiveElapsed(from: string | null): number | null {
-  const [value, setValue] = useState(() => elapsedSeconds(from));
+  const [value, setValue] = useState<number | null>(null);
   useEffect(() => {
     setValue(elapsedSeconds(from));
     if (!from) return;
@@ -727,3 +738,4 @@ function useLiveElapsed(from: string | null): number | null {
   }, [from]);
   return value;
 }
+
