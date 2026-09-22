@@ -1,0 +1,283 @@
+/* =====================================================================
+   Coque du tableau de bord.
+   Thème clair par défaut : on l'utilise en boutique, souvent en plein
+   jour, parfois sur une tablette posée sur le comptoir.
+   ===================================================================== */
+
+.shell {
+  min-height: 100dvh;
+  background: var(--surface-sunken);
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas: 'top' 'main' 'tabs';
+}
+
+/* ---------------------------------------------------------------------
+   Rail latéral (≥ 900 px)
+   --------------------------------------------------------------------- */
+.rail { display: none; }
+
+.topbar {
+  grid-area: top;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  height: calc(var(--header-h) + var(--safe-top));
+  padding: var(--safe-top) var(--sp-4) 0;
+  background: color-mix(in oklab, var(--surface) 88%, transparent);
+  backdrop-filter: saturate(150%) blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbarBrand { display: flex; align-items: center; }
+
+.topbarTitle {
+  flex: 1;
+  min-width: 0;
+  font-variation-settings: 'wdth' 100, 'wght' 680;
+  font-size: 0.9375rem;
+  letter-spacing: -0.012em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbarMore {
+  width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  color: var(--text-muted);
+  background: var(--surface-raised);
+}
+
+.main {
+  grid-area: main;
+  min-width: 0;
+  padding-bottom: var(--sp-6);
+}
+
+/* ---------------------------------------------------------------------
+   Barre basse (téléphone) — à portée de pouce
+   --------------------------------------------------------------------- */
+.tabbar {
+  grid-area: tabs;
+  position: sticky;
+  bottom: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+  padding: 6px var(--sp-2) calc(6px + var(--safe-bottom));
+  background: color-mix(in oklab, var(--surface) 92%, transparent);
+  backdrop-filter: saturate(150%) blur(12px);
+  border-top: 1px solid var(--line);
+}
+
+.tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 4px;
+  border-radius: 10px;
+  color: var(--text-faint);
+  font-variation-settings: 'wdth' 92, 'wght' 620;
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  transition: color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
+}
+.tab:active { background: var(--surface-sunken); }
+
+/* L'onglet actif porte une latte de signal au-dessus : le même
+   vocabulaire que la file elle-même. */
+.tabActive { color: var(--text); position: relative; }
+.tabActive::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  translate: -50% 0;
+  width: 22px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.icon { flex: none; }
+
+/* ---------------------------------------------------------------------
+   Sélecteur d'organisation
+   --------------------------------------------------------------------- */
+.org {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--r-field);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+
+.orgMark {
+  width: 28px; height: 28px;
+  flex: none;
+  display: grid; place-items: center;
+  border-radius: 8px;
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+  font-variation-settings: 'wdth' 110, 'wght' 760;
+  font-size: 0.6875rem;
+}
+
+.orgName, .orgSelect {
+  font-variation-settings: 'wdth' 100, 'wght' 660;
+  font-size: 0.875rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orgSelect {
+  appearance: none;
+  background: none;
+  border: 0;
+  flex: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ---------------------------------------------------------------------
+   Feuille de menu (téléphone)
+   --------------------------------------------------------------------- */
+.sheet { position: fixed; inset: 0; z-index: 60; }
+
+.sheetBackdrop {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--ink-1000) 45%, transparent);
+  backdrop-filter: blur(2px);
+  animation: fade-in var(--dur-2) var(--ease-out);
+  width: 100%;
+}
+
+.sheetPanel {
+  position: absolute;
+  inset: auto 0 0 0;
+  background: var(--surface-raised);
+  border-radius: 22px 22px 0 0;
+  padding: var(--sp-5) var(--sp-4) calc(var(--sp-5) + var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: var(--shadow-lift);
+  animation: sheet-up var(--dur-3) var(--ease-slat);
+  max-height: 88dvh;
+  overflow-y: auto;
+}
+
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to   { transform: none; }
+}
+
+.sheetLink, .railLink {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-3);
+  border-radius: var(--r-field);
+  color: var(--text-muted);
+  font-variation-settings: 'wdth' 100, 'wght' 620;
+  font-size: 0.9375rem;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.sheetLink:hover, .railLink:hover { background: var(--surface-sunken); color: var(--text); }
+.sheetLinkActive, .railLinkActive {
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-variation-settings: 'wdth' 100, 'wght' 700;
+}
+.sheetLinkActive { position: relative; }
+
+.railLinkActive { position: relative; }
+.railLinkActive::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  translate: -10px -50%;
+  width: 3px;
+  height: 18px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+/* ---------------------------------------------------------------------
+   ≥ 900 px : rail latéral, plus de barre basse
+   --------------------------------------------------------------------- */
+@media (min-width: 900px) {
+  .shell {
+    grid-template-columns: 252px 1fr;
+    grid-template-rows: 1fr;
+    grid-template-areas: 'rail main';
+  }
+  .topbar, .tabbar, .sheet { display: none; }
+
+  .rail {
+    grid-area: rail;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+    padding: var(--sp-6) var(--sp-4);
+    background: var(--surface);
+    border-right: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    overflow-y: auto;
+  }
+
+  .railBrand { display: flex; }
+  .railNav { display: flex; flex-direction: column; gap: 2px; }
+  .railFoot { margin-top: auto; display: flex; flex-direction: column; gap: var(--sp-2); }
+
+  .main { padding: var(--sp-7) 0 var(--sp-8); }
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2);
+  border-radius: var(--r-field);
+  border: 1px solid var(--line);
+  min-width: 0;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.account:hover { border-color: var(--line-strong); }
+
+.avatar {
+  width: 32px; height: 32px;
+  flex: none;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-variation-settings: 'wdth' 106, 'wght' 740;
+  font-size: 0.6875rem;
+}
+
+.accountText { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.accountName {
+  font-variation-settings: 'wght' 640;
+  font-size: 0.8125rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.accountText > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

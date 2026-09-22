@@ -1,0 +1,69 @@
+.wrap {
+  position: relative;
+  width: 100%;
+}
+
+.overflow {
+  padding-left: var(--sp-5);
+  margin-bottom: var(--sp-2);
+  font-variation-settings: 'wdth' 92, 'wght' 600;
+}
+
+/* Petit repère sur chaque latte anonyme : suffisamment discret pour ne
+   pas suggérer une identité, assez présent pour que la latte ait une
+   matière. */
+.tick {
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.35;
+}
+
+.tickHead {
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.9;
+}
+
+.self {
+  justify-content: flex-start;
+  gap: var(--sp-3);
+}
+
+.selfDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+  box-shadow: 0 0 0 4px color-mix(in oklab, currentColor 28%, transparent);
+}
+
+.selfText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.selfName {
+  font-variation-settings: 'wdth' 104, 'wght' 720;
+  font-size: 0.9375rem;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selfHint {
+  font-variation-settings: 'wdth' 88, 'wght' 620;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.78;
+  line-height: 1.2;
+}

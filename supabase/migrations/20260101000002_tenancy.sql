@@ -231,7 +231,7 @@ create table public.staff (
   role_title      text,
   avatar_url      text,
   accent          text not null default 'signal'
-    check (accent in ('signal', 'copper', 'jade', 'cobalt', 'plum', 'slate')),
+    check (accent in ('signal', 'copper', 'jade', 'cobalt', 'brique', 'ardoise')),
   is_active       boolean not null default true,
   accepts_queue   boolean not null default true,
   is_on_break     boolean not null default false,
@@ -321,7 +321,7 @@ create table public.organization_settings (
   send_completion_review boolean not null default true,
   -- Marque
   brand_accent          text not null default 'signal'
-    check (brand_accent in ('signal', 'copper', 'jade', 'cobalt', 'plum')),
+    check (brand_accent in ('signal', 'copper', 'jade', 'cobalt', 'brique')),
   support_email         text,
   privacy_url           text,
   terms_url             text,

@@ -242,4 +242,73 @@ begin;
   end $$;
 rollback;
 
+-- ---------------------------------------------------------------------
+-- 6. Le serveur applicatif (service_role) doit pouvoir travailler
+-- ---------------------------------------------------------------------
+-- BYPASSRLS contourne les POLICIES, pas les GRANTS. Sans privilège de
+-- table explicite, tout le produit tombe sur « permission denied » alors
+-- que les tests exécutés en superutilisateur passent. Ce bloc joue donc
+-- réellement le rôle du serveur.
+begin;
+  set local role service_role;
+  set local request.jwt.claims = '{"role":"service_role"}';
+
+  do $$
+  declare
+    t text;
+    n int;
+    tables text[] := array[
+      'organizations','locations','staff','queues','queue_entries','queue_events',
+      'client_sessions','notification_subscriptions','notification_deliveries',
+      'app_clip_sessions','plates','plate_scans','profiles','organization_members',
+      'organization_settings','opening_hours','services','subscriptions','plans',
+      'audit_logs','system_errors','rate_limits','support_tickets','support_messages',
+      'slug_registry','billing_events','opening_hours_overrides'
+    ];
+  begin
+    foreach t in array tables loop
+      execute format('select count(*) from public.%I', t) into n;
+    end loop;
+    raise notice '  ok  service_role lit les % tables métier', array_length(tables, 1);
+  end $$;
+
+  -- Le parcours client complet doit fonctionner sous ce rôle.
+  do $$
+  declare
+    v_queue uuid;
+    v_session uuid;
+    v_entry jsonb;
+  begin
+    select id into v_queue from public.queues
+    where status = 'open' order by created_at limit 1;
+
+    v_session := (public.upsert_client_session(
+      (select organization_id from public.queues where id = v_queue),
+      'service-role-probe', 'web', 'Sonde') ->> 'id')::uuid;
+
+    v_entry := public.join_queue(v_queue, v_session, 'Sonde');
+    if v_entry -> 'entry' ->> 'id' is null then
+      raise exception 'ÉCHEC: service_role ne peut pas inscrire un client';
+    end if;
+    raise notice '  ok  service_role inscrit un client dans la file';
+
+    if public.ticket_state(v_entry -> 'entry' ->> 'id', v_session) is null then
+      raise exception 'ÉCHEC: service_role ne peut pas relire le ticket';
+    end if;
+    raise notice '  ok  service_role relit l''état du ticket';
+
+    if public.queue_snapshot(v_queue) is null then
+      raise exception 'ÉCHEC: service_role ne peut pas lire l''instantané de file';
+    end if;
+    raise notice '  ok  service_role lit l''instantané professionnel';
+
+    perform public.staff_queue_action(v_entry -> 'entry' ->> 'id', 'remove');
+    raise notice '  ok  service_role fait avancer la file';
+
+    insert into public.notification_deliveries (organization_id, kind, status)
+    select organization_id, 'your_turn', 'skipped' from public.queues where id = v_queue;
+    raise notice '  ok  service_role journalise un envoi de notification';
+  end $$;
+rollback;
+
 do $$ begin raise notice ''; raise notice '✅ Isolation multi-tenant : tous les tests passent.'; end $$;

@@ -137,9 +137,25 @@ begin
     -- sans rien apporter, puisque service_role possède déjà BYPASSRLS.
     -- On repart d'une ardoise vide : aucun privilège implicite.
     execute format('revoke all on public.%I from anon, authenticated', t);
+    -- BYPASSRLS contourne les POLICIES, pas les GRANTS : sans cette
+    -- ligne, le serveur applicatif se heurterait à « permission denied ».
+    -- On l'écrit explicitement au lieu de dépendre des privilèges par
+    -- défaut de Supabase : le schéma reste ainsi valable tel quel en CI,
+    -- sur une instance auto-hébergée ou sur un PostgreSQL nu.
+    execute format('grant all on public.%I to service_role', t);
   end loop;
 end
 $$;
+
+grant usage on schema public to anon, authenticated, service_role;
+grant all on all sequences in schema public to service_role;
+grant execute on all functions in schema public to service_role;
+
+-- Les tables créées par de futures migrations héritent des mêmes règles.
+alter default privileges in schema public
+  grant all on tables to service_role;
+alter default privileges in schema public
+  grant all on sequences to service_role;
 
 -- Les fonctions métier ne sont jamais appelables depuis le navigateur.
 do $$

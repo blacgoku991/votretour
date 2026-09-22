@@ -1,0 +1,22 @@
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text);
+}
+
+.glyph { flex: none; }
+.signal { fill: var(--accent); }
+
+.text {
+  font-variation-settings: 'wdth' 112, 'wght' 760;
+  font-size: 1.125rem;
+  letter-spacing: -0.022em;
+  line-height: 1;
+}
+
+/* « Tour » est écrit plus étroit : le mot lui-même avance d'un cran. */
+.tour {
+  font-variation-settings: 'wdth' 88, 'wght' 760;
+  opacity: 0.68;
+}

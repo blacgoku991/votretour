@@ -1,0 +1,381 @@
+/* =====================================================================
+   Écran « file en cours ».
+   Hiérarchie assumée : l'action TERMINER domine tout le reste. Un
+   professionnel doit pouvoir faire avancer sa file sans lire l'écran.
+   ===================================================================== */
+
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  padding-top: var(--sp-5);
+  /* Sur grand écran, on ne laisse pas la colonne s'étirer : un bouton
+     TERMINER de 1500 px de large ne se clique pas mieux qu'un de 900. */
+  max-width: 960px;
+}
+
+/* ---------------------------------------------------------------------
+   Barre d'état
+   --------------------------------------------------------------------- */
+.status {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.statusMain { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+.statusTitle { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+
+.statusLabel {
+  font-variation-settings: 'wdth' 112, 'wght' 760;
+  font-size: clamp(1.35rem, 1.1rem + 1vw, 1.75rem);
+  letter-spacing: -0.024em;
+  line-height: 1;
+}
+
+.queuePicker {
+  appearance: none;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  font-variation-settings: 'wdth' 94, 'wght' 620;
+  color: var(--text-muted);
+  cursor: pointer;
+  max-width: 260px;
+}
+
+.statusCounts { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; min-width: 0; }
+.statusCounts strong { color: var(--text); font-variation-settings: 'wght' 720; }
+
+.dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-faint); }
+
+.statusActions { display: flex; gap: var(--sp-2); flex: none; }
+
+.flash {
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-field);
+  background: var(--jade-100);
+  color: #0F6B4B;
+  font-size: 0.875rem;
+  font-variation-settings: 'wght' 620;
+  animation: fade-in var(--dur-2) var(--ease-out);
+}
+:global([data-theme='dark']) .flash {
+  background: color-mix(in oklab, var(--jade-500) 18%, transparent);
+  color: var(--jade-500);
+}
+
+/* ---------------------------------------------------------------------
+   Sections
+   --------------------------------------------------------------------- */
+.section { display: flex; flex-direction: column; gap: var(--sp-3); }
+
+.sectionHead { display: flex; align-items: center; gap: var(--sp-2); }
+
+.hint { padding: var(--sp-2) 0; }
+
+.idle {
+  padding: var(--sp-6);
+  border-radius: var(--r-card);
+  border: 1px dashed var(--line-strong);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ---------------------------------------------------------------------
+   Carte « en cours »
+   --------------------------------------------------------------------- */
+.servingGrid {
+  display: grid;
+  gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.servingCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-2);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Une latte de signal au bord gauche : la carte est « accrochée » au
+   rail, comme les lattes de la file. */
+.servingCard::before {
+  content: '';
+  position: absolute;
+  left: 0; top: var(--sp-5); bottom: var(--sp-5);
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+
+.servingHead { display: flex; align-items: center; gap: var(--sp-3); }
+
+.servingAvatar {
+  width: 44px; height: 44px;
+  flex: none;
+  display: grid; place-items: center;
+  border-radius: 13px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-variation-settings: 'wdth' 108, 'wght' 760;
+  font-size: 0.875rem;
+}
+
+.servingWho { min-width: 0; flex: 1; }
+
+.servingName {
+  font-variation-settings: 'wdth' 106, 'wght' 740;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.timer {
+  font-variation-settings: 'wdth' 100, 'wght' 700;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  flex: none;
+}
+
+.miniActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.miniActions > * { flex: 1 1 auto; }
+
+/* ---------------------------------------------------------------------
+   Carte « prochain »
+   --------------------------------------------------------------------- */
+.nextCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+}
+
+.nextWho { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+
+.nextAvatar {
+  width: 38px; height: 38px;
+  flex: none;
+  display: grid; place-items: center;
+  border-radius: 11px;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-variation-settings: 'wdth' 106, 'wght' 740;
+  font-size: 0.75rem;
+}
+
+.nextName {
+  font-variation-settings: 'wdth' 104, 'wght' 700;
+  font-size: 1.0625rem;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+
+.nextMeta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 3px; }
+
+.nextActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
+/* ---------------------------------------------------------------------
+   Liste d'attente : le rang, côté professionnel
+   --------------------------------------------------------------------- */
+.waitingRang { padding-left: var(--sp-5); }
+
+.waitingSlat {
+  height: auto;
+  min-height: 52px;
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  color: var(--text);
+  gap: 0;
+  flex-direction: column;
+  align-items: stretch;
+  animation: slat-enter var(--dur-3) var(--ease-slat) backwards;
+  transform-origin: left center;
+}
+
+/* Une ligne compacte qui ne se replie jamais : sur 390 px, le bouton
+   « Démarrer » cède la place au menu ⋯ plutôt que de doubler la hauteur
+   de chaque ligne. */
+.waitingMain {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 36px;
+  min-width: 0;
+}
+
+.position {
+  width: 26px;
+  flex: none;
+  text-align: center;
+  font-variation-settings: 'wdth' 118, 'wght' 780;
+  font-size: 1rem;
+  color: var(--text-faint);
+}
+
+.waitingName {
+  font-variation-settings: 'wdth' 102, 'wght' 680;
+  font-size: 0.9375rem;
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.waitingMeta { margin-left: auto; white-space: nowrap; }
+
+.rowActions { display: flex; align-items: center; gap: var(--sp-2); flex: none; }
+
+.moreBtn {
+  width: 34px; height: 34px;
+  display: grid; place-items: center;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+}
+.moreBtn:hover { border-color: var(--accent); color: var(--text); }
+
+.rowMenu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding-top: var(--sp-2);
+  margin-top: var(--sp-1);
+  border-top: 1px solid var(--line);
+  animation: fade-in var(--dur-2) var(--ease-out);
+}
+.rowMenu button {
+  padding: 7px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  font-size: 0.8125rem;
+  font-variation-settings: 'wght' 620;
+  color: var(--text-muted);
+}
+.rowMenu button:hover { color: var(--text); border-color: var(--text-muted); }
+.rowMenu .danger { color: var(--brique-500); border-color: color-mix(in oklab, var(--brique-500) 34%, transparent); }
+.rowMenu .startInMenu {
+  display: none;
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+  border-color: transparent;
+}
+
+/* ---------------------------------------------------------------------
+   Ajout au comptoir
+   --------------------------------------------------------------------- */
+.addRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  align-items: center;
+}
+.addRow:has(.select) { grid-template-columns: minmax(0, 1fr) minmax(120px, 170px) auto; }
+.addRow .error-text { grid-column: 1 / -1; }
+
+@media (max-width: 560px) {
+  .addRow, .addRow:has(.select) { grid-template-columns: minmax(0, 1fr) auto; }
+  .addRow .select { grid-column: 1 / -1; }
+}
+
+/* ---------------------------------------------------------------------
+   Absents et retirés
+   --------------------------------------------------------------------- */
+.parked { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.parkedRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-field);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.parkedName { font-variation-settings: 'wght' 660; font-size: 0.9375rem; }
+.parkedRow > *:last-child { margin-left: auto; }
+
+/* ---------------------------------------------------------------------
+   Équipe
+   --------------------------------------------------------------------- */
+.staffRow { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
+.staffChip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4) var(--sp-2) var(--sp-2);
+  border-radius: var(--r-pill);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  text-align: left;
+  transition: border-color var(--dur-1) var(--ease-out), opacity var(--dur-1) var(--ease-out);
+}
+.staffChip:hover:not(:disabled) { border-color: var(--accent); }
+.staffChipOff { opacity: 0.55; }
+
+.staffAvatar {
+  width: 30px; height: 30px;
+  flex: none;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-variation-settings: 'wdth' 106, 'wght' 740;
+  font-size: 0.6875rem;
+}
+
+.staffText { display: flex; flex-direction: column; gap: 0; }
+.staffName { font-variation-settings: 'wght' 660; font-size: 0.8125rem; line-height: 1.2; }
+
+/* ---------------------------------------------------------------------
+   Vide
+   --------------------------------------------------------------------- */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-10) 0;
+  max-width: 520px;
+}
+
+/* ---------------------------------------------------------------------
+   Téléphone
+   --------------------------------------------------------------------- */
+@media (max-width: 600px) {
+  .waitingMeta { display: none; }
+  .startBtn { display: none; }
+  .rowMenu .startInMenu { display: block; }
+  .position { width: 22px; }
+  .nextCard { flex-direction: column; align-items: stretch; }
+  .nextActions > * { flex: 1; }
+  .statusActions { width: 100%; }
+  .statusActions > * { flex: 1; }
+}
