@@ -5,13 +5,12 @@ import Link from 'next/link';
 import { redeemEventPass } from '@/server/actions/events';
 
 export function ScanPassCard({
-  token, slot, signature, passId, passStatus, signatureValid,
+  passId, slot, signature, passStatus, signatureValid,
   clientName, eventName, locationName, validUntil, graceUntil, redeemedAt,
 }: {
-  token: string;
+  passId: string;
   slot: number;
   signature: string;
-  passId: string;
   passStatus: string;
   signatureValid: boolean;
   clientName: string | null;
@@ -84,7 +83,7 @@ export function ScanPassCard({
           style={{ marginTop: 20 }}
           onClick={() => startTransition(async () => {
             setError(null);
-            const response = await redeemEventPass({ token, slot, signature });
+            const response = await redeemEventPass({ passId, slot, signature });
             if (!response.ok) {
               setError(response.error);
               return;
