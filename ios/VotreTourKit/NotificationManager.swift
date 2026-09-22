@@ -34,6 +34,9 @@ public final class NotificationManager: NSObject, ObservableObject {
     @Published public var pendingTargetURL: URL?
     /// Lien d'avis Google transporté par la notification de fin de visite.
     @Published public var pendingReviewURL: URL?
+    /// Si l'utilisateur a explicitement touché l'action "Laisser un avis Google"
+    /// dans la notification, l'App Clip ouvre ce lien dès qu'il est actif.
+    @Published public var pendingAutoOpenReviewURL: URL?
 
     private var tokenContinuations: [CheckedContinuation<String?, Never>] = []
 
@@ -207,14 +210,16 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         // garantit qu'une notification d'un commerce ouvre bien CE
         // commerce, et pas un autre déjà lancé sur le même téléphone.
         let targetURL = content.targetContentIdentifier.flatMap(URL.init(string:))
+        let isReviewAction = response.actionIdentifier == Category.reviewAction
+
         await MainActor.run {
-            // Ne jamais ouvrir Safari directement depuis le callback de
-            // notification : l'App Clip peut être en cours de réveil et
-            // TestFlight peut alors interpréter la terminaison comme un crash.
-            // On remet d'abord Rangvia au premier plan puis l'interface propose
-            // explicitement le lien Google au client.
+            // L'iPhone doit d'abord réveiller Rangvia/App Clip. Si le client
+            // a touché le bouton d'action "Laisser un avis Google", RootView
+            // ouvrira ensuite le lien suivi vers Google dès que la scène est
+            // active. Un tap normal sur la notification affiche le prompt.
             self.pendingTargetURL = targetURL
             self.pendingReviewURL = reviewURL
+            self.pendingAutoOpenReviewURL = isReviewAction ? reviewURL : nil
         }
     }
 }
