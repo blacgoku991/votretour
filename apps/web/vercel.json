@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "comment": "Expiration des tickets oubliés et purge RGPD",
+      "path": "/api/cron/maintenance",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "comment": "Filet de sécurité : renvoie les notifications restées en attente",
+      "path": "/api/cron/notifications",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

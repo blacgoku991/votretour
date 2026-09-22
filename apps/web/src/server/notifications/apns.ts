@@ -121,6 +121,39 @@ const RETRIABLE_REASONS = new Set([
   'ExpiredProviderToken',
 ]);
 
+/**
+ * Construit la charge utile APNs.
+ *
+ * Extraite pour être testable : `target-content-id` est la clé qui, dans
+ * un App Clip multi-commerces, empêche une notification d'atterrir dans
+ * la mauvaise instance. Une régression silencieuse à cet endroit ferait
+ * passer un client d'un commerce à un autre — c'est exactement le genre
+ * de chose qu'une suite de tests doit verrouiller.
+ */
+export function buildApnsBody(payload: ApnsPayload): {
+  aps: Record<string, unknown>;
+  vt: Record<string, unknown>;
+} {
+  const aps: Record<string, unknown> = {
+    alert: {
+      title: payload.title,
+      ...(payload.subtitle ? { subtitle: payload.subtitle } : {}),
+      body: payload.body,
+    },
+    'interruption-level': payload.interruptionLevel ?? 'time-sensitive',
+    'relevance-score': payload.relevanceScore ?? 1,
+  };
+
+  if (payload.sound !== null) aps.sound = payload.sound ?? 'default';
+  if (payload.category) aps.category = payload.category;
+  if (payload.threadId) aps['thread-id'] = payload.threadId;
+  // Sans ce champ, iOS ne sait pas à quelle instance d'App Clip remettre
+  // la notification lorsque le client a ouvert plusieurs commerces.
+  if (payload.targetContentId) aps['target-content-id'] = payload.targetContentId;
+
+  return { aps, vt: payload.data ?? {} };
+}
+
 export async function sendApns(
   deviceToken: string,
   topic: string,
@@ -147,23 +180,7 @@ export async function sendApns(
     };
   }
 
-  const aps: Record<string, unknown> = {
-    alert: {
-      title: payload.title,
-      ...(payload.subtitle ? { subtitle: payload.subtitle } : {}),
-      body: payload.body,
-    },
-    sound: payload.sound === null ? undefined : (payload.sound ?? 'default'),
-    'interruption-level': payload.interruptionLevel ?? 'time-sensitive',
-    'relevance-score': payload.relevanceScore ?? 1,
-  };
-  if (payload.category) aps.category = payload.category;
-  if (payload.threadId) aps['thread-id'] = payload.threadId;
-  // Sans ce champ, iOS ne sait pas à quelle instance d'App Clip remettre
-  // la notification lorsque l'utilisateur a ouvert plusieurs commerces.
-  if (payload.targetContentId) aps['target-content-id'] = payload.targetContentId;
-
-  const body = JSON.stringify({ aps, vt: payload.data ?? {} });
+  const body = JSON.stringify(buildApnsBody(payload));
 
   const headers: Record<string, string | number> = {
     ':method': 'POST',

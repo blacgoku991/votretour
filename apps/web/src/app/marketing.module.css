@@ -1,0 +1,336 @@
+/* =====================================================================
+   Site public.
+   Une seule idée visuelle, tenue de bout en bout : le rail et les
+   lattes. Pas de dégradé, pas de verre dépoli, pas d'illustration
+   générique — le produit se montre lui-même.
+   ===================================================================== */
+
+.page { display: flex; flex-direction: column; min-height: 100dvh; }
+
+/* ---------------------------------------------------------------------
+   En-tête
+   --------------------------------------------------------------------- */
+.header {
+  position: sticky; top: 0; z-index: 50;
+  background: color-mix(in oklab, var(--surface) 86%, transparent);
+  backdrop-filter: saturate(160%) blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.headerInner {
+  display: flex; align-items: center; gap: var(--sp-5);
+  min-height: 64px;
+}
+.nav { display: none; gap: var(--sp-5); flex: 1; }
+.nav a { font-size: 0.875rem; color: var(--text-muted); }
+.nav a:hover { color: var(--text); }
+.headerActions { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+
+@media (min-width: 760px) { .nav { display: flex; } .headerActions { margin-left: 0; } }
+
+/* ---------------------------------------------------------------------
+   Héros
+   --------------------------------------------------------------------- */
+.hero { position: relative; overflow: hidden; padding: var(--sp-9) 0 var(--sp-10); }
+
+.heroRails {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image: repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px var(--step));
+  mask-image: radial-gradient(120% 80% at 50% 0%, #000 0%, transparent 70%);
+}
+
+.heroInner {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-8);
+  align-items: center;
+}
+@media (min-width: 900px) {
+  .heroInner { grid-template-columns: 1.15fr 0.85fr; gap: var(--sp-9); }
+}
+
+.heroText { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+.heroTitle {
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+  font-size: clamp(2.5rem, 1.5rem + 4.6vw, 4.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.038em;
+  text-wrap: balance;
+  max-width: 16ch;
+}
+
+.heroLead {
+  font-size: clamp(1rem, 0.95rem + 0.4vw, 1.1875rem);
+  line-height: 1.55;
+  color: var(--text-muted);
+  max-width: 48ch;
+}
+
+.heroActions { display: flex; gap: var(--sp-3); flex-wrap: wrap; }
+
+.heroDemo { display: flex; justify-content: center; }
+
+/* ---------------------------------------------------------------------
+   Sections
+   --------------------------------------------------------------------- */
+.section {
+  display: flex; flex-direction: column; gap: var(--sp-5);
+  padding-block: var(--sp-10);
+}
+.lead { max-width: 56ch; margin-top: calc(var(--sp-4) * -1); }
+
+.steps {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-4);
+}
+@media (min-width: 760px) { .steps { grid-template-columns: repeat(3, 1fr); } }
+
+.step {
+  position: relative;
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  padding: var(--sp-6) var(--sp-5) var(--sp-5);
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+}
+/* Le numéro d'étape est une latte accrochée au bord haut. */
+.step::before {
+  content: '';
+  position: absolute; top: 0; left: var(--sp-5);
+  width: 34px; height: 4px;
+  border-radius: 0 0 3px 3px;
+  background: var(--accent);
+}
+.stepIndex {
+  font-variation-settings: 'wdth' 120, 'wght' 800;
+  font-size: 2.25rem;
+  line-height: 1;
+  color: var(--text-faint);
+  opacity: 0.4;
+}
+
+/* ---------------------------------------------------------------------
+   Bloc sombre (App Clip)
+   --------------------------------------------------------------------- */
+.dark {
+  background: var(--ink-900);
+  color: var(--bone-100);
+  --text: var(--bone-100);
+  --text-muted: #9AA3AF;
+  --text-faint: #69737F;
+  --line: rgba(255, 255, 255, 0.1);
+  padding-block: var(--sp-10);
+  overflow: hidden;
+}
+
+.darkInner {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-8);
+  align-items: center;
+}
+@media (min-width: 900px) { .darkInner { grid-template-columns: 1.1fr 0.9fr; } }
+
+.darkText { display: flex; flex-direction: column; gap: var(--sp-4); }
+.darkText p { max-width: 52ch; }
+
+.checks { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.checks li {
+  display: flex; align-items: flex-start; gap: var(--sp-3);
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+/* Puce en forme de latte : le motif, jusque dans les listes. */
+.checks li::before {
+  content: '';
+  width: 14px; height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  flex: none;
+  margin-top: 9px;
+}
+
+.darkVisual { display: flex; justify-content: center; }
+
+/* ---------------------------------------------------------------------
+   Maquette de téléphone, en CSS pur
+   --------------------------------------------------------------------- */
+.phone {
+  width: 240px;
+  aspect-ratio: 9 / 18.5;
+  border-radius: 34px;
+  padding: 10px;
+  background: #1A1E24;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.8);
+  rotate: -3deg;
+}
+
+.phoneScreen {
+  width: 100%; height: 100%;
+  border-radius: 26px;
+  background: var(--ink-1000);
+  padding: 18px 14px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+.phoneHeader { display: flex; align-items: center; gap: 8px; }
+.phoneLogo { width: 22px; height: 22px; border-radius: 7px; background: rgba(255,255,255,0.1); flex: none; }
+.phoneTitle { height: 8px; width: 92px; border-radius: 4px; background: rgba(255,255,255,0.16); }
+
+.phoneCount {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 18px 8px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.phoneNumber {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 3.25rem;
+  line-height: 1;
+  color: var(--bone-100);
+}
+.phoneLabel {
+  font-variation-settings: 'wdth' 90, 'wght' 650;
+  font-size: 0.5rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #69737F;
+}
+
+.phoneRang { position: relative; padding-left: 16px; display: flex; flex-direction: column; gap: 6px; }
+.phoneRail {
+  position: absolute; left: 0; top: 2px; bottom: 2px;
+  width: 2px; border-radius: 2px; background: rgba(255,255,255,0.24);
+}
+.phoneSlat { height: 22px; border-radius: 7px; background: var(--ink-600); }
+.phoneSelf {
+  height: 46px; border-radius: 7px; background: var(--signal-500);
+  box-shadow: 0 8px 20px -8px var(--signal-500);
+}
+
+.phoneButton {
+  margin-top: auto;
+  height: 40px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ---------------------------------------------------------------------
+   Fonctionnalités
+   --------------------------------------------------------------------- */
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: var(--sp-4);
+}
+
+.feature {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  padding: var(--sp-5);
+  border-radius: var(--r-card);
+  border: 1px solid var(--line);
+  background: var(--surface-raised);
+}
+.featureSlat {
+  width: 26px; height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  margin-bottom: var(--sp-2);
+}
+
+/* ---------------------------------------------------------------------
+   Tarifs
+   --------------------------------------------------------------------- */
+.plans {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--sp-4);
+}
+
+.plan {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  padding: var(--sp-6);
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+}
+.planHighlight {
+  border-color: var(--accent);
+  box-shadow: 0 24px 50px -30px color-mix(in oklab, var(--accent) 60%, transparent);
+}
+
+.planPrice { display: flex; align-items: baseline; gap: 5px; }
+.planAmount {
+  font-variation-settings: 'wdth' 112, 'wght' 800;
+  font-size: 2.25rem;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+.planFeatures {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 7px;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  flex: 1;
+}
+.planFeatures li { display: flex; align-items: flex-start; gap: 9px; }
+.planFeatures li::before {
+  content: '';
+  width: 11px; height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  flex: none;
+  margin-top: 8px;
+  opacity: 0.75;
+}
+
+/* ---------------------------------------------------------------------
+   Appel à l'action
+   --------------------------------------------------------------------- */
+.cta {
+  background: var(--surface-sunken);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding-block: var(--sp-10);
+}
+.ctaInner {
+  display: flex; flex-direction: column; align-items: center;
+  gap: var(--sp-4); text-align: center;
+}
+.ctaInner p { max-width: 46ch; }
+
+/* ---------------------------------------------------------------------
+   Pied de page
+   --------------------------------------------------------------------- */
+.footer { padding-block: var(--sp-7); margin-top: auto; }
+.footerInner {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--sp-6); flex-wrap: wrap;
+}
+.footerBrand { display: flex; flex-direction: column; gap: var(--sp-2); }
+.footerNav { display: flex; gap: var(--sp-5); flex-wrap: wrap; }
+.footerNav a { font-size: 0.875rem; color: var(--text-muted); }
+.footerNav a:hover { color: var(--text); }
+
+/* ---------------------------------------------------------------------
+   Pages de contenu (mentions, confidentialité)
+   --------------------------------------------------------------------- */
+.doc {
+  display: flex; flex-direction: column; gap: var(--sp-4);
+  padding-block: var(--sp-9);
+  max-width: 72ch;
+}
+.doc h2 {
+  font-variation-settings: 'wdth' 106, 'wght' 720;
+  font-size: 1.25rem;
+  letter-spacing: -0.018em;
+  margin-top: var(--sp-5);
+}
+.doc p, .doc li { color: var(--text-muted); line-height: 1.7; }
+.doc ul { padding-left: var(--sp-5); display: flex; flex-direction: column; gap: 6px; }
+.doc strong { color: var(--text); font-variation-settings: 'wght' 640; }
