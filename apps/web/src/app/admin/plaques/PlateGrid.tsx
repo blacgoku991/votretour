@@ -2,7 +2,12 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { adminUpdatePlate, adminRecordPlateProgrammed } from '@/server/actions/admin';
+import {
+  adminUpdatePlate,
+  adminRecordPlateProgrammed,
+  adminCreatePlate,
+  adminDeletePlate,
+} from '@/server/actions/admin';
 import { PlateWriter, type ProgrammedResult } from '@/components/PlateWriter';
 import { useMounted } from '@/hooks/useMounted';
 import { formatNumber, relativeTime } from '@/lib/format';
@@ -26,7 +31,7 @@ export interface AdminPlate {
   organization_id: string; location_id: string; queue_id: string | null;
 }
 interface Organization { id: string; name: string; slug: string; status: string }
-interface Location { id: string; name: string; city: string | null }
+interface Location { id: string; name: string; city: string | null; organization_id: string }
 interface Queue { id: string; name: string; location_id: string }
 
 interface Props {
@@ -41,7 +46,15 @@ export function PlateGrid({ plates, siteUrl, organizations, locations, queues }:
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createOrg, setCreateOrg] = useState(organizations[0]?.id ?? '');
+  const [createLocation, setCreateLocation] = useState('');
+  const [createLabel, setCreateLabel] = useState('Plaque comptoir');
+  const [createKind, setCreateKind] = useState<'nfc' | 'qr' | 'both'>('both');
   const [, startTransition] = useTransition();
+
+  const createLocations = locations.filter((l) => l.organization_id === createOrg);
+  const createQueues = queues.filter((q) => q.location_id === createLocation);
 
   const patch = (plateId: string, value: Record<string, unknown>) => {
     setError(null);
@@ -58,6 +71,93 @@ export function PlateGrid({ plates, siteUrl, organizations, locations, queues }:
     <>
       {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
 
+      <div className={styles.createCard}>
+        <div>
+          <p className="t-label">SUPER ADMIN</p>
+          <h2 className="t-section">Créer une plaque</h2>
+          <p className="t-small t-muted">
+            Le commerçant ne voit aucun réglage NFC/QR. Toute la création et la programmation restent ici.
+          </p>
+        </div>
+
+        <form
+          className={styles.createForm}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!createOrg || !createLocation || !createLabel.trim()) return;
+            setError(null);
+            setCreating(true);
+            startTransition(async () => {
+              const queueId = createQueues[0]?.id ?? null;
+              const result = await adminCreatePlate({
+                organizationId: createOrg,
+                locationId: createLocation,
+                label: createLabel.trim(),
+                kind: createKind,
+                queueId,
+              });
+              setCreating(false);
+              if (!result.ok) { setError(result.error); return; }
+              setCreateLabel('Plaque comptoir');
+              router.refresh();
+            });
+          }}
+        >
+          <select
+            className="select"
+            value={createOrg}
+            onChange={(e) => {
+              setCreateOrg(e.target.value);
+              setCreateLocation('');
+            }}
+            aria-label="Organisation"
+          >
+            <option value="">Organisation</option>
+            {organizations.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+
+          <select
+            className="select"
+            value={createLocation}
+            onChange={(e) => setCreateLocation(e.target.value)}
+            aria-label="Établissement"
+          >
+            <option value="">Établissement</option>
+            {createLocations.map((l) => (
+              <option key={l.id} value={l.id}>{l.name}{l.city ? ` · ${l.city}` : ''}</option>
+            ))}
+          </select>
+
+          <input
+            className="input"
+            value={createLabel}
+            onChange={(e) => setCreateLabel(e.target.value)}
+            maxLength={60}
+            placeholder="Nom de la plaque"
+            aria-label="Nom de la plaque"
+          />
+
+          <select
+            className="select"
+            value={createKind}
+            onChange={(e) => setCreateKind(e.target.value as 'nfc' | 'qr' | 'both')}
+            aria-label="Type de support"
+          >
+            <option value="both">NFC + QR</option>
+            <option value="nfc">NFC</option>
+            <option value="qr">QR</option>
+          </select>
+
+          <button
+            className="btn btn--signal"
+            type="submit"
+            disabled={creating || !createOrg || !createLocation || !createLabel.trim()}
+          >
+            {creating ? 'Création…' : 'Créer la plaque'}
+          </button>
+        </form>
+      </div>
+
       <div className={styles.grid}>
         {plates.map((plate) => (
           <PlateCard
@@ -69,6 +169,16 @@ export function PlateGrid({ plates, siteUrl, organizations, locations, queues }:
             queues={queues.filter((q) => q.location_id === plate.location_id)}
             busy={busy === plate.id}
             onPatch={patch}
+            onDelete={(plateId) => {
+              if (!window.confirm('Supprimer définitivement cette plaque ?')) return;
+              setBusy(plateId);
+              startTransition(async () => {
+                const result = await adminDeletePlate({ plateId });
+                setBusy(null);
+                if (!result.ok) { setError(result.error); return; }
+                router.refresh();
+              });
+            }}
             onRefresh={() => router.refresh()}
           />
         ))}
@@ -80,7 +190,7 @@ export function PlateGrid({ plates, siteUrl, organizations, locations, queues }:
 /* ================================================================== */
 
 function PlateCard({
-  plate, siteUrl, organization, location, queues, busy, onPatch, onRefresh,
+  plate, siteUrl, organization, location, queues, busy, onPatch, onDelete, onRefresh,
 }: {
   plate: AdminPlate;
   siteUrl: string;
@@ -89,6 +199,7 @@ function PlateCard({
   queues: Queue[];
   busy: boolean;
   onPatch: (id: string, value: Record<string, unknown>) => void;
+  onDelete: (id: string) => void;
   onRefresh: () => void;
 }) {
   const mounted = useMounted();
@@ -225,6 +336,14 @@ function PlateCard({
         >
           {open ? 'Replier' : 'Modifier'}
         </button>
+        <button
+          type="button"
+          className="btn btn--danger btn--sm"
+          disabled={busy}
+          onClick={() => onDelete(plate.id)}
+        >
+          Supprimer
+        </button>
       </div>
 
       {open && (
@@ -267,8 +386,8 @@ function PlateCard({
               QR en PNG
             </a>
             {organization && (
-              <a className="btn btn--quiet btn--sm" href={`/app/${organization.slug}/plaques`}>
-                Voir chez le commerçant
+              <a className="btn btn--quiet btn--sm" href={`/app/${organization.slug}/file`}>
+                Ouvrir le tableau de bord
               </a>
             )}
           </div>
