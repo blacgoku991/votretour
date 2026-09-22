@@ -351,3 +351,106 @@ export async function adminRecordPlateProgrammed(
     return fail(error);
   }
 }
+
+
+const adminCreatePlateSchema = z.object({
+  organizationId: z.string().uuid(),
+  locationId: z.string().uuid(),
+  label: z.string().trim().min(1).max(60),
+  kind: z.enum(['nfc', 'qr', 'both']).default('both'),
+  queueId: z.string().uuid().nullish(),
+});
+
+/** Crée une plaque depuis l'espace plateforme, sans exposer ce réglage au commerçant. */
+export async function adminCreatePlate(
+  input: z.input<typeof adminCreatePlateSchema>,
+): Promise<Result<{ plateId: string; code: string }>> {
+  try {
+    const parsed = adminCreatePlateSchema.parse(input);
+    const admin = await assertPlatformAdmin();
+    const db = supabaseAdmin();
+
+    const { data: location } = await db
+      .from('locations')
+      .select('id, name, organization_id')
+      .eq('id', parsed.locationId)
+      .eq('organization_id', parsed.organizationId)
+      .maybeSingle();
+
+    if (!location) throw new AppError('not_found', 'Établissement introuvable.', 404);
+
+    const { data, error } = await db.rpc('create_plate', {
+      p_location_id: parsed.locationId,
+      p_label: parsed.label,
+      p_queue_id: parsed.queueId ?? null,
+      p_staff_id: null,
+      p_kind: parsed.kind,
+      p_created_by: admin.id,
+      p_slug_hint: `${location.name}-${parsed.label}`,
+    });
+    if (error) throw error;
+
+    const plate = data as { id: string; code: string };
+
+    await audit({
+      organizationId: parsed.organizationId,
+      actor: 'platform_admin',
+      actorUserId: admin.id,
+      action: 'plate.created_by_platform',
+      targetType: 'plate',
+      targetId: plate.id,
+      metadata: { code: plate.code, label: parsed.label, kind: parsed.kind },
+    });
+
+    revalidatePath('/admin/plaques');
+    return { ok: true, data: { plateId: plate.id, code: plate.code } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+const adminDeletePlateSchema = z.object({
+  plateId: z.string().uuid(),
+});
+
+/** Suppression définitive d'une plaque par le super-admin uniquement. */
+export async function adminDeletePlate(
+  input: z.input<typeof adminDeletePlateSchema>,
+): Promise<Result<{ plateId: string }>> {
+  try {
+    const parsed = adminDeletePlateSchema.parse(input);
+    const admin = await assertPlatformAdmin();
+    const db = supabaseAdmin();
+
+    const { data: plate } = await db
+      .from('plates')
+      .select('id, code, label, organization_id')
+      .eq('id', parsed.plateId)
+      .maybeSingle();
+
+    if (!plate) throw new AppError('not_found', 'Plaque introuvable.', 404);
+
+    await audit({
+      organizationId: plate.organization_id,
+      actor: 'platform_admin',
+      actorUserId: admin.id,
+      action: 'plate.deleted_by_platform',
+      targetType: 'plate',
+      targetId: plate.id,
+      metadata: { code: plate.code, label: plate.label },
+    });
+
+    const { error } = await db.from('plates').delete().eq('id', plate.id);
+    if (error) throw error;
+
+    await db.from('slug_registry')
+      .delete()
+      .eq('kind', 'plate')
+      .eq('ref_id', plate.id);
+
+    revalidatePath('/admin/plaques');
+    return { ok: true, data: { plateId: plate.id } };
+  } catch (error) {
+    return fail(error);
+  }
+}
