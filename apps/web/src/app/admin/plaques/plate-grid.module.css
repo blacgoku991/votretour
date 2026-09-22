@@ -140,3 +140,34 @@
   border-top: 1px dashed var(--line-strong);
 }
 .links { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
+
+.createCard {
+  display: grid;
+  grid-template-columns: minmax(220px, .8fr) minmax(0, 1.8fr);
+  gap: var(--sp-6);
+  padding: var(--sp-6);
+  margin-bottom: var(--sp-6);
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at 10% 10%, color-mix(in oklab, var(--accent) 12%, transparent), transparent 42%),
+    var(--surface-raised);
+  box-shadow: var(--shadow-2);
+}
+
+.createForm {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+  align-items: end;
+}
+
+.createForm > :last-child {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 860px) {
+  .createCard { grid-template-columns: 1fr; }
+  .createForm { grid-template-columns: 1fr; }
+}
