@@ -18,7 +18,7 @@ export async function GET(
   const tokenHash = hashEventPassToken(token);
   const { data: pass } = await supabaseAdmin()
     .from('event_access_passes')
-    .select('status, grace_until')
+    .select('public_id, status, grace_until')
     .eq('token_hash', tokenHash)
     .maybeSingle();
 
@@ -28,7 +28,7 @@ export async function GET(
 
   const slot = currentEventPassSlot();
   const signature = signEventPassSlot(tokenHash, slot);
-  const target = `${env.siteUrl}/scan/${token}?slot=${slot}&sig=${encodeURIComponent(signature)}`;
+  const target = `${env.siteUrl}/scan/${pass.public_id}?slot=${slot}&sig=${encodeURIComponent(signature)}`;
 
   const png = await QRCode.toBuffer(target, {
     errorCorrectionLevel: 'H',
