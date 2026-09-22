@@ -454,3 +454,167 @@ export async function adminDeletePlate(
     return fail(error);
   }
 }
+
+
+/* ===================================================================
+   ORGANISATIONS — contrôle plateforme renforcé
+   =================================================================== */
+
+const adminOrgUpdateSchema = z.object({
+  organizationId: z.string().uuid(),
+  name: z.string().trim().min(2).max(120).optional(),
+  activity: z.enum([
+    'barber','hair_salon','nail_bar','beauty','phone_repair','garage',
+    'auto_center','shop','aftersales','restaurant','counter',
+    'admin_service','health','event','other',
+  ]).optional(),
+});
+
+export async function adminUpdateOrganization(
+  input: z.input<typeof adminOrgUpdateSchema>,
+): Promise<Result<{ organizationId: string }>> {
+  try {
+    const parsed = adminOrgUpdateSchema.parse(input);
+    const admin = await assertPlatformAdmin();
+    const patch: Record<string, unknown> = {};
+    if (parsed.name !== undefined) patch.name = parsed.name;
+    if (parsed.activity !== undefined) patch.activity = parsed.activity;
+
+    if (Object.keys(patch).length === 0) {
+      return { ok: true, data: { organizationId: parsed.organizationId } };
+    }
+
+    const { error } = await supabaseAdmin()
+      .from('organizations')
+      .update(patch)
+      .eq('id', parsed.organizationId);
+    if (error) throw error;
+
+    await audit({
+      organizationId: parsed.organizationId,
+      actor: 'platform_admin',
+      actorUserId: admin.id,
+      action: 'organization.updated_by_platform',
+      targetType: 'organization',
+      targetId: parsed.organizationId,
+      metadata: patch,
+    });
+
+    revalidatePath('/admin/etablissements');
+    revalidatePath(`/admin/etablissements/${parsed.organizationId}`);
+    return { ok: true, data: { organizationId: parsed.organizationId } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function adminRevokeOrganizationSessions(
+  organizationId: string,
+): Promise<Result<{ revoked: number }>> {
+  try {
+    const admin = await assertPlatformAdmin();
+    const db = supabaseAdmin();
+
+    const { data: sessions, error } = await db
+      .from('client_sessions')
+      .update({ revoked_at: new Date().toISOString() })
+      .eq('organization_id', organizationId)
+      .is('revoked_at', null)
+      .select('id');
+    if (error) throw error;
+
+    await db.from('notification_subscriptions')
+      .update({ is_active: false })
+      .eq('organization_id', organizationId)
+      .eq('is_active', true);
+
+    await audit({
+      organizationId,
+      actor: 'platform_admin',
+      actorUserId: admin.id,
+      action: 'organization.sessions_revoked',
+      targetType: 'organization',
+      targetId: organizationId,
+      metadata: { count: sessions?.length ?? 0 },
+    });
+
+    return { ok: true, data: { revoked: sessions?.length ?? 0 } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+const adminDeleteOrganizationSchema = z.object({
+  organizationId: z.string().uuid(),
+  confirmationName: z.string().trim().min(1).max(120),
+});
+
+export async function adminDeleteOrganization(
+  input: z.input<typeof adminDeleteOrganizationSchema>,
+): Promise<Result<{ organizationId: string }>> {
+  try {
+    const parsed = adminDeleteOrganizationSchema.parse(input);
+    const admin = await assertPlatformAdmin();
+    const db = supabaseAdmin();
+
+    const { data: organization } = await db
+      .from('organizations')
+      .select('id, name, slug, status')
+      .eq('id', parsed.organizationId)
+      .maybeSingle();
+
+    if (!organization) throw new AppError('not_found', 'Organisation introuvable.', 404);
+    if (parsed.confirmationName !== organization.name) {
+      throw new AppError('confirmation', 'Le nom de confirmation ne correspond pas.', 422);
+    }
+    if (organization.status !== 'suspended') {
+      throw new AppError(
+        'safe_delete',
+        'Suspendez d’abord l’organisation avant de la supprimer.',
+        409,
+      );
+    }
+
+    const [{ count: activeEntries }, { data: subscription }] = await Promise.all([
+      db.from('queue_entries')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organization.id)
+        .in('status', ['waiting','notified','returning','present','next','serving']),
+      db.from('subscriptions')
+        .select('status, stripe_subscription_id')
+        .eq('organization_id', organization.id)
+        .maybeSingle(),
+    ]);
+
+    if ((activeEntries ?? 0) > 0) {
+      throw new AppError('safe_delete', 'Des clients sont encore dans une file active.', 409);
+    }
+    if (subscription?.stripe_subscription_id && !['canceled','incomplete'].includes(subscription.status)) {
+      throw new AppError(
+        'safe_delete',
+        'Un abonnement Stripe est encore actif. Annulez-le avant la suppression définitive.',
+        409,
+      );
+    }
+
+    // L'audit est écrit AVANT la suppression. audit_logs.organization_id
+    // est ON DELETE SET NULL : la preuve reste conservée après suppression.
+    await audit({
+      organizationId: organization.id,
+      actor: 'platform_admin',
+      actorUserId: admin.id,
+      action: 'organization.deleted_by_platform',
+      targetType: 'organization',
+      targetId: organization.id,
+      metadata: { name: organization.name, slug: organization.slug },
+    });
+
+    const { error } = await db.from('organizations').delete().eq('id', organization.id);
+    if (error) throw error;
+
+    revalidatePath('/admin', 'layout');
+    return { ok: true, data: { organizationId: organization.id } };
+  } catch (error) {
+    return fail(error);
+  }
+}
