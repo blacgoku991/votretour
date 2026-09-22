@@ -2,6 +2,7 @@ import { env } from '@/lib/env';
 import { constantTimeEquals } from '@/lib/crypto';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { dispatchQueueNotifications } from '@/server/notifications/dispatch';
+import { expireEventPasses } from '@/server/queue';
 import { reportError } from '@/server/audit';
 
 export const runtime = 'nodejs';
@@ -23,9 +24,20 @@ export async function GET(request: Request) {
   if (!checkSecret(request)) return new Response('Non autorisé', { status: 401 });
 
   const db = supabaseAdmin();
-  const summary = { queues: 0, sent: 0, failed: 0, skipped: 0 };
+  const summary = {
+    queues: 0,
+    sent: 0,
+    failed: 0,
+    skipped: 0,
+    eventPassesExpired: 0,
+  };
 
   try {
+    // Les accès Event ont une durée courte : on les expire à la même
+    // cadence que le cron notifications (chaque minute sur le VPS).
+    const eventExpiry = await expireEventPasses();
+    summary.eventPassesExpired = eventExpiry.expired;
+
     const { data: queues } = await db
       .from('queues').select('id').eq('status', 'open').limit(500);
 
