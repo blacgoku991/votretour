@@ -244,6 +244,7 @@ async function sendOne(
 }> {
   const base = {
     organization_id: item.organization_id,
+    location_id: item.location_id,
     queue_entry_id: item.entry_id,
     entry_public_id: item.entry_public_id,
     subscription_id: sub.id,
@@ -254,7 +255,9 @@ async function sendOne(
     attempts: 1,
   };
 
-  const reviewUrl = item.kind === 'visit_completed' ? location.google_review_url : null;
+  const reviewUrl = item.kind === 'visit_completed' && location.google_review_url
+    ? `${env.siteUrl}/api/client/review/click?entry=${encodeURIComponent(item.entry_public_id)}&source=notification`
+    : null;
 
   /* ---------------- App Clip / application iOS (APNs) ---------------- */
   if (sub.channel === 'apns_appclip' || sub.channel === 'apns_app') {
