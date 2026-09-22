@@ -6,7 +6,9 @@ import { AppError, toAppError } from '@/lib/errors';
 import { assertPlatformAdmin } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { audit } from '@/server/audit';
-import { setQueueStatus } from '@/server/queue';
+import { propagate, setQueueStatus } from '@/server/queue';
+import { dispatchEventEntryNotification } from '@/server/notifications/dispatch';
+import { env } from '@/lib/env';
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string; code: string };
 
@@ -614,6 +616,168 @@ export async function adminDeleteOrganization(
 
     revalidatePath('/admin', 'layout');
     return { ok: true, data: { organizationId: organization.id } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+
+/* ===================================================================
+   EVENTS — contrôle plateforme
+   =================================================================== */
+
+const adminEventActionSchema = z.object({
+  eventId: z.string().uuid(),
+  action: z.enum(['start','pause','resume','wave','sold_out','end']),
+  count: z.number().int().min(1).max(200).optional(),
+});
+
+export async function adminEventAction(
+  input: z.input<typeof adminEventActionSchema>,
+): Promise<Result<{ status: string; issued?: number; notifications?: number }>> {
+  try {
+    const parsed = adminEventActionSchema.parse(input);
+    const admin = await assertPlatformAdmin();
+    const db = supabaseAdmin();
+
+    const { data: event } = await db
+      .from('event_campaigns')
+      .select('id, name, status, queue_id, organization_id, location_id, wave_size, locations(slug)')
+      .eq('id', parsed.eventId)
+      .maybeSingle();
+
+    if (!event) throw new AppError('not_found', 'Événement introuvable.', 404);
+    const location = Array.isArray(event.locations) ? event.locations[0] : event.locations;
+    const slug = location?.slug ?? '';
+
+    if (parsed.action === 'start' || parsed.action === 'resume') {
+      const { error } = await db.from('event_campaigns').update({
+        status: 'live',
+        started_at: parsed.action === 'start' ? new Date().toISOString() : undefined,
+        ended_at: null,
+      }).eq('id', event.id);
+      if (error) throw error;
+
+      await setQueueStatus({
+        queueId: event.queue_id,
+        status: 'open',
+        actorUserId: admin.id,
+        reason: null,
+      });
+
+      await audit({
+        organizationId: event.organization_id,
+        actor: 'platform_admin',
+        actorUserId: admin.id,
+        action: parsed.action === 'start' ? 'event.started_by_platform' : 'event.resumed_by_platform',
+        targetType: 'event',
+        targetId: event.id,
+      });
+
+      revalidatePath('/admin/evenements');
+      return { ok: true, data: { status: 'live' } };
+    }
+
+    if (parsed.action === 'pause') {
+      const { error } = await db.from('event_campaigns')
+        .update({ status: 'paused' })
+        .eq('id', event.id);
+      if (error) throw error;
+
+      await audit({
+        organizationId: event.organization_id,
+        actor: 'platform_admin',
+        actorUserId: admin.id,
+        action: 'event.paused_by_platform',
+        targetType: 'event',
+        targetId: event.id,
+      });
+
+      revalidatePath('/admin/evenements');
+      return { ok: true, data: { status: 'paused' } };
+    }
+
+    if (parsed.action === 'wave') {
+      if (event.status !== 'live') {
+        throw new AppError('invalid_state', 'L’événement doit être en direct pour appeler une vague.', 409);
+      }
+
+      const { data, error } = await db.rpc('issue_event_wave', {
+        p_event_id: event.id,
+        p_actor_user_id: admin.id,
+        p_count: parsed.count ?? event.wave_size,
+      });
+      if (error) throw error;
+
+      const rows = (data ?? []) as { entry_id: string; raw_token: string }[];
+      let sent = 0;
+
+      for (const row of rows) {
+        const summary = await dispatchEventEntryNotification(
+          row.entry_id,
+          'event_access',
+          `${env.siteUrl}/pass/${encodeURIComponent(row.raw_token)}`,
+        );
+        sent += summary.sent;
+      }
+
+      await propagate(event.queue_id);
+
+      await audit({
+        organizationId: event.organization_id,
+        actor: 'platform_admin',
+        actorUserId: admin.id,
+        action: 'event.wave_called_by_platform',
+        targetType: 'event',
+        targetId: event.id,
+        metadata: { issued: rows.length, notifications: sent },
+      });
+
+      revalidatePath('/admin/evenements');
+      return { ok: true, data: { status: 'live', issued: rows.length, notifications: sent } };
+    }
+
+    const reason = parsed.action === 'sold_out' ? 'sold_out' : 'ended';
+    const { data, error } = await db.rpc('close_event_campaign', {
+      p_event_id: event.id,
+      p_actor_user_id: admin.id,
+      p_reason: reason,
+    });
+    if (error) throw error;
+
+    const affected = (data ?? []) as { entry_id: string }[];
+    let sent = 0;
+    const kind = parsed.action === 'sold_out' ? 'event_sold_out' as const : 'event_ended' as const;
+
+    for (const row of affected) {
+      const summary = await dispatchEventEntryNotification(
+        row.entry_id,
+        kind,
+        slug ? `${env.siteUrl}/e/${slug}` : env.siteUrl,
+      );
+      sent += summary.sent;
+    }
+
+    await propagate(event.queue_id);
+
+    await audit({
+      organizationId: event.organization_id,
+      actor: 'platform_admin',
+      actorUserId: admin.id,
+      action: parsed.action === 'sold_out' ? 'event.sold_out_by_platform' : 'event.ended_by_platform',
+      targetType: 'event',
+      targetId: event.id,
+      metadata: { affected: affected.length, notifications: sent },
+    });
+
+    revalidatePath('/admin/evenements');
+    return {
+      ok: true,
+      data: {
+        status: parsed.action === 'sold_out' ? 'sold_out' : 'ended',
+        notifications: sent,
+      },
+    };
   } catch (error) {
     return fail(error);
   }
