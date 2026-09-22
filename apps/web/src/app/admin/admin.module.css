@@ -384,3 +384,76 @@
   .detailStats { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .detailHero { align-items:flex-start; flex-direction:column; }
 }
+
+
+.controlHero {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  gap:20px;
+  padding:26px;
+  border:1px solid var(--line);
+  border-radius:24px;
+  background:
+    radial-gradient(circle at 10% 0%,rgba(255,75,31,.11),transparent 35%),
+    var(--surface-raised);
+}
+.controlHero h1 {
+  margin-top:6px;
+  font-size:clamp(30px,4vw,52px);
+  line-height:.95;
+  letter-spacing:-.05em;
+}
+.controlHero p { margin-top:10px; color:var(--text-muted); font-size:13px; }
+.controlFilters { display:grid; grid-template-columns:minmax(190px,1fr) 170px auto; gap:8px; min-width:min(100%,520px); }
+
+.eventAdminGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.eventAdminCard {
+  padding:20px;
+  border-radius:20px;
+  background:var(--surface-raised);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow-1);
+}
+.eventAdminTop { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }
+.eventAdminTop h2 { margin-top:8px; font-size:22px; letter-spacing:-.03em; }
+.eventAdminTop p { margin-top:5px; color:var(--text-faint); font-size:11px; }
+.statusDot {
+  display:inline-block; width:8px; height:8px; border-radius:50%;
+  background:#69737f; margin-right:7px; vertical-align:1px;
+}
+.event_live { background:#1fa97a; box-shadow:0 0 14px rgba(31,169,122,.8); }
+.event_paused { background:#d9903a; }
+.event_sold_out { background:#a8453c; }
+.event_ended { background:#59616d; }
+.eventState { font-size:9px; font-weight:850; letter-spacing:.14em; text-transform:uppercase; color:var(--text-faint); }
+.eventAdminMetrics {
+  display:grid; grid-template-columns:repeat(4,1fr); gap:7px;
+  margin:18px 0 12px;
+}
+.eventAdminMetrics > div {
+  padding:12px; border-radius:13px;
+  background:var(--surface-sunken);
+  border:1px solid rgba(255,255,255,.04);
+}
+.eventAdminMetrics strong { display:block; font-size:23px; letter-spacing:-.04em; }
+.eventAdminMetrics span { display:block; margin-top:3px; color:var(--text-faint); font-size:8px; text-transform:uppercase; letter-spacing:.08em; }
+.eventAdminRules { display:flex; gap:7px; flex-wrap:wrap; }
+.eventAdminRules span {
+  padding:6px 9px; border-radius:8px; background:rgba(255,255,255,.035);
+  color:var(--text-muted); font-size:10px;
+}
+.eventAdminActions {
+  display:flex; gap:7px; flex-wrap:wrap;
+  margin-top:16px; padding-top:16px; border-top:1px solid var(--line);
+}
+
+@media (max-width: 1000px) {
+  .eventAdminGrid { grid-template-columns:1fr; }
+  .controlHero { align-items:flex-start; flex-direction:column; }
+  .controlFilters { width:100%; min-width:0; }
+}
+@media (max-width: 620px) {
+  .controlFilters { grid-template-columns:1fr; }
+  .eventAdminMetrics { grid-template-columns:1fr 1fr; }
+}
