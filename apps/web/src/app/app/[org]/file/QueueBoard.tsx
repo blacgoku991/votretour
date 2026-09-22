@@ -60,7 +60,11 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
   useEffect(() => {
     if (!queueId) return;
     const supabase = supabaseBrowser();
-    const channel = supabase
+
+    // Canal 1 — Postgres Changes, sous RLS. C'est la voie principale :
+    // le professionnel a le droit de voir les lignes de SA file, et les
+    // policies garantissent qu'il ne reçoit jamais celles d'une autre.
+    const changes = supabase
       .channel(`staff:${queueId}`)
       .on(
         'postgres_changes',
@@ -74,7 +78,22 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
       )
       .subscribe();
 
-    // Filet de sécurité : si le canal tombe, l'écran reste juste.
+    // Canal 2 — le même Broadcast que les clients, utilisé UNIQUEMENT
+    // comme signal « quelque chose a bougé ». On ne lit rien de sa
+    // charge utile : l'écran va rechercher l'instantané complet par
+    // l'action serveur authentifiée.
+    //
+    // Pourquoi deux canaux : si la réplication logique est coupée ou si
+    // les Postgres Changes sont indisponibles, un client qui appuie sur
+    // « Je suis de retour » doit quand même apparaître tout de suite au
+    // comptoir — c'est le moment où le professionnel en a besoin.
+    const signal = supabase
+      .channel(`queue:${queueId}`, { config: { broadcast: { self: false, ack: false } } })
+      .on('broadcast', { event: 'state' }, () => { void refreshRef.current(); })
+      .on('broadcast', { event: 'ticket' }, () => { void refreshRef.current(); })
+      .subscribe();
+
+    // Dernier filet : si les deux canaux tombent, l'écran reste juste.
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') void refreshRef.current();
     }, 20_000);
@@ -82,11 +101,14 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
       if (document.visibilityState === 'visible') void refreshRef.current();
     };
     document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', onVisible);
 
     return () => {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
-      void supabase.removeChannel(channel);
+      window.removeEventListener('online', onVisible);
+      void supabase.removeChannel(changes);
+      void supabase.removeChannel(signal);
     };
   }, [queueId]);
 
