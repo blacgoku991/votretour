@@ -2,6 +2,12 @@ name: Rangvia iOS + App Clip
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - claude/eloquent-davinci-062ay4
+    paths:
+      - 'ios/**'
+      - '.github/workflows/rangvia-ios.yml'
 
 jobs:
   build:
