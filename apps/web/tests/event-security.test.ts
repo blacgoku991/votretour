@@ -4,6 +4,8 @@ import {
   hashEventPassToken,
   signEventPassSlot,
   verifyEventPassSignature,
+  makeEventPassCookie,
+  verifyEventPassCookie,
 } from '@/lib/event-pass';
 
 describe('sécurité des laisser-passer Event', () => {
@@ -52,5 +54,25 @@ describe('sécurité des laisser-passer Event', () => {
     const signature = signEventPassSlot(hash, previous);
 
     expect(verifyEventPassSignature(hash, previous, signature, now)).toBe(true);
+  });
+
+  it('signe une session de pass courte sans réexposer le bearer', () => {
+    const now = Date.UTC(2026, 8, 23, 10, 0, 0);
+    const publicId = 'AbCdEfGh23456789';
+    const expiresAt = Math.floor(now / 1000) + 600;
+    const cookie = makeEventPassCookie(publicId, expiresAt);
+
+    expect(cookie).not.toContain('a'.repeat(32));
+    expect(verifyEventPassCookie(cookie, now)).toEqual({ publicId, expiresAt });
+  });
+
+  it('refuse un cookie de pass altéré ou expiré', () => {
+    const now = Date.UTC(2026, 8, 23, 10, 0, 0);
+    const publicId = 'AbCdEfGh23456789';
+    const expiresAt = Math.floor(now / 1000) + 60;
+    const cookie = makeEventPassCookie(publicId, expiresAt);
+
+    expect(verifyEventPassCookie(cookie + 'x', now)).toBeNull();
+    expect(verifyEventPassCookie(cookie, now + 61_000)).toBeNull();
   });
 });
