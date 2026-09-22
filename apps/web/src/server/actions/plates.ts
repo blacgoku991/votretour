@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { AppError, toAppError } from '@/lib/errors';
-import { assertOrgMembership } from '@/server/auth';
+import { assertPlatformAdmin } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { audit } from '@/server/audit';
 
@@ -33,7 +33,7 @@ export async function createPlate(
 ): Promise<PlateResult<{ code: string; id: string }>> {
   try {
     const parsed = createSchema.parse(input);
-    const { user } = await assertOrgMembership(parsed.organizationId, 'plates.manage');
+    const user = await assertPlatformAdmin();
     const db = supabaseAdmin();
 
     const { data: location } = await db
@@ -93,7 +93,7 @@ export async function updatePlate(
 ): Promise<PlateResult<{ plateId: string }>> {
   try {
     const parsed = updateSchema.parse(input);
-    const { user } = await assertOrgMembership(parsed.organizationId, 'plates.manage');
+    const user = await assertPlatformAdmin();
     const db = supabaseAdmin();
 
     const patch: Record<string, unknown> = {};
@@ -145,7 +145,7 @@ export async function requestPhysicalPlates(
 ): Promise<PlateResult<{ reference: string }>> {
   try {
     const parsed = orderSchema.parse(input);
-    const { user } = await assertOrgMembership(parsed.organizationId, 'plates.manage');
+    const user = await assertPlatformAdmin();
     const reference = `VT-${Date.now().toString(36).toUpperCase()}`;
 
     const { error } = await supabaseAdmin()
@@ -197,7 +197,7 @@ export async function recordPlateProgrammed(
 ): Promise<PlateResult<{ programmedAt: string; verified: boolean; locked: boolean }>> {
   try {
     const parsed = writeSchema.parse(input);
-    const { user } = await assertOrgMembership(parsed.organizationId, 'plates.manage');
+    const user = await assertPlatformAdmin();
     const db = supabaseAdmin();
 
     const { data, error } = await db.rpc('record_plate_write', {
