@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 const querySchema = z.object({
   entry: publicIdSchema,
-  source: z.enum(['notification', 'appclip_done', 'web_done']).catch('unknown'),
+  source: z.enum(['notification', 'appclip_done', 'web_done', 'unknown']).default('unknown'),
 });
 
 /**
