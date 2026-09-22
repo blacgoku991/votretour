@@ -97,7 +97,13 @@ begin
   from public.event_access_passes
   where queue_entry_id = v_entry1 and event_id = v_event;
 
-  if v_hash is null or length(v_hash) <> 64 or v_hash !~ '^[0-9a-f]{64}
+  if v_hash is null or length(v_hash) <> 64 or v_hash !~ '^[0-9a-f]{64}$' then
+    raise exception 'ÉCHEC: secret de pass Event mal stocké';
+  end if;
+  if to_jsonb(v_wave) ? 'raw_token' then
+    raise exception 'ÉCHEC: issue_event_wave expose encore un bearer brut';
+  end if;
+  raise notice '  ok  aucun bearer brut ne quitte PostgreSQL';
   if (select status::text from public.queue_entries where id = v_entry1) <> 'notified' then
     raise exception 'ÉCHEC: ticket appelé non marqué notified';
   end if;
