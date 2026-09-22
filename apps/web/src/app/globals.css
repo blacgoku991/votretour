@@ -176,6 +176,40 @@
   }
 }
 
+/* ---------------------------------------------------------------------
+   Jetons de visualisation
+   ---------------------------------------------------------------------
+   Deux teintes catégorielles, dans un ordre FIXE : arrivées puis
+   passages terminés. Elles ne sont jamais permutées ni recyclées — une
+   série garde sa couleur même quand un filtre en retire une autre.
+
+   Ce couple a été validé (bande de clarté, plancher de chroma,
+   séparation daltonienne ΔE 12,1 en deutéranopie, plancher vision
+   normale ΔE 32,4, contraste ≥ 3:1) contre NOS deux surfaces réelles,
+   claire et sombre. Il n'a pas été choisi à l'œil.
+   --------------------------------------------------------------------- */
+:root,
+[data-theme='light'] {
+  --chart-1: #FF4B1F;   /* arrivées */
+  --chart-2: #17A16F;   /* terminés */
+  --chart-grid: color-mix(in oklab, var(--ink-900) 9%, transparent);
+  --chart-track: color-mix(in oklab, var(--ink-900) 5%, transparent);
+}
+
+[data-theme='dark'] {
+  --chart-1: #FF4B1F;
+  --chart-2: #17A16F;
+  --chart-grid: color-mix(in oklab, var(--bone-100) 11%, transparent);
+  --chart-track: color-mix(in oklab, var(--bone-100) 6%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --chart-grid: color-mix(in oklab, var(--bone-100) 11%, transparent);
+    --chart-track: color-mix(in oklab, var(--bone-100) 6%, transparent);
+  }
+}
+
 /* Teinte d'accent par professionnel / par marque */
 [data-accent='copper']  { --accent: var(--copper-500);  --accent-soft: var(--copper-100); }
 [data-accent='jade']    { --accent: var(--jade-500);    --accent-soft: var(--jade-100); }

@@ -1,0 +1,70 @@
+.page { display: flex; flex-direction: column; gap: var(--sp-6); padding-top: var(--sp-5); }
+
+.actionsRow { padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--line); }
+
+.usage { display: flex; align-items: center; gap: var(--sp-3); min-width: 200px; }
+
+.usageTrack {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--chart-track);
+  overflow: hidden;
+}
+.usageFill {
+  display: block;
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+  transition: width var(--dur-3) var(--ease-slat);
+}
+.usageLabel { font-size: 0.8125rem; color: var(--text-muted); white-space: nowrap; }
+
+.plans {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+}
+
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+}
+.planCurrent { border-color: var(--accent); }
+
+.planHead { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+
+.planPrice { display: flex; align-items: baseline; gap: 4px; }
+.planAmount {
+  font-variation-settings: 'wdth' 110, 'wght' 780;
+  font-size: 1.75rem;
+  letter-spacing: -0.03em;
+}
+
+.planFeatures {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+/* Une petite latte en guise de puce : le motif du produit, partout. */
+.planFeatures li { display: flex; align-items: center; gap: 8px; }
+.planFeatures li::before {
+  content: '';
+  width: 10px; height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  flex: none;
+  opacity: 0.7;
+}
+
+.plan .btn { margin-top: auto; }

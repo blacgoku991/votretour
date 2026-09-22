@@ -1,0 +1,39 @@
+.page { display: flex; flex-direction: column; gap: var(--sp-6); padding-top: var(--sp-5); }
+
+/* Les filtres tiennent sur une seule ligne, au-dessus des graphiques. */
+.filters { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+
+.rangeGroup {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+}
+
+.rangeBtn {
+  padding: 6px 14px;
+  border-radius: var(--r-pill);
+  font-size: 0.8125rem;
+  font-variation-settings: 'wght' 620;
+  color: var(--text-muted);
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.rangeBtnActive { background: var(--surface-raised); color: var(--text); box-shadow: var(--shadow-1); }
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--sp-3);
+}
+
+.chartCard { padding: var(--sp-5); }
+
+.twoUp {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-6);
+}
+@media (min-width: 900px) {
+  .twoUp { grid-template-columns: 1fr 1fr; }
+}

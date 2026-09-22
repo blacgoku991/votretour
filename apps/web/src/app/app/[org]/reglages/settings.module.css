@@ -1,0 +1,30 @@
+.page { display: flex; flex-direction: column; gap: var(--sp-6); padding-top: var(--sp-5); }
+
+.hours { display: flex; flex-direction: column; }
+
+.hoursRow {
+  display: grid;
+  grid-template-columns: 100px 48px 1fr 1fr;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--line);
+}
+.hoursRow:last-child { border-bottom: 0; }
+.hoursRow .input { min-height: 40px; padding: 6px 10px; font-size: 0.875rem; }
+
+.dayName { font-variation-settings: 'wght' 620; font-size: 0.875rem; }
+
+@media (max-width: 560px) {
+  .hoursRow { grid-template-columns: 90px 48px 1fr 1fr; gap: var(--sp-2); }
+  .hoursRow .input { font-size: 0.75rem; padding: 6px; }
+}
+
+.addRow {
+  display: flex; gap: var(--sp-2); flex-wrap: wrap;
+  padding: var(--sp-4) var(--sp-5);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.addRow .input { flex: 2 1 180px; }
+.addRow .input[type='number'] { flex: 1 1 110px; }

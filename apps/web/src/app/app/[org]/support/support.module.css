@@ -1,0 +1,49 @@
+.page { display: flex; flex-direction: column; gap: var(--sp-6); padding-top: var(--sp-5); }
+
+.faq { display: flex; flex-direction: column; }
+
+.faqItem { border-bottom: 1px solid var(--line); }
+.faqItem:last-child { border-bottom: 0; }
+.faqItem summary {
+  padding: var(--sp-4) var(--sp-5);
+  cursor: pointer;
+  font-variation-settings: 'wght' 640;
+  font-size: 0.9375rem;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.faqItem summary::-webkit-details-marker { display: none; }
+/* Une latte en guise de marqueur : elle pivote à l'ouverture. */
+.faqItem summary::before {
+  content: '';
+  width: 12px; height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  flex: none;
+  transition: transform var(--dur-2) var(--ease-slat);
+}
+.faqItem[open] summary::before { transform: rotate(90deg); }
+.faqItem p {
+  padding: 0 var(--sp-5) var(--sp-4) calc(var(--sp-5) + 24px);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 68ch;
+}
+
+.formWrap { padding: var(--sp-5); }
+
+.ticket {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--line);
+}
+.ticket:last-child { border-bottom: 0; }
+.ticketText { min-width: 0; }
+.ticketSubject {
+  font-variation-settings: 'wght' 640; font-size: 0.9375rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}

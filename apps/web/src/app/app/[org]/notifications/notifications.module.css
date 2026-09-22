@@ -1,0 +1,43 @@
+.page { display: flex; flex-direction: column; gap: var(--sp-6); padding-top: var(--sp-5); }
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--sp-3);
+}
+
+.log { display: flex; flex-direction: column; }
+
+.logRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--line);
+}
+.logRow:last-child { border-bottom: 0; }
+
+.dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex: none;
+  margin-top: 6px;
+}
+.dotSent { background: var(--jade-500); }
+.dotFailed { background: var(--brique-500); }
+.dotSkipped { background: var(--text-faint); }
+
+.logText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.logTitle { font-variation-settings: 'wght' 640; font-size: 0.875rem; }
+.logBody {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 2px;
+}
+
+.logTime { flex: none; white-space: nowrap; padding-top: 2px; }
+
+@media (max-width: 620px) {
+  .logTime { display: none; }
+}

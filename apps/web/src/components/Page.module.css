@@ -1,0 +1,131 @@
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+.headerText { min-width: 0; }
+.headerText p { max-width: 62ch; margin-top: 4px; }
+.headerActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
+.section { display: flex; flex-direction: column; gap: var(--sp-3); }
+.sectionHead {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--sp-3); flex-wrap: wrap;
+}
+.sectionDesc { max-width: 60ch; margin-top: 3px; }
+.sectionBody {
+  display: flex; flex-direction: column;
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--line);
+}
+.row:last-child { border-bottom: 0; }
+.rowStacked { flex-direction: column; align-items: stretch; }
+.rowText { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rowText p:last-child { max-width: 56ch; }
+.rowLabel { font-variation-settings: 'wght' 640; font-size: 0.9375rem; line-height: 1.3; }
+.rowControl { flex: none; display: flex; align-items: center; gap: var(--sp-2); }
+.rowStacked .rowControl { flex: 1; }
+.rowControl .input, .rowControl .select { min-width: 180px; }
+
+@media (max-width: 620px) {
+  .row { flex-direction: column; align-items: stretch; }
+  .rowControl { width: 100%; }
+  .rowControl .input, .rowControl .select { min-width: 0; width: 100%; }
+  .rowControl > * { flex: 1; }
+}
+
+/* ---------------------------------------------------------------------
+   Interrupteur : une latte qui glisse d'un cran
+   --------------------------------------------------------------------- */
+.toggle {
+  width: 48px; height: 28px;
+  flex: none;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-strong);
+  padding: 2px;
+  display: flex;
+  transition: background var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out);
+}
+.toggleOn { background: var(--accent); border-color: transparent; }
+.toggle:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.toggleKnob {
+  width: 22px; height: 22px;
+  border-radius: 7px;
+  background: var(--text-muted);
+  transition: transform var(--dur-3) var(--ease-slat), background var(--dur-2) var(--ease-out);
+}
+.toggleOn .toggleKnob { transform: translateX(20px); background: #FFFFFF; }
+
+/* ---------------------------------------------------------------------
+   Barre de sauvegarde
+   --------------------------------------------------------------------- */
+.saveBar {
+  position: sticky;
+  bottom: var(--sp-3);
+  z-index: 30;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-4); flex-wrap: wrap;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-field);
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-lift);
+  animation: fade-in var(--dur-2) var(--ease-out);
+}
+.saveBar .btn--quiet { color: color-mix(in oklab, var(--text-inverse) 70%, transparent); }
+.saveError { color: #F0958C; font-size: 0.875rem; font-variation-settings: 'wght' 620; }
+.saveOk { font-size: 0.875rem; font-variation-settings: 'wght' 620; }
+
+/* ---------------------------------------------------------------------
+   Statistiques
+   --------------------------------------------------------------------- */
+.stat {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  position: relative;
+  overflow: hidden;
+}
+.statAccent::before {
+  content: '';
+  position: absolute; left: 0; top: var(--sp-4); bottom: var(--sp-4);
+  width: 3px; border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+.statValue {
+  /* Chiffres PROPORTIONNELS : à cette taille, le tabulaire donne à
+     chaque chiffre la largeur d'un zéro et « 121 » paraît disloqué.
+     Le tabulaire reste réservé aux colonnes de chiffres alignées. */
+  font-variant-numeric: proportional-nums;
+  font-variation-settings: 'wdth' 106, 'wght' 780;
+  font-size: clamp(1.6rem, 1.3rem + 1.2vw, 2.1rem);
+  letter-spacing: -0.028em;
+  line-height: 1.05;
+}
+
+/* ---------------------------------------------------------------------
+   État vide
+   --------------------------------------------------------------------- */
+.empty {
+  display: flex; flex-direction: column; align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-9) var(--sp-5);
+  text-align: center;
+}
+.emptyMark { color: var(--text-faint); margin-bottom: var(--sp-2); }
+.empty p:last-of-type { max-width: 44ch; }
