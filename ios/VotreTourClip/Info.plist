@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>fr_FR</string>
+  <key>CFBundleDisplayName</key>
+  <string>VotreTour</string>
+  <key>CFBundleExecutable</key>
+  <string>$(EXECUTABLE_NAME)</string>
+  <key>CFBundleIdentifier</key>
+  <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>$(PRODUCT_NAME)</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$(MARKETING_VERSION)</string>
+  <key>CFBundleVersion</key>
+  <string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>LSRequiresIPhoneOS</key>
+  <true/>
+  <key>UILaunchScreen</key>
+  <dict>
+    <key>UIColorName</key>
+    <string>LaunchBackground</string>
+  </dict>
+  <key>UIApplicationSceneManifest</key>
+  <dict>
+    <key>UIApplicationSupportsMultipleScenes</key>
+    <false/>
+  </dict>
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+  </array>
+  <key>UIUserInterfaceStyle</key>
+  <string>Dark</string>
+
+  <!-- ============================================================
+       NSAppClip : les capacités demandées par l'App Clip.
+
+       NSAppClipRequestEphemeralUserNotification = YES autorise l'App
+       Clip à recevoir des notifications pendant 8 HEURES après chaque
+       lancement, SANS alerte de permission. La carte App Clip en
+       informe le client, qui peut le refuser d'un geste — c'est
+       pourquoi le code vérifie toujours authorizationStatus avant de
+       promettre une notification à l'écran.
+
+       NSAppClipRequestLocationConfirmation reste à NO : nous n'avons
+       aucun besoin de la position du client pour tenir une file.
+       ============================================================ -->
+  <key>NSAppClip</key>
+  <dict>
+    <key>NSAppClipRequestEphemeralUserNotification</key>
+    <true/>
+    <key>NSAppClipRequestLocationConfirmation</key>
+    <false/>
+  </dict>
+
+  <!-- Configuration injectée depuis Config/Local.xcconfig -->
+  <key>VTAPIBaseURL</key>
+  <string>$(VT_API_BASE_URL)</string>
+  <key>VTAssociatedDomain</key>
+  <string>$(VT_ASSOCIATED_DOMAIN)</string>
+  <key>VTAppGroup</key>
+  <string>$(VT_APP_GROUP)</string>
+  <key>VTAPNSEnvironment</key>
+  <string>$(VT_APNS_ENVIRONMENT)</string>
+  <key>VTKeychainGroup</key>
+  <string>$(AppIdentifierPrefix)$(VT_APP_GROUP)</string>
+
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
+</dict>
+</plist>

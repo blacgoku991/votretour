@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Le domaine sert à la fois les liens universels de l'application
+       et les expériences App Clip. Le fichier apple-app-site-association
+       doit déclarer les sections "applinks" ET "appclips". -->
+  <key>com.apple.developer.associated-domains</key>
+  <array>
+    <string>applinks:$(VT_ASSOCIATED_DOMAIN)</string>
+    <string>appclips:$(VT_ASSOCIATED_DOMAIN)</string>
+  </array>
+
+  <!-- Notifications distantes. La valeur suit la configuration de build :
+       development en Debug, production en Release. -->
+  <key>aps-environment</key>
+  <string>$(VT_APNS_ENVIRONMENT)</string>
+
+  <!-- Conteneur partagé avec l'App Clip : c'est ce qui permet de
+       retrouver le ticket ouvert après installation de l'application. -->
+  <key>com.apple.security.application-groups</key>
+  <array>
+    <string>$(VT_APP_GROUP)</string>
+  </array>
+
+  <!-- Trousseau partagé : le jeton de session survit au passage de
+       l'App Clip à l'application. -->
+  <key>keychain-access-groups</key>
+  <array>
+    <string>$(AppIdentifierPrefix)$(VT_APP_GROUP)</string>
+  </array>
+</dict>
+</plist>

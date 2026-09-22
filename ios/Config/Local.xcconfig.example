@@ -1,0 +1,20 @@
+// =====================================================================
+// Copiez ce fichier en Config/Local.xcconfig puis renseignez vos valeurs.
+// Ce fichier est ignoré par git : il contient votre identifiant d'équipe.
+// =====================================================================
+
+// Identifiant d'équipe Apple Developer (Membership -> Team ID).
+DEVELOPMENT_TEAM = ABCDE12345
+
+// Identifiants d'application. Le bundle de l'App Clip DOIT être préfixé
+// par celui de l'application : <app>.Clip
+VT_BUNDLE_ID = app.votretour.ios
+VT_CLIP_BUNDLE_ID = app.votretour.ios.Clip
+
+// Domaine servant l'expérience et le fichier apple-app-site-association.
+VT_ASSOCIATED_DOMAIN = votretour.app
+VT_API_BASE_URL = https://votretour.app
+
+// Groupe d'application partagé entre l'app et l'App Clip : permet à
+// l'application complète de retrouver le ticket ouvert dans l'App Clip.
+VT_APP_GROUP = group.app.votretour

@@ -25,3 +25,4 @@ ios/Secrets/*.p8
 .idea/
 .vscode/*
 !.vscode/extensions.json
+ios/Config/Local.xcconfig

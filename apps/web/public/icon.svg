@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#0B0E13"/>
+  <!-- le rail -->
+  <rect x="112" y="128" width="16" height="256" rx="8" fill="#FAF9F6" opacity="0.34"/>
+  <!-- les lattes : elles raccourcissent, la file avance -->
+  <rect x="164" y="140" width="236" height="56" rx="28" fill="#FAF9F6" opacity="0.26"/>
+  <rect x="164" y="228" width="170" height="56" rx="28" fill="#FAF9F6" opacity="0.48"/>
+  <rect x="164" y="316" width="112" height="56" rx="28" fill="#FF4B1F"/>
+  <!-- les encoches -->
+  <rect x="128" y="160" width="40" height="14" rx="7" fill="#FAF9F6" opacity="0.34"/>
+  <rect x="128" y="248" width="40" height="14" rx="7" fill="#FAF9F6" opacity="0.34"/>
+  <rect x="128" y="336" width="40" height="16" rx="8" fill="#FF4B1F"/>
+</svg>

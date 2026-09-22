@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Rattache l'App Clip à son application parente. Sans cette clé,
+       Xcode refuse de l'embarquer et App Store Connect le rejette. -->
+  <key>com.apple.developer.parent-application-identifiers</key>
+  <array>
+    <string>$(AppIdentifierPrefix)$(VT_BUNDLE_ID)</string>
+  </array>
+
+  <!-- Le domaine qui sert les expériences App Clip avancées, une par
+       établissement (https://domaine/e/{code}). -->
+  <key>com.apple.developer.associated-domains</key>
+  <array>
+    <string>appclips:$(VT_ASSOCIATED_DOMAIN)</string>
+  </array>
+
+  <!-- Notifications éphémères : 8 heures après chaque lancement. -->
+  <key>aps-environment</key>
+  <string>$(VT_APNS_ENVIRONMENT)</string>
+
+  <!-- Conteneur et trousseau partagés avec l'application complète. -->
+  <key>com.apple.security.application-groups</key>
+  <array>
+    <string>$(VT_APP_GROUP)</string>
+  </array>
+  <key>keychain-access-groups</key>
+  <array>
+    <string>$(AppIdentifierPrefix)$(VT_APP_GROUP)</string>
+  </array>
+</dict>
+</plist>

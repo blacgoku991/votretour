@@ -1,0 +1,119 @@
+# =====================================================================
+# VotreTour — projet iOS (XcodeGen)
+# ---------------------------------------------------------------------
+# UNE application, UN App Clip, N établissements.
+#
+# L'App Clip n'est pas dupliqué par commerce : c'est l'URL d'invocation
+# (https://votre-domaine/e/{code}) qui détermine l'établissement. Chaque
+# commerce est déclaré comme « expérience App Clip avancée » dans App
+# Store Connect, et la même URL sert de target-content-id dans les
+# notifications, ce qui garantit qu'un push d'un commerce ne peut pas
+# s'afficher dans l'instance d'un autre.
+#
+# Génération du projet :
+#     brew install xcodegen
+#     cd ios && xcodegen generate && open VotreTour.xcodeproj
+#
+# Les valeurs ci-dessous (identifiants, équipe, domaine) sont surchargées
+# par ios/Config/Local.xcconfig — voir ios/README.md.
+# =====================================================================
+
+name: VotreTour
+options:
+  bundleIdPrefix: app.votretour
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  xcodeVersion: "15.0"
+  groupSortPosition: top
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_STRICT_CONCURRENCY: minimal
+    CODE_SIGN_STYLE: Automatic
+    # Surchargés par Config/Local.xcconfig
+    DEVELOPMENT_TEAM: ""
+    VT_BUNDLE_ID: app.votretour.ios
+    VT_CLIP_BUNDLE_ID: app.votretour.ios.Clip
+    VT_API_BASE_URL: https://votretour.app
+    VT_ASSOCIATED_DOMAIN: votretour.app
+    VT_APP_GROUP: group.app.votretour
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+  configs:
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+      # En développement, l'App Clip parle au serveur APNs bac à sable.
+      VT_APNS_ENVIRONMENT: development
+    Release:
+      VT_APNS_ENVIRONMENT: production
+
+configFiles:
+  Debug: Config/Local.xcconfig
+  Release: Config/Local.xcconfig
+
+# ---------------------------------------------------------------------
+# Sources partagées entre l'application et l'App Clip
+# ---------------------------------------------------------------------
+# Un groupe de sources commun plutôt qu'un framework : cela évite
+# d'embarquer un binaire dynamique supplémentaire dans l'App Clip, dont
+# la taille est plafonnée par Apple.
+targetTemplates:
+  SharedSources:
+    sources:
+      - path: VotreTourKit
+        name: VotreTourKit
+
+targets:
+  # -------------------------------------------------------------------
+  # Application complète
+  # -------------------------------------------------------------------
+  VotreTour:
+    type: application
+    platform: iOS
+    templates: [SharedSources]
+    sources:
+      - path: VotreTour
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(VT_BUNDLE_ID)
+        PRODUCT_NAME: VotreTour
+        INFOPLIST_FILE: VotreTour/Info.plist
+        CODE_SIGN_ENTITLEMENTS: VotreTour/VotreTour.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_PREVIEWS: YES
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) FULL_APP
+    dependencies:
+      # Embarque l'App Clip dans l'application. Vérifiez après génération
+      # que la phase « Embed App Clips » existe bien dans Xcode.
+      - target: VotreTourClip
+        embed: true
+        codeSign: true
+
+  # -------------------------------------------------------------------
+  # App Clip
+  # -------------------------------------------------------------------
+  VotreTourClip:
+    type: application.on-demand-install-capable
+    platform: iOS
+    templates: [SharedSources]
+    sources:
+      - path: VotreTourClip
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(VT_CLIP_BUNDLE_ID)
+        PRODUCT_NAME: VotreTourClip
+        INFOPLIST_FILE: VotreTourClip/Info.plist
+        CODE_SIGN_ENTITLEMENTS: VotreTourClip/VotreTourClip.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_PREVIEWS: YES
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) APP_CLIP

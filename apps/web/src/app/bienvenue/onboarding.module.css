@@ -1,0 +1,180 @@
+.screen {
+  min-height: 100dvh;
+  display: grid;
+  place-items: start center;
+  padding: var(--sp-7) var(--sp-5) var(--sp-9);
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.rails {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px var(--step));
+  mask-image: radial-gradient(130% 60% at 50% 0%, #000 0%, transparent 72%);
+}
+
+.panel {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.head { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* La progression est dessinée comme la file : des lattes qui se
+   remplissent, une par étape franchie. */
+.progress { display: flex; gap: 6px; }
+
+.progressSlat {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  transition: background var(--dur-3) var(--ease-slat), border-color var(--dur-3) var(--ease-slat);
+}
+.progressSlatDone { background: var(--accent); border-color: transparent; }
+
+.card {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  padding: var(--sp-6);
+  box-shadow: var(--shadow-2);
+}
+
+.grid2 { display: grid; grid-template-columns: 1fr; gap: var(--sp-3); }
+@media (min-width: 520px) { .grid2 { grid-template-columns: 2fr 1fr; } }
+
+.staffRow { display: flex; gap: var(--sp-2); align-items: center; }
+.staffRow .input { flex: 1; }
+
+.nav { display: flex; gap: var(--sp-2); }
+
+/* ---------------------------------------------------------------------
+   Choix du mode de file
+   --------------------------------------------------------------------- */
+.modeCard {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border-radius: var(--r-field);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  text-align: left;
+  transition: border-color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
+}
+.modeCard:hover { border-color: var(--text-muted); }
+.modeCardActive {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 8%, var(--surface));
+}
+
+.modeMark {
+  flex: none;
+  width: 48px; height: 48px;
+  display: grid; place-items: center;
+  border-radius: 12px;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+.modeCardActive .modeMark { background: var(--accent-soft); color: var(--accent); }
+
+.modeText { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+/* ---------------------------------------------------------------------
+   Horaires
+   --------------------------------------------------------------------- */
+.hoursRow {
+  display: grid;
+  grid-template-columns: 92px auto 1fr 1fr;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.hoursRow .input { min-height: 40px; padding: 6px 10px; font-size: 0.875rem; }
+
+.dayName { font-variation-settings: 'wght' 620; font-size: 0.875rem; }
+
+.closedToggle {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.8125rem; color: var(--text-muted);
+  cursor: pointer;
+}
+.closedToggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+
+@media (max-width: 520px) {
+  .hoursRow { grid-template-columns: 78px auto; }
+  .hoursRow .input { grid-column: span 1; }
+}
+
+/* ---------------------------------------------------------------------
+   Aide dépliable
+   --------------------------------------------------------------------- */
+.help {
+  border: 1px solid var(--line);
+  border-radius: var(--r-field);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+.help summary {
+  cursor: pointer;
+  font-variation-settings: 'wght' 640;
+  color: var(--text);
+  list-style: none;
+}
+.help summary::-webkit-details-marker { display: none; }
+.help summary::before { content: '↓ '; color: var(--accent); }
+.help[open] summary::before { content: '↑ '; }
+.help ol { margin: var(--sp-3) 0 var(--sp-2); padding-left: var(--sp-5); line-height: 1.7; }
+
+/* ---------------------------------------------------------------------
+   Écran final
+   --------------------------------------------------------------------- */
+.readyCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  padding: var(--sp-7) var(--sp-6);
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lift);
+}
+
+.qrRow {
+  display: flex;
+  gap: var(--sp-4);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.qrFrame {
+  width: 150px; height: 150px;
+  padding: var(--sp-3);
+  border-radius: var(--r-field);
+  background: #FFFFFF;
+  border: 1px solid var(--line);
+  flex: none;
+  display: grid; place-items: center;
+}
+.qrFrame img { width: 100%; height: 100%; }
+
+.url {
+  display: block;
+  padding: var(--sp-3);
+  border-radius: var(--r-field);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.8125rem;
+  word-break: break-all;
+  line-height: 1.5;
+}
