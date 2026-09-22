@@ -172,12 +172,9 @@ begin
   perform 1 from public.queues where id = v_event.queue_id for update;
   v_limit := least(greatest(coalesce(p_count, v_event.wave_size), 1), 200);
 
-  -- Expire d'abord les anciens laisser-passer non utilisés.
-  update public.event_access_passes
-     set status = 'expired'
-   where event_id = v_event.id
-     and status = 'issued'
-     and grace_until < now();
+  -- Avant une nouvelle vague, libère immédiatement les accès expirés
+  -- et leurs tickets. La fonction est idempotente et verrouillée.
+  perform public.expire_event_passes();
 
   for v_entry in
     select e.*
@@ -275,7 +272,29 @@ begin
       update public.event_access_passes
          set status = 'expired'
        where id = v_pass.id;
+
+      select * into v_entry
+      from public.queue_entries
+      where id = v_pass.queue_entry_id
+      for update;
+
+      if found and public.entry_is_active(v_entry.status) then
+        v_entry := internal.apply_transition(
+          v_entry.id,
+          'absent',
+          'system',
+          null,
+          null,
+          'event_access_expired',
+          jsonb_build_object(
+            'eventId', v_pass.event_id,
+            'passPublicId', v_pass.public_id
+          )
+        );
+        perform public.recompute_queue_positions(v_event.queue_id);
+      end if;
     end if;
+
     return jsonb_build_object(
       'status','invalid',
       'eventId',v_pass.event_id,
