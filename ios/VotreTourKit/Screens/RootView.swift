@@ -13,6 +13,7 @@ public struct RootView: View {
     // observe un objet qu'elle ne possède pas.
     @ObservedObject private var notifications = NotificationManager.shared
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
 
     /// URL d'invocation initiale, si elle est déjà connue au lancement.
     private let initialURL: URL?
@@ -50,11 +51,21 @@ public struct RootView: View {
         }
         .onChange(of: scenePhase) { phase in
             guard phase == .active else { return }
-            Task { await model.refresh() }
+            Task {
+                await model.refresh()
+                await openPendingReviewIfNeeded()
+            }
+        }
+        .onChange(of: notifications.pendingAutoOpenReviewURL) { _ in
+            Task { await openPendingReviewIfNeeded() }
         }
         .sheet(
             isPresented: Binding(
-                get: { notifications.pendingReviewURL != nil && model.phase != .done },
+                get: {
+                    notifications.pendingReviewURL != nil
+                    && notifications.pendingAutoOpenReviewURL == nil
+                    && model.phase != .done
+                },
                 set: { presented in
                     if !presented { notifications.pendingReviewURL = nil }
                 }
@@ -64,6 +75,20 @@ public struct RootView: View {
                 ReviewPromptView(url: reviewURL)
             }
         }
+    }
+
+    @MainActor
+    private func openPendingReviewIfNeeded() async {
+        guard scenePhase == .active,
+              let url = notifications.pendingAutoOpenReviewURL else { return }
+
+        // Laisser le temps à l'App Clip de terminer son réveil avant
+        // d'ouvrir Safari/Google Maps. Cela évite la fermeture brutale
+        // observée sous TestFlight.
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        openURL(url)
+        notifications.pendingAutoOpenReviewURL = nil
+        notifications.pendingReviewURL = nil
     }
 
     @ViewBuilder
