@@ -97,6 +97,20 @@ export function AdminShell({
           <span>Super Admin</span>
           <Link href="/app" className="btn btn--ghost btn--sm">Espace</Link>
         </header>
+
+        <nav className={styles.mobileAdminNav} aria-label="Navigation super admin mobile">
+          {GROUPS.flatMap((group) => group.items).map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`${styles.mobileAdminLink} ${active(item.href) ? styles.mobileAdminLinkActive : ''}`}
+            >
+              <span>{item.icon}</span>
+              <span>{item.label}</span>
+            </Link>
+          ))}
+        </nav>
+
         <main className={styles.adminMain}>{children}</main>
       </div>
     </div>
