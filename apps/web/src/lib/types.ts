@@ -17,7 +17,8 @@ export type ClientPlatform = 'web' | 'ios_appclip' | 'ios_app' | 'android_web' |
 export type NotificationChannel = 'web_push' | 'apns_appclip' | 'apns_app' | 'fcm';
 export type NotificationKind =
   | 'ahead_two' | 'ahead_one' | 'your_turn' | 'visit_completed'
-  | 'removed' | 'queue_closed' | 'custom';
+  | 'removed' | 'queue_closed' | 'event_access' | 'event_sold_out'
+  | 'event_ended' | 'custom';
 export type PlateKind = 'nfc' | 'qr' | 'both';
 export type Accent = 'signal' | 'copper' | 'jade' | 'cobalt' | 'brique' | 'ardoise';
 
