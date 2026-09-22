@@ -155,20 +155,18 @@ begin
    where id = v_event.id
   returning last_ticket_number into v_number;
 
-  update public.queue_entries
-     set metadata = coalesce(metadata, '{}'::jsonb)
-       || jsonb_build_object(
-            'eventId', v_event.id,
-            'eventTicketNumber', v_number
-          )
-   where id = new.id;
+  new.metadata := coalesce(new.metadata, '{}'::jsonb)
+    || jsonb_build_object(
+         'eventId', v_event.id,
+         'eventTicketNumber', v_number
+       );
 
   return new;
 end;
-$$;
+$;
 
 create trigger queue_entries_event_ticket_number
-  after insert on public.queue_entries
+  before insert on public.queue_entries
   for each row execute function internal.assign_event_ticket_number();
 
 -- Sérialisation client/pro : expose uniquement le numéro humain Event,
