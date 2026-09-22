@@ -19,6 +19,7 @@ create table if not exists public.event_campaigns (
   pass_valid_minutes  int not null default 10 check (pass_valid_minutes between 1 and 120),
   grace_minutes       int not null default 5 check (grace_minutes between 0 and 60),
   public_note         text check (public_note is null or length(public_note) <= 500),
+  last_ticket_number  int not null default 0 check (last_ticket_number >= 0),
   created_by          uuid references public.profiles(id) on delete set null,
   started_at          timestamptz,
   ended_at            timestamptz,
@@ -125,6 +126,101 @@ create trigger event_access_passes_tenant_guard
   before insert or update of event_id, organization_id, location_id, queue_entry_id
   on public.event_access_passes
   for each row execute function internal.assert_event_pass_consistency();
+
+-- Numéro humain stable de file pour l'Event : A-001, A-002…
+-- Attribution transactionnelle : deux arrivées simultanées ne peuvent
+-- jamais recevoir le même numéro.
+create or replace function internal.assign_event_ticket_number()
+returns trigger
+language plpgsql
+as $
+declare
+  v_event public.event_campaigns;
+  v_number int;
+begin
+  select * into v_event
+  from public.event_campaigns
+  where queue_id = new.queue_id
+    and status in ('live','paused')
+  order by started_at desc nulls last, created_at desc
+  limit 1
+  for update;
+
+  if not found then
+    return new;
+  end if;
+
+  update public.event_campaigns
+     set last_ticket_number = last_ticket_number + 1
+   where id = v_event.id
+  returning last_ticket_number into v_number;
+
+  update public.queue_entries
+     set metadata = coalesce(metadata, '{}'::jsonb)
+       || jsonb_build_object(
+            'eventId', v_event.id,
+            'eventTicketNumber', v_number
+          )
+   where id = new.id;
+
+  return new;
+end;
+$;
+
+create trigger queue_entries_event_ticket_number
+  after insert on public.queue_entries
+  for each row execute function internal.assign_event_ticket_number();
+
+-- Sérialisation client/pro : expose uniquement le numéro humain Event,
+-- jamais le bearer secret du laisser-passer.
+create or replace function internal.entry_json_client(e public.queue_entries)
+returns jsonb
+language sql
+stable
+as $
+  select jsonb_build_object(
+    'id',          e.public_id,
+    'name',        e.client_name,
+    'status',      e.status,
+    'peopleAhead', e.people_ahead,
+    'joinedAt',    e.joined_at,
+    'calledAt',    e.called_at,
+    'returningAt', e.returning_at,
+    'serviceStartedAt', e.service_started_at,
+    'completedAt', e.completed_at,
+    'staffName',   (select s.display_name from public.staff s where s.id = e.staff_id),
+    'eventId',     e.metadata ->> 'eventId',
+    'eventTicketNumber', nullif(e.metadata ->> 'eventTicketNumber', '')::int
+  );
+$;
+
+create or replace function internal.entry_json_staff(e public.queue_entries)
+returns jsonb
+language sql
+stable
+as $
+  select jsonb_build_object(
+    'id',            e.public_id,
+    'name',          e.client_name,
+    'status',        e.status,
+    'peopleAhead',   e.people_ahead,
+    'staffId',       e.staff_id,
+    'serviceId',     e.service_id,
+    'source',        e.source,
+    'note',          e.staff_note,
+    'rejoinCount',   e.rejoin_count,
+    'joinedAt',      e.joined_at,
+    'calledAt',      e.called_at,
+    'returningAt',   e.returning_at,
+    'presentAt',     e.present_at,
+    'serviceStartedAt', e.service_started_at,
+    'completedAt',   e.completed_at,
+    'absentAt',      e.absent_at,
+    'notified',      e.notification_status,
+    'eventId',       e.metadata ->> 'eventId',
+    'eventTicketNumber', nullif(e.metadata ->> 'eventTicketNumber', '')::int
+  );
+$;
 
 alter table public.event_campaigns enable row level security;
 alter table public.event_access_passes enable row level security;
