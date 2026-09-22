@@ -782,3 +782,80 @@ export async function adminEventAction(
     return fail(error);
   }
 }
+
+
+const adminCreateOrganizationSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  activity: z.enum([
+    'barber','hair_salon','nail_bar','beauty','phone_repair','garage',
+    'auto_center','shop','aftersales','restaurant','counter',
+    'admin_service','health','event','other',
+  ]).default('other'),
+  locationName: z.string().trim().min(1).max(120),
+  queueMode: z.enum(['shared','per_staff']).default('shared'),
+  planCode: z.enum(['starter','pro','business']).default('starter'),
+});
+
+/**
+ * Création d'une organisation complète depuis la plateforme.
+ *
+ * Le super-admin devient propriétaire initial afin que l'organisation
+ * soit immédiatement administrable. Il pourra ensuite inviter/transférer
+ * l'accès au client depuis l'espace organisation.
+ */
+export async function adminCreateOrganization(
+  input: z.input<typeof adminCreateOrganizationSchema>,
+): Promise<Result<{ organizationId: string; slug: string }>> {
+  try {
+    const parsed = adminCreateOrganizationSchema.parse(input);
+    const admin = await assertPlatformAdmin();
+    const db = supabaseAdmin();
+
+    const { data, error } = await db.rpc('provision_organization', {
+      p_user_id: admin.id,
+      p_org_name: parsed.name,
+      p_activity: parsed.activity,
+      p_location_name: parsed.locationName,
+      p_queue_mode: parsed.queueMode,
+      p_plan_code: parsed.planCode,
+    });
+    if (error || !data) throw error ?? new Error('Création impossible.');
+
+    const result = data as {
+      organization?: { id?: string; slug?: string; name?: string };
+      location?: { id?: string };
+      queue?: { id?: string };
+      plate?: { id?: string };
+    };
+    const organizationId = result.organization?.id;
+    const slug = result.organization?.slug;
+
+    if (!organizationId || !slug) {
+      throw new AppError('internal', 'Organisation créée mais réponse incomplète.', 500);
+    }
+
+    await audit({
+      organizationId,
+      actor: 'platform_admin',
+      actorUserId: admin.id,
+      action: 'organization.created_by_platform',
+      targetType: 'organization',
+      targetId: organizationId,
+      metadata: {
+        name: parsed.name,
+        activity: parsed.activity,
+        locationName: parsed.locationName,
+        queueMode: parsed.queueMode,
+        planCode: parsed.planCode,
+        locationId: result.location?.id ?? null,
+        queueId: result.queue?.id ?? null,
+        plateId: result.plate?.id ?? null,
+      },
+    });
+
+    revalidatePath('/admin', 'layout');
+    return { ok: true, data: { organizationId, slug } };
+  } catch (error) {
+    return fail(error);
+  }
+}
