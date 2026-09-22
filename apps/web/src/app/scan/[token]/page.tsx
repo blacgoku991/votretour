@@ -51,10 +51,9 @@ export default async function ScanPage({
 
   return (
     <ScanPassCard
-      passId={passId}
+      passId={pass.public_id}
       slot={slot}
       signature={sig}
-      passId={pass.public_id}
       passStatus={expired && pass.status === 'issued' ? 'expired' : pass.status}
       signatureValid={signatureValid}
       clientName={entry?.client_name ?? null}
