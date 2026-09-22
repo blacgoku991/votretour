@@ -4,6 +4,7 @@ import { PageHeader, Section, EmptyState } from '@/components/Page';
 import { formatDate, formatNumber, relativeTime } from '@/lib/format';
 import { ACTIVITY_LABEL } from '@/lib/copy';
 import { OrganizationActions } from './OrganizationActions';
+import { CreateOrganizationButton } from './CreateOrganizationButton';
 import styles from '../admin.module.css';
 
 export const metadata: Metadata = { title: 'Établissements', robots: { index: false } };
@@ -57,7 +58,9 @@ export default async function AdminOrganizationsPage({
         title="Établissements"
         description={`${formatNumber(organizations?.length ?? 0)} organisations`}
         actions={
-          <form className="row g2" method="get">
+          <div className="row g2 wrap">
+            <CreateOrganizationButton />
+            <form className="row g2" method="get">
             <input className="input" name="q" defaultValue={q ?? ''}
               placeholder="Rechercher" aria-label="Rechercher une organisation" />
             <select className="select" name="etat" defaultValue={etat ?? ''} aria-label="État">
@@ -65,8 +68,9 @@ export default async function AdminOrganizationsPage({
               <option value="actifs">Actifs</option>
               <option value="suspendus">Suspendus</option>
             </select>
-            <button type="submit" className="btn btn--solid btn--sm">Filtrer</button>
-          </form>
+              <button type="submit" className="btn btn--solid btn--sm">Filtrer</button>
+            </form>
+          </div>
         }
       />
 
