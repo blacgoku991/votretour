@@ -25,7 +25,6 @@ declare
   v_entry2 uuid;
   v_entry3 uuid;
   v_wave record;
-  v_token text;
   v_hash text;
   v_pass uuid;
   v_res jsonb;
@@ -92,22 +91,94 @@ begin
     raise exception 'ÉCHEC: la première vague n''a pas appelé la tête de file';
   end if;
 
-  v_token := v_wave.raw_token;
-  if length(v_token) <> 64 or v_token !~ '^[0-9a-f]{64}$' then
-    raise exception 'ÉCHEC: bearer Event insuffisamment aléatoire';
-  end if;
-
+  -- La RPC ne renvoie jamais de bearer brut. Seul un hash aléatoire de
+  -- 256 bits reste en base et les liens d'accès sont signés côté serveur.
   select id, token_hash into v_pass, v_hash
   from public.event_access_passes
   where queue_entry_id = v_entry1 and event_id = v_event;
 
-  if v_hash = v_token then
-    raise exception 'ÉCHEC: bearer Event stocké en clair';
+  if v_hash is null or length(v_hash) <> 64 or v_hash !~ '^[0-9a-f]{64}
+  if (select status::text from public.queue_entries where id = v_entry1) <> 'notified' then
+    raise exception 'ÉCHEC: ticket appelé non marqué notified';
   end if;
-  if v_hash <> encode(extensions.digest(v_token, 'sha256'), 'hex') then
-    raise exception 'ÉCHEC: hash du bearer Event incorrect';
+
+  -- Rejouer une vague ne doit pas émettre un second pass au même client.
+  select * into v_wave from public.issue_event_wave(v_event, v_owner, 1);
+  if v_wave.entry_id is distinct from v_entry2 then
+    raise exception 'ÉCHEC: second appel n''a pas sauté le pass déjà actif';
   end if;
-  raise notice '  ok  bearer 256 bits stocké uniquement sous forme SHA-256';
+  if (select count(*) from public.event_access_passes where event_id = v_event and queue_entry_id = v_entry1) <> 1 then
+    raise exception 'ÉCHEC: double pass créé pour le même ticket';
+  end if;
+  raise notice '  ok  un seul pass par ticket et par Event';
+
+  -- Validation du premier pass : atomique et à usage unique.
+  v_res := public.redeem_event_pass(v_hash, v_owner);
+  if v_res ->> 'status' <> 'redeemed' then
+    raise exception 'ÉCHEC: pass valide non accepté';
+  end if;
+  if (select status::text from public.event_access_passes where id = v_pass) <> 'redeemed' then
+    raise exception 'ÉCHEC: pass non persisté redeemed';
+  end if;
+  if (select status::text from public.queue_entries where id = v_entry1) <> 'completed' then
+    raise exception 'ÉCHEC: entrée validée non terminée';
+  end if;
+
+  v_res := public.redeem_event_pass(v_hash, v_owner);
+  if v_res ->> 'status' <> 'already_redeemed' then
+    raise exception 'ÉCHEC: rejeu du pass non détecté';
+  end if;
+  raise notice '  ok  pass à usage unique : rejeu détecté';
+
+  -- Le deuxième pass expire et libère automatiquement la file.
+  update public.event_access_passes
+     set grace_until = now() - interval '1 minute'
+   where event_id = v_event and queue_entry_id = v_entry2;
+
+  select coalesce(sum(x.expired), 0)::int into v_expired
+  from public.expire_event_passes() x;
+
+  if v_expired < 1 then
+    raise exception 'ÉCHEC: pass Event expiré non traité';
+  end if;
+  if (select status::text from public.queue_entries where id = v_entry2) <> 'absent' then
+    raise exception 'ÉCHEC: pass expiré bloque encore la file';
+  end if;
+  raise notice '  ok  expiration retire automatiquement l''absent de la file';
+
+  -- Stock épuisé : annule uniquement les personnes encore actives et ferme.
+  perform * from public.close_event_campaign(v_event, v_owner, 'sold_out');
+
+  if (select status from public.event_campaigns where id = v_event) <> 'sold_out' then
+    raise exception 'ÉCHEC: Event non passé en sold_out';
+  end if;
+  if (select status::text from public.queues where id = v_queue) <> 'closed' then
+    raise exception 'ÉCHEC: file Event non fermée';
+  end if;
+  if (select status::text from public.queue_entries where id = v_entry3) <> 'cancelled' then
+    raise exception 'ÉCHEC: personne restante non annulée à stock épuisé';
+  end if;
+  raise notice '  ok  stock épuisé ferme proprement tous les accès restants';
+
+  -- Les fonctions critiques ne doivent jamais être exécutables par anon.
+  begin
+    execute 'set local role anon';
+    perform public.issue_event_wave(v_event, v_owner, 1);
+    execute 'reset role';
+    raise exception 'ÉCHEC: anon a pu appeler issue_event_wave';
+  exception when insufficient_privilege then
+    execute 'reset role';
+    raise notice '  ok  anon ne peut pas émettre de pass Event';
+  end;
+end
+$$;
+ then
+    raise exception 'ÉCHEC: secret de pass Event mal stocké';
+  end if;
+  if to_jsonb(v_wave) ? 'raw_token' then
+    raise exception 'ÉCHEC: issue_event_wave expose encore un bearer brut';
+  end if;
+  raise notice '  ok  aucun bearer brut ne quitte PostgreSQL';
 
   if (select status::text from public.queue_entries where id = v_entry1) <> 'notified' then
     raise exception 'ÉCHEC: ticket appelé non marqué notified';
