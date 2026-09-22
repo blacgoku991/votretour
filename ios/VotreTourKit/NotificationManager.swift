@@ -207,15 +207,14 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         // garantit qu'une notification d'un commerce ouvre bien CE
         // commerce, et pas un autre déjà lancé sur le même téléphone.
         let targetURL = content.targetContentIdentifier.flatMap(URL.init(string:))
-        let isReviewAction = response.actionIdentifier == Category.reviewAction
-
         await MainActor.run {
+            // Ne jamais ouvrir Safari directement depuis le callback de
+            // notification : l'App Clip peut être en cours de réveil et
+            // TestFlight peut alors interpréter la terminaison comme un crash.
+            // On remet d'abord Rangvia au premier plan puis l'interface propose
+            // explicitement le lien Google au client.
             self.pendingTargetURL = targetURL
-            if isReviewAction, let reviewURL {
-                UIApplication.shared.open(reviewURL)
-            } else {
-                self.pendingReviewURL = reviewURL
-            }
+            self.pendingReviewURL = reviewURL
         }
     }
 }
