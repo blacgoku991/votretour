@@ -27,20 +27,50 @@ jobs:
           VT_ASSOCIATED_DOMAIN = rangvia.com
           VT_API_BASE_URL = https://rangvia.com
           VT_APP_GROUP = group.app.rangvia
+          VT_APNS_ENVIRONMENT = production
           EOF
+
+      - name: Corriger les entitlements
+        run: |
+          /usr/libexec/PlistBuddy -c "Delete :keychain-access-groups" \
+            ios/VotreTour/VotreTour.entitlements || true
+
+          /usr/libexec/PlistBuddy -c "Delete :keychain-access-groups" \
+            ios/VotreTourClip/VotreTourClip.entitlements || true
 
       - name: Installer la cle App Store Connect
         env:
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
         run: |
           KEY_PATH="$RUNNER_TEMP/AuthKey_${{ secrets.APPSTORE_API_KEY_ID }}.p8"
+
           printf '%s' "$APPSTORE_API_PRIVATE_KEY" > "$KEY_PATH"
+
           chmod 600 "$KEY_PATH"
+
           echo "KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
 
       - name: Generer le projet Xcode
         working-directory: ios
-        run: xcodegen generate
+        run: |
+          rm -rf VotreTour.xcodeproj
+          xcodegen generate
+
+      - name: Verifier les identifiants Rangvia
+        working-directory: ios
+        run: |
+          xcodebuild \
+            -project VotreTour.xcodeproj \
+            -scheme VotreTour \
+            -configuration Release \
+            VT_BUNDLE_ID=app.rangvia.ios \
+            VT_CLIP_BUNDLE_ID=app.rangvia.ios.Clip \
+            VT_APP_GROUP=group.app.rangvia \
+            VT_ASSOCIATED_DOMAIN=rangvia.com \
+            VT_API_BASE_URL=https://rangvia.com \
+            VT_APNS_ENVIRONMENT=production \
+            -showBuildSettings \
+            | grep -E "PRODUCT_BUNDLE_IDENTIFIER|VT_BUNDLE_ID|VT_CLIP_BUNDLE_ID|VT_APP_GROUP"
 
       - name: Archiver Rangvia + App Clip
         working-directory: ios
@@ -53,6 +83,12 @@ jobs:
             -archivePath "$RUNNER_TEMP/Rangvia.xcarchive" \
             DEVELOPMENT_TEAM=9642GYNCU9 \
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            VT_BUNDLE_ID=app.rangvia.ios \
+            VT_CLIP_BUNDLE_ID=app.rangvia.ios.Clip \
+            VT_APP_GROUP=group.app.rangvia \
+            VT_ASSOCIATED_DOMAIN=rangvia.com \
+            VT_API_BASE_URL=https://rangvia.com \
+            VT_APNS_ENVIRONMENT=production \
             CODE_SIGN_STYLE=Automatic \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$KEY_PATH" \
@@ -67,6 +103,7 @@ jobs:
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
+
             <key>method</key>
             <string>app-store-connect</string>
 
@@ -81,6 +118,7 @@ jobs:
 
             <key>uploadSymbols</key>
             <true/>
+
           </dict>
           </plist>
           EOF
