@@ -377,9 +377,74 @@ begin
 end;
 $$;
 
+-- Expire automatiquement les accès qui n'ont pas été utilisés après la
+-- fenêtre de grâce. Le ticket sort alors de la file en tant qu'absent :
+-- il ne bloque pas les vagues suivantes.
+create or replace function public.expire_event_passes()
+returns table(queue_id uuid, expired int)
+language plpgsql
+security definer
+set search_path = public, internal, extensions
+as $
+declare
+  v_pass public.event_access_passes;
+  v_entry public.queue_entries;
+  v_event public.event_campaigns;
+begin
+  for v_pass in
+    select p.*
+    from public.event_access_passes p
+    where p.status = 'issued'
+      and p.grace_until < now()
+    order by p.grace_until
+    for update skip locked
+  loop
+    update public.event_access_passes
+       set status = 'expired'
+     where id = v_pass.id
+       and status = 'issued';
+
+    if not found then
+      continue;
+    end if;
+
+    select * into v_event
+    from public.event_campaigns
+    where id = v_pass.event_id;
+
+    select * into v_entry
+    from public.queue_entries
+    where id = v_pass.queue_entry_id
+    for update;
+
+    if found and public.entry_is_active(v_entry.status) then
+      v_entry := internal.apply_transition(
+        v_entry.id,
+        'absent',
+        'system',
+        null,
+        null,
+        'event_access_expired',
+        jsonb_build_object(
+          'eventId', v_pass.event_id,
+          'passPublicId', v_pass.public_id
+        )
+      );
+      perform public.recompute_queue_positions(v_event.queue_id);
+    end if;
+
+    queue_id := v_event.queue_id;
+    expired := 1;
+    return next;
+  end loop;
+end;
+$;
+
 revoke all on function public.issue_event_wave(uuid, uuid, int) from public, anon, authenticated;
 revoke all on function public.redeem_event_pass(text, uuid) from public, anon, authenticated;
 revoke all on function public.close_event_campaign(uuid, uuid, text) from public, anon, authenticated;
+revoke all on function public.expire_event_passes() from public, anon, authenticated;
 grant execute on function public.issue_event_wave(uuid, uuid, int) to service_role;
 grant execute on function public.redeem_event_pass(text, uuid) to service_role;
 grant execute on function public.close_event_campaign(uuid, uuid, text) to service_role;
+grant execute on function public.expire_event_passes() to service_role;
