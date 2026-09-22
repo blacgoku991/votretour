@@ -37,6 +37,8 @@ public final class NotificationManager: NSObject, ObservableObject {
     /// Si l'utilisateur a explicitement touché l'action "Laisser un avis Google"
     /// dans la notification, l'App Clip ouvre ce lien dès qu'il est actif.
     @Published public var pendingAutoOpenReviewURL: URL?
+    /// Laisser-passer Event / Drop à ouvrir après réveil sûr de l'App Clip.
+    @Published public var pendingEventPassURL: URL?
 
     private var tokenContinuations: [CheckedContinuation<String?, Never>] = []
 
@@ -206,6 +208,8 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
         let content = response.notification.request.content
         let payload = content.userInfo["vt"] as? [String: Any]
         let reviewURL = (payload?["reviewUrl"] as? String).flatMap(URL.init(string:))
+        let eventURL = (payload?["eventUrl"] as? String).flatMap(URL.init(string:))
+        let kind = payload?["kind"] as? String
         // `target-content-id` porte l'URL d'invocation : c'est ce qui
         // garantit qu'une notification d'un commerce ouvre bien CE
         // commerce, et pas un autre déjà lancé sur le même téléphone.
@@ -220,6 +224,7 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
             self.pendingTargetURL = targetURL
             self.pendingReviewURL = reviewURL
             self.pendingAutoOpenReviewURL = isReviewAction ? reviewURL : nil
+            self.pendingEventPassURL = kind == "event_access" ? eventURL : nil
         }
     }
 }
