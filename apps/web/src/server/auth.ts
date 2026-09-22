@@ -77,14 +77,14 @@ export type Permission =
 
 const ROLE_PERMISSIONS: Record<MemberRole, Permission[]> = {
   owner: [
-    'queue.operate', 'queue.configure', 'team.manage', 'plates.manage',
+    'queue.operate', 'queue.configure', 'team.manage',
     'settings.manage', 'billing.manage', 'stats.view', 'organization.delete',
   ],
   admin: [
-    'queue.operate', 'queue.configure', 'team.manage', 'plates.manage',
+    'queue.operate', 'queue.configure', 'team.manage',
     'settings.manage', 'billing.manage', 'stats.view',
   ],
-  manager: ['queue.operate', 'queue.configure', 'plates.manage', 'stats.view'],
+  manager: ['queue.operate', 'queue.configure', 'stats.view'],
   member: ['queue.operate'],
 };
 
