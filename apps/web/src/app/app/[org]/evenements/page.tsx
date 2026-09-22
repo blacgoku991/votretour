@@ -42,7 +42,7 @@ export default async function EventsPage({ params }: { params: Promise<{ org: st
     const eventPasses = (passes ?? []).filter((pass) => pass.event_id === event.id);
     acc[event.id] = {
       waiting: queueEntries.filter((entry) =>
-        ['waiting', 'notified', 'returning', 'present', 'next'].includes(entry.status)).length,
+        ['waiting', 'returning', 'present', 'next'].includes(entry.status)).length,
       issued: eventPasses.filter((pass) => pass.status === 'issued').length,
       redeemed: eventPasses.filter((pass) => pass.status === 'redeemed').length,
       expired: eventPasses.filter((pass) => pass.status === 'expired').length,
