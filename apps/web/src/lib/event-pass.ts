@@ -82,3 +82,43 @@ export function verifyEventPassCookie(
 
   return { publicId, expiresAt };
 }
+
+
+/**
+ * Lien d'ouverture d'un laisser-passer.
+ *
+ * Contrairement à un bearer aléatoire stocké/transporté, ce lien est
+ * dérivé à la demande d'un identifiant public + échéance et signé HMAC.
+ * Il peut donc être régénéré en cas de retry push sans stocker de secret
+ * récupérable en base.
+ */
+export function signEventAccessLink(publicId: string, expiresAt: number): string {
+  if (!env.sessionSecret) {
+    throw new Error('SESSION_HASH_SECRET est requis pour signer les accès Event.');
+  }
+  return createHmac('sha256', env.sessionSecret)
+    .update(`event-access:${publicId}:${expiresAt}`, 'utf8')
+    .digest('base64url')
+    .slice(0, 43);
+}
+
+export function verifyEventAccessLink(
+  publicId: string,
+  expiresAt: number,
+  signature: string,
+  now = Date.now(),
+): boolean {
+  if (!/^[0-9A-Za-z]{12,32}$/.test(publicId)) return false;
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(now / 1000)) return false;
+
+  const expected = signEventAccessLink(publicId, expiresAt);
+  const a = Buffer.from(expected);
+  const b = Buffer.from(signature);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export function eventAccessPath(publicId: string, graceUntilIso: string): string {
+  const expiresAt = Math.floor(new Date(graceUntilIso).getTime() / 1000);
+  const signature = signEventAccessLink(publicId, expiresAt);
+  return `/api/pass/access/${encodeURIComponent(publicId)}?exp=${expiresAt}&sig=${encodeURIComponent(signature)}`;
+}
