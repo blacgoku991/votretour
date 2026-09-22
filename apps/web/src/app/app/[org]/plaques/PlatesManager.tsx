@@ -2,7 +2,8 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { createPlate, updatePlate, requestPhysicalPlates } from '@/server/actions/plates';
+import { createPlate, updatePlate, requestPhysicalPlates, recordPlateProgrammed } from '@/server/actions/plates';
+import { PlateWriter, type ProgrammedResult } from '@/components/PlateWriter';
 import { relativeTime, formatNumber } from '@/lib/format';
 import { useMounted } from '@/hooks/useMounted';
 import styles from './plates.module.css';
@@ -25,6 +26,8 @@ interface Plate {
   is_active: boolean; queue_id: string | null; staff_id: string | null;
   location_id: string; scan_count: number; last_scanned_at: string | null;
   order_status: string; order_reference: string | null; created_at: string;
+  programmed_at: string | null; programmed_count: number;
+  nfc_serial: string | null; nfc_locked_at: string | null;
 }
 interface Location { id: string; name: string; city: string | null }
 interface Queue { id: string; name: string; location_id: string }
@@ -120,7 +123,11 @@ export function PlatesManager({
                     {location?.name ?? '—'} · {formatNumber(plate.scan_count)} scan{plate.scan_count > 1 ? 's' : ''}
                   </span>
                 </span>
-                {!plate.is_active && <span className="chip chip--brique">Inactive</span>}
+                {!plate.is_active
+                  ? <span className="chip chip--brique">Inactive</span>
+                  : !plate.programmed_at
+                    ? <span className="chip chip--copper" title="Le tag NFC n'a pas encore été écrit.">À programmer</span>
+                    : null}
               </button>
             );
           })}
@@ -139,6 +146,7 @@ export function PlatesManager({
             queues={queues.filter((q) => q.location_id === current.location_id)}
             staff={staff.filter((s) => s.location_id === current.location_id)}
             onPatch={patch}
+            onRefresh={() => router.refresh()}
             pending={pending}
           />
         ) : (
@@ -156,7 +164,7 @@ export function PlatesManager({
 /* ================================================================== */
 
 function PlateDetail({
-  plate, siteUrl, organizationId, canManage, queues, staff, onPatch, pending,
+  plate, siteUrl, organizationId, canManage, queues, staff, onPatch, onRefresh, pending,
 }: {
   plate: Plate;
   siteUrl: string;
@@ -165,6 +173,7 @@ function PlateDetail({
   queues: Queue[];
   staff: Staff[];
   onPatch: (id: string, patch: Record<string, unknown>) => void;
+  onRefresh: () => void;
   pending: boolean;
 }) {
   const url = `${siteUrl}/e/${plate.code}`;
@@ -239,18 +248,46 @@ function PlateDetail({
 
       {/* ---------------- Programmation NFC ---------------- */}
       <div className={styles.nfcCard}>
-        <p className="t-label">Programmer le tag NFC</p>
-        <p className="t-small t-muted">
-          Écrivez cette URL en <strong>enregistrement URI</strong> sur un tag NTAG213 ou
-          NTAG215. Aucun réglage supplémentaire : iPhone et Android l&apos;ouvrent
-          directement, sans application.
-        </p>
+        <div className={styles.nfcHead}>
+          <div>
+            <p className="t-label">Programmer le tag NFC</p>
+            <p className="t-small t-muted">
+              Écrivez l&apos;adresse de la plaque directement depuis ce téléphone, puis
+              relisez le tag pour vérifier. Un NTAG213 suffit.
+            </p>
+          </div>
+          <PlateProgrammedBadge plate={plate} />
+        </div>
+
+        {canManage && (
+          <PlateWriter
+            url={url}
+            plateLabel={plate.label}
+            lockedAt={plate.nfc_locked_at}
+            onProgrammed={async (result: ProgrammedResult) => {
+              await recordPlateProgrammed({
+                organizationId,
+                plateId: plate.id,
+                writtenUrl: url,
+                serialNumber: result.serialNumber,
+                locked: result.locked,
+                verified: result.verified,
+              });
+              onRefresh();
+            }}
+          />
+        )}
+
         <div className={styles.nfcUrl}>
           <code>{url}</code>
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => copy(url, 'nfc')}>
             {copied === 'nfc' ? 'Copié' : 'Copier'}
           </button>
         </div>
+        <p className="hint">
+          L&apos;enregistrement écrit est de type <strong>URI</strong> : iPhone et Android
+          ouvrent la page directement, sans application.
+        </p>
       </div>
 
       {/* ---------------- Rattachement ---------------- */}
@@ -472,5 +509,22 @@ function OrderForm({
         <button type="button" className="btn btn--quiet btn--sm" onClick={onDone}>Annuler</button>
       </div>
     </form>
+  );
+}
+
+/* ================================================================== */
+
+/** L'état de programmation du tag, dit sans détour. */
+function PlateProgrammedBadge({ plate }: { plate: Plate }) {
+  if (plate.nfc_locked_at) {
+    return <span className="chip chip--copper">Tag verrouillé</span>;
+  }
+  if (!plate.programmed_at) {
+    return <span className="chip chip--copper">Jamais programmée</span>;
+  }
+  return (
+    <span className="chip chip--jade" title={plate.nfc_serial ? `Tag n° ${plate.nfc_serial}` : undefined}>
+      Programmée{plate.programmed_count > 1 ? ` ×${plate.programmed_count}` : ''}
+    </span>
   );
 }

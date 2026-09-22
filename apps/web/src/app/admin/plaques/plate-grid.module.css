@@ -1,0 +1,142 @@
+/* =====================================================================
+   Grille des plaques, vue plateforme.
+
+   Une carte par plaque, toutes de même gabarit : le QR à gauche,
+   l'identité à droite, l'état en pastilles, l'usage en chiffres. On
+   reconnaît une plaque sans la lire, à sa couleur d'état.
+   ===================================================================== */
+
+.grid {
+  display: grid;
+  gap: var(--sp-4);
+  grid-template-columns: 1fr;
+  /* Sans cela, toutes les cartes d'une rangée prennent la hauteur de la
+     plus grande : ouvrir un panneau d'édition étirait ses deux voisines
+     sur du vide. */
+  align-items: start;
+}
+@media (min-width: 720px)  { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1180px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  /* Le liseré gauche reprend le rail : une plaque active est « dans la
+     file », une plaque désactivée en est sortie. */
+  border-left: 3px solid var(--jade-500);
+}
+.cardOff {
+  border-left-color: var(--line-strong);
+  background: var(--surface-sunken);
+}
+.cardOff .qrFrame { opacity: .45; }
+
+.cardTop {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: start;
+}
+
+.qrFrame {
+  width: 78px;
+  height: 78px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+}
+.qr { width: 100%; height: 100%; display: block; }
+
+.cardIdentity { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.labelInput {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 1.0625rem;
+  font-variation-settings: 'wdth' 106, 'wght' 700;
+  letter-spacing: -.015em;
+  color: var(--text);
+  border-bottom: 1px dashed transparent;
+}
+.labelInput:hover:not(:disabled) { border-bottom-color: var(--line-strong); }
+.labelInput:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+.labelInput:disabled { opacity: .6; }
+
+.owner {
+  margin: 0;
+  font-size: .8125rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-3) 0;
+  border-top: 1px solid var(--line-soft, var(--line));
+  border-bottom: 1px solid var(--line-soft, var(--line));
+}
+.stats div { min-width: 0; }
+.stats dt { margin: 0 0 2px; }
+.stats dd {
+  margin: 0;
+  font-size: .9375rem;
+  font-variation-settings: 'wdth' 104, 'wght' 620;
+  overflow-wrap: anywhere;
+}
+
+.serial {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: .95em;
+}
+
+.urlRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.url {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: .75rem;
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 9px;
+  overflow-wrap: anywhere;
+}
+
+.actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px dashed var(--line-strong);
+}
+.links { display: flex; flex-wrap: wrap; gap: var(--sp-2); }

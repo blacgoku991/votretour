@@ -1,0 +1,214 @@
+/* =====================================================================
+   Programmation d'un tag NFC.
+
+   La cible reprend le rail du produit, replié en anneaux : le geste
+   d'approcher la plaque est le même mouvement que celui de la file qui
+   avance vers le comptoir.
+   ===================================================================== */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: color-mix(in oklab, var(--ink-900) 62%, transparent);
+  backdrop-filter: blur(2px);
+  /* Flex et non grid : une grille en place-items:center déborde des
+     DEUX côtés dès que la boîte dépasse, et la moitié gauche du
+     dialogue sortait de l'écran sur un téléphone. */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding: var(--sp-4);
+  padding-bottom: max(var(--sp-4), env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  animation: pw-fade 160ms ease-out;
+}
+@media (min-width: 640px) { .backdrop { justify-content: center; } }
+
+.dialog {
+  /* min() plutôt que width+max-width : la boîte ne peut jamais dépasser
+     la largeur disponible, quel que soit son contenu. */
+  width: min(460px, 100%);
+  flex: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 32px 70px -28px rgba(0, 0, 0, .55);
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  max-height: 88vh;
+  overflow-y: auto;
+  animation: pw-rise 200ms cubic-bezier(.2, .8, .3, 1);
+}
+.dialog:focus { outline: none; }
+
+@keyframes pw-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes pw-rise { from { opacity: 0; transform: translateY(16px) } to { opacity: 1; transform: none } }
+@media (prefers-reduced-motion: reduce) {
+  .backdrop, .dialog { animation: none; }
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.title {
+  margin: 2px 0 0;
+  font-size: 1.25rem;
+  line-height: 1.15;
+  font-variation-settings: 'wdth' 108, 'wght' 720;
+  letter-spacing: -.02em;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+/* Sans cela, flex comprime les blocs sous leur hauteur de contenu : le
+   contenu déborde alors par-dessus le bouton d'action, qui devient
+   inatteignable au doigt. */
+.body > *, .head, .actions { flex: none; }
+
+/* ---------------- La cible ---------------- */
+.stage {
+  flex: none;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px dashed var(--line-strong);
+  border-radius: 16px;
+  background: var(--surface-sunken);
+  transition: border-color 180ms ease, background 180ms ease;
+}
+.stageLive {
+  border-style: solid;
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+}
+.stageDone {
+  border-style: solid;
+  border-color: color-mix(in oklab, var(--jade-500) 45%, transparent);
+  background: var(--jade-100);
+}
+
+.stageText { min-width: 0; }
+.stageTitle {
+  margin: 0 0 2px;
+  font-size: 1rem;
+  font-variation-settings: 'wdth' 106, 'wght' 700;
+  letter-spacing: -.012em;
+}
+
+.target {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.core {
+  position: relative;
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  color: var(--text-muted);
+}
+.stageLive .core { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+.stageDone .core { color: var(--jade-500); border-color: color-mix(in oklab, var(--jade-500) 40%, transparent); }
+
+.ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid color-mix(in oklab, var(--accent) 40%, transparent);
+  opacity: 0;
+}
+.stageLive .ring { animation: pw-ping 1800ms cubic-bezier(.2, .7, .3, 1) infinite; }
+.stageLive .ring:nth-child(2) { animation-delay: 600ms; }
+@keyframes pw-ping {
+  0%   { transform: scale(.62); opacity: .85; }
+  70%  { transform: scale(1.05); opacity: 0; }
+  100% { transform: scale(1.05); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stageLive .ring { animation: none; opacity: .4; transform: scale(.85); }
+}
+
+/* ---------------- URL et verrouillage ---------------- */
+.urlLine { display: flex; flex-direction: column; gap: 6px; }
+.urlRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: 6px;
+}
+.url {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: .78rem;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 11px;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+}
+
+.lockRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: start;
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.lockRow input { margin-top: 3px; accent-color: var(--accent); width: 18px; height: 18px; }
+.lockRow span { display: block; min-width: 0; }
+.lockRow b {
+  display: block;
+  font-size: .9rem;
+  font-variation-settings: 'wdth' 104, 'wght' 650;
+  font-weight: 400;
+}
+.lockRow span span { display: block; margin-top: 3px; }
+
+.result { display: flex; flex-direction: column; gap: var(--sp-2); }
+.result code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: .78em;
+}
+
+.actions { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* ---------------- Repli : marche à suivre manuelle ---------------- */
+.steps {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: .875rem;
+  color: var(--text-muted);
+}
+.steps li { padding-left: 2px; }
+.steps b { color: var(--text); font-variation-settings: 'wght' 640; font-weight: 400; }
+
+.compactChip { white-space: nowrap; }

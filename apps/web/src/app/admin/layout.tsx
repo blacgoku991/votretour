@@ -18,6 +18,7 @@ export const dynamic = 'force-dynamic';
 const NAV = [
   { href: '/admin', label: 'Vue d’ensemble' },
   { href: '/admin/etablissements', label: 'Établissements' },
+  { href: '/admin/plaques', label: 'Plaques' },
   { href: '/admin/offres', label: 'Offres & abonnements' },
   { href: '/admin/support', label: 'Support' },
   { href: '/admin/erreurs', label: 'Incidents' },

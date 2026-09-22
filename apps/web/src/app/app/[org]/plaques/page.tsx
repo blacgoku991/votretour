@@ -16,7 +16,7 @@ export default async function PlatesPage({ params }: { params: Promise<{ org: st
   const [{ data: plates }, { data: locations }, { data: queues }, { data: staff }, { data: quota }] =
     await Promise.all([
       db.from('plates')
-        .select('id, code, label, kind, is_active, queue_id, staff_id, location_id, scan_count, last_scanned_at, order_status, order_reference, created_at')
+        .select('id, code, label, kind, is_active, queue_id, staff_id, location_id, scan_count, last_scanned_at, order_status, order_reference, created_at, programmed_at, programmed_count, nfc_serial, nfc_locked_at')
         .eq('organization_id', organizationId)
         .order('created_at'),
       db.from('locations').select('id, name, city').eq('organization_id', organizationId).order('created_at'),

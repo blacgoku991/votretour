@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { toAppError } from '@/lib/errors';
+import { AppError, toAppError } from '@/lib/errors';
 import { assertPlatformAdmin } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { audit } from '@/server/audit';
@@ -218,4 +218,136 @@ export async function updateSupportTicket(
 
 export async function revalidateAdmin(): Promise<void> {
   revalidatePath('/admin', 'layout');
+}
+
+/* ===================================================================
+   PLAQUES — vue plateforme
+   ===================================================================
+   L'espace plateforme voit et pilote toutes les plaques de tous les
+   établissements : c'est ce qui permet de dépanner un commerçant au
+   téléphone ou de désactiver une plaque volée sans attendre qu'il le
+   fasse lui-même. Chaque geste est journalisé sous l'identité de
+   l'administrateur, dans l'organisation concernée.
+   =================================================================== */
+
+const adminPlateSchema = z.object({
+  plateId: z.string().uuid(),
+  label: z.string().trim().min(1).max(60).optional(),
+  isActive: z.boolean().optional(),
+  kind: z.enum(['nfc', 'qr', 'both']).optional(),
+  queueId: z.string().uuid().nullish(),
+});
+
+export async function adminUpdatePlate(
+  input: z.input<typeof adminPlateSchema>,
+): Promise<Result<{ plateId: string }>> {
+  try {
+    const parsed = adminPlateSchema.parse(input);
+    const admin = await assertPlatformAdmin();
+    const db = supabaseAdmin();
+
+    // On relit la plaque pour connaître son organisation : le journal
+    // d'audit doit pointer la bonne, et une file rattachée doit
+    // appartenir au même établissement.
+    const { data: plate } = await db
+      .from('plates')
+      .select('id, organization_id, location_id, label')
+      .eq('id', parsed.plateId)
+      .maybeSingle();
+    if (!plate) throw new AppError('not_found', 'Plaque introuvable.', 404);
+
+    const patch: Record<string, unknown> = {};
+    if (parsed.label !== undefined) patch.label = parsed.label;
+    if (parsed.isActive !== undefined) patch.is_active = parsed.isActive;
+    if (parsed.kind !== undefined) patch.kind = parsed.kind;
+
+    if (parsed.queueId !== undefined) {
+      if (parsed.queueId) {
+        const { data: queue } = await db
+          .from('queues').select('id')
+          .eq('id', parsed.queueId)
+          .eq('location_id', plate.location_id)
+          .maybeSingle();
+        if (!queue) {
+          throw new AppError(
+            'invalid_queue',
+            "Cette file n'appartient pas à l'établissement de la plaque.",
+            400,
+          );
+        }
+      }
+      patch.queue_id = parsed.queueId;
+    }
+
+    if (Object.keys(patch).length === 0) return { ok: true, data: { plateId: parsed.plateId } };
+
+    const { error } = await db.from('plates').update(patch).eq('id', parsed.plateId);
+    if (error) throw error;
+
+    await audit({
+      organizationId: plate.organization_id,
+      actorUserId: admin.id,
+      action: 'plate.updated_by_platform',
+      targetType: 'plate',
+      targetId: parsed.plateId,
+      metadata: { ...patch, plateLabel: plate.label },
+    });
+
+    revalidatePath('/admin/plaques');
+    return { ok: true, data: { plateId: parsed.plateId } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+const adminPlateWriteSchema = z.object({
+  plateId: z.string().uuid(),
+  writtenUrl: z.string().url().max(2048),
+  serialNumber: z.string().trim().max(64).nullish(),
+  locked: z.boolean().default(false),
+  verified: z.boolean().default(false),
+});
+
+/**
+ * Enregistre une programmation NFC faite depuis l'espace plateforme —
+ * typiquement lors de la préparation d'un lot de plaques avant envoi.
+ */
+export async function adminRecordPlateProgrammed(
+  input: z.input<typeof adminPlateWriteSchema>,
+): Promise<Result<{ plateId: string; verified: boolean }>> {
+  try {
+    const parsed = adminPlateWriteSchema.parse(input);
+    const admin = await assertPlatformAdmin();
+    const db = supabaseAdmin();
+
+    const { data: plate } = await db
+      .from('plates').select('id, organization_id')
+      .eq('id', parsed.plateId).maybeSingle();
+    if (!plate) throw new AppError('not_found', 'Plaque introuvable.', 404);
+
+    const { error } = await db.rpc('record_plate_write', {
+      p_organization_id: plate.organization_id,
+      p_plate_id: parsed.plateId,
+      p_written_by: admin.id,
+      p_written_url: parsed.writtenUrl,
+      p_nfc_serial: parsed.serialNumber ?? null,
+      p_locked: parsed.locked,
+      p_verified: parsed.verified,
+    });
+    if (error) throw error;
+
+    await audit({
+      organizationId: plate.organization_id,
+      actorUserId: admin.id,
+      action: 'plate.programmed_by_platform',
+      targetType: 'plate',
+      targetId: parsed.plateId,
+      metadata: { verified: parsed.verified, locked: parsed.locked, serial: parsed.serialNumber ?? null },
+    });
+
+    revalidatePath('/admin/plaques');
+    return { ok: true, data: { plateId: parsed.plateId, verified: parsed.verified } };
+  } catch (error) {
+    return fail(error);
+  }
 }

@@ -173,6 +173,69 @@ export async function requestPhysicalPlates(
   }
 }
 
+const writeSchema = z.object({
+  organizationId: z.string().uuid(),
+  plateId: z.string().uuid(),
+  writtenUrl: z.string().url().max(2048),
+  serialNumber: z.string().trim().max(64).nullish(),
+  locked: z.boolean().default(false),
+  verified: z.boolean().default(false),
+});
+
+/**
+ * Enregistre une programmation NFC réellement effectuée dans le
+ * navigateur. Le serveur ne peut pas écrire un tag lui-même : il note ce
+ * que le navigateur rapporte, avec le numéro de série du tag et le
+ * résultat de la relecture de contrôle.
+ *
+ * `verified` n'est vrai que si le tag a été relu et portait bien l'URL
+ * attendue. Une plaque écrite mais non relue est affichée comme telle,
+ * jamais comme vérifiée.
+ */
+export async function recordPlateProgrammed(
+  input: z.input<typeof writeSchema>,
+): Promise<PlateResult<{ programmedAt: string; verified: boolean; locked: boolean }>> {
+  try {
+    const parsed = writeSchema.parse(input);
+    const { user } = await assertOrgMembership(parsed.organizationId, 'plates.manage');
+    const db = supabaseAdmin();
+
+    const { data, error } = await db.rpc('record_plate_write', {
+      p_organization_id: parsed.organizationId,
+      p_plate_id: parsed.plateId,
+      p_written_by: user.id,
+      p_written_url: parsed.writtenUrl,
+      p_nfc_serial: parsed.serialNumber ?? null,
+      p_locked: parsed.locked,
+      p_verified: parsed.verified,
+    });
+    if (error) throw error;
+
+    const plate = data as { programmed_at: string; nfc_locked_at: string | null };
+
+    await audit({
+      organizationId: parsed.organizationId, actorUserId: user.id,
+      action: 'plate.programmed', targetType: 'plate', targetId: parsed.plateId,
+      metadata: {
+        verified: parsed.verified,
+        locked: parsed.locked,
+        serial: parsed.serialNumber ?? null,
+      },
+    });
+
+    return {
+      ok: true,
+      data: {
+        programmedAt: plate.programmed_at,
+        verified: parsed.verified,
+        locked: plate.nfc_locked_at != null,
+      },
+    };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
 export async function revalidatePlates(orgSlug: string): Promise<void> {
   revalidatePath(`/app/${orgSlug}/plaques`);
 }

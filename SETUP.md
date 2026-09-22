@@ -984,19 +984,50 @@ https://votretour.app/e/barber-house-comptoir
 C'est **exactement** la même URL que celle encodée dans le QR code. Les deux
 supports ouvrent rigoureusement la même expérience.
 
-### 13.3 Programmer le tag
+### 13.3 Programmer le tag depuis VotreTour (aucune application)
 
-**Sur Android (le plus simple) :**
+VotreTour écrit les tags lui-même, depuis le navigateur. C'est la méthode à
+privilégier : l'URL n'est jamais recopiée à la main, le tag est **relu après
+écriture** pour vérifier qu'il porte bien la bonne adresse, et la
+programmation est enregistrée (date, auteur, numéro de série du tag).
 
-1. Installez **NFC Tools** (wakdev) depuis le Play Store.
+1. Ouvrez le tableau de bord **sur un téléphone Android**, dans **Chrome**.
+2. **Plaques & QR** → sélectionnez la plaque → **Programmer la plaque**.
+3. **Commencer** → acceptez la demande d'accès NFC → approchez le tag du dos
+   du téléphone, vers le haut, près de l'appareil photo.
+4. Retirez le tag puis reposez-le : VotreTour le relit et affiche
+   **« Relue et vérifiée »**.
+
+La même fonction existe dans l'espace plateforme (**Plaques**), pour préparer
+un lot de tags avant de les envoyer à un commerçant.
+
+**Option « Verrouiller le tag après écriture ».** Cochée, le tag devient
+définitivement inscriptible en lecture seule : plus personne ne pourra le
+réécrire, vous compris. À réserver aux plaques en libre accès, une fois
+l'adresse vérifiée.
+
+> **Où ça marche, où ça ne marche pas.** L'écriture NFC depuis le navigateur
+> est une fonction d'Android : **Chrome 89+, Edge, Opera Mobile 64+, Samsung
+> Internet 15+**. Elle n'existe sur **aucun navigateur d'iPhone ou d'iPad** —
+> Apple ne l'implémente pas dans WebKit, et Chrome iOS utilise WebKit. Elle
+> n'existe sur **aucun ordinateur**. Dans ces cas, VotreTour ne cache pas le
+> bouton : il affiche pourquoi, et donne la marche à suivre ci-dessous.
+
+### 13.4 Programmer le tag avec NFC Tools (iPhone, ou sans Android sous la main)
+
+**Sur iPhone comme sur Android :**
+
+1. Installez **NFC Tools** (wakdev), gratuite sur l'App Store et le Play Store.
 2. Onglet **Écrire** → **Ajouter un enregistrement** → **URL**
-3. Collez l'URL → **OK** → **Écrire / 1 enregistrement**
+3. Collez l'URL copiée depuis le tableau de bord → **OK** →
+   **Écrire / 1 enregistrement**
 4. Approchez le tag du dos du téléphone.
 
-**Sur iPhone :**
+L'enregistrement doit être de type **URI**. Un enregistrement « texte »
+afficherait l'adresse au lieu de l'ouvrir.
 
-1. Installez **NFC Tools** (même éditeur) depuis l'App Store.
-2. Même procédure.
+**Vérifiez toujours** : scannez le tag avec un autre téléphone. Il doit ouvrir
+votre page de file, et non une page d'erreur.
 
 **Pour un lot de tags :** NFC Tools propose un mode d'écriture en série. Si vous
 posez la même plaque à plusieurs endroits d'un même commerce, utilisez la
@@ -1004,15 +1035,16 @@ posez la même plaque à plusieurs endroits d'un même commerce, utilisez la
 poste 2 — créez une plaque par emplacement dans le tableau de bord : vous
 saurez alors laquelle convertit le mieux.
 
-### 13.4 Verrouiller le tag (recommandé en production)
+### 13.5 Verrouiller le tag (recommandé en production)
 
-Dans NFC Tools : onglet **Autres** → **Verrouiller le tag**.
+Depuis VotreTour : cochez **Verrouiller le tag après écriture** avant de
+commencer. Depuis NFC Tools : onglet **Autres** → **Verrouiller le tag**.
 
 Un tag verrouillé ne peut plus être réécrit. C'est irréversible, mais cela
 empêche qu'un client mal intentionné remplace votre URL par la sienne sur un
 tag posé en libre accès.
 
-### 13.5 Vérifier
+### 13.6 Vérifier
 
 **Sur iPhone** (iPhone XS et plus récents — lecture NFC en arrière-plan) :
 
@@ -1037,7 +1069,7 @@ tag posé en libre accès.
 | Ça marche parfois | Tag posé sur du métal, ou trop fin |
 | Ouvre une autre URL | Le tag contenait déjà un enregistrement — réécrivez-le |
 
-### 13.6 Où poser la plaque
+### 13.7 Où poser la plaque
 
 - **Au comptoir, à hauteur de main**, là où le client s'arrête naturellement.
 - **Pas derrière une vitre épaisse** : le NFC porte à 2–4 cm.

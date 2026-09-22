@@ -206,3 +206,14 @@
   .orderGrid { grid-template-columns: 1fr 1fr; }
   .orderGrid > :nth-child(2) { grid-column: 1 / -1; }
 }
+
+/* Tête de la carte « programmer le tag » : le texte à gauche, l'état à
+   droite, et l'état passe dessous quand la place manque. */
+.nfcHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.nfcHead > div { min-width: 0; flex: 1 1 220px; }

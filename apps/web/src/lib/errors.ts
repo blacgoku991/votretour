@@ -14,6 +14,8 @@ export const QUEUE_ERROR_CODES = {
   VT008: 'no_staff_available',
   VT009: 'session_mismatch',
   VT010: 'staff_busy',
+  VT011: 'plate_not_found',
+  VT012: 'plate_locked',
 } as const;
 
 export type QueueErrorCode = (typeof QUEUE_ERROR_CODES)[keyof typeof QUEUE_ERROR_CODES];
@@ -29,6 +31,8 @@ const MESSAGES: Record<QueueErrorCode, string> = {
   no_staff_available: "Aucun professionnel n'est disponible pour l'instant.",
   session_mismatch: "Ce ticket n'appartient pas à cet appareil.",
   staff_busy: "Ce professionnel a déjà une prestation en cours.",
+  plate_not_found: "Cette plaque est introuvable dans cet établissement.",
+  plate_locked: "Ce tag a été verrouillé : il ne peut plus être réécrit.",
 };
 
 const HTTP_STATUS: Record<QueueErrorCode, number> = {
@@ -42,6 +46,8 @@ const HTTP_STATUS: Record<QueueErrorCode, number> = {
   no_staff_available: 409,
   session_mismatch: 403,
   staff_busy: 409,
+  plate_not_found: 404,
+  plate_locked: 409,
 };
 
 export class AppError extends Error {
