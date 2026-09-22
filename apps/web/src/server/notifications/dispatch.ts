@@ -26,6 +26,7 @@ interface PendingNotification {
   client_name: string | null;
   people_ahead: number;
   status: string;
+  destination_url?: string | null;
 }
 
 interface SubscriptionRow {
@@ -66,6 +67,9 @@ function ttlSecondsFor(kind: NotificationKind): number {
     case 'ahead_one': return 900;        // 15 min
     case 'ahead_two': return 900;
     case 'visit_completed': return 86_400; // l'avis Google peut attendre
+    case 'event_access': return 900;
+    case 'event_sold_out': return 3600;
+    case 'event_ended': return 3600;
     default: return 1800;
   }
 }
@@ -95,6 +99,47 @@ export async function dispatchQueueNotifications(queueId: string): Promise<Dispa
 }
 
 /** Notification ponctuelle sur un ticket (fin de visite, retrait de file). */
+export async function dispatchEventEntryNotification(
+  entryId: string,
+  kind: 'event_access' | 'event_sold_out' | 'event_ended',
+  destinationUrl?: string | null,
+): Promise<DispatchSummary> {
+  const db = supabaseAdmin();
+
+  const { data: claimed, error: claimError } = await db.rpc('claim_entry_notification', {
+    p_entry_id: entryId,
+    p_kind: kind,
+  });
+  if (claimError) {
+    console.error('[notifications] réclamation event impossible', claimError);
+    return { ...EMPTY, reasons: [claimError.message] };
+  }
+  if (claimed !== true) {
+    return { ...EMPTY, skipped: 1, reasons: ['déjà envoyée'] };
+  }
+
+  const { data: entry, error } = await db
+    .from('queue_entries')
+    .select('id, public_id, organization_id, location_id, client_session_id, client_name, people_ahead, status')
+    .eq('id', entryId)
+    .maybeSingle();
+
+  if (error || !entry) return { ...EMPTY, skipped: 1, reasons: ['ticket introuvable'] };
+
+  return deliverAll([{
+    entry_id: entry.id,
+    entry_public_id: entry.public_id,
+    kind,
+    client_session_id: entry.client_session_id,
+    organization_id: entry.organization_id,
+    location_id: entry.location_id,
+    client_name: entry.client_name,
+    people_ahead: entry.people_ahead,
+    status: entry.status,
+    destination_url: destinationUrl ?? null,
+  }]);
+}
+
 export async function dispatchEntryNotification(
   entryId: string,
   kind: NotificationKind,
@@ -258,6 +303,7 @@ async function sendOne(
   const reviewUrl = item.kind === 'visit_completed' && location.google_review_url
     ? `${env.siteUrl}/api/client/review/click?entry=${encodeURIComponent(item.entry_public_id)}&source=notification`
     : null;
+  const destinationUrl = item.destination_url ?? ticketUrl(location.slug, item.kind);
 
   /* ---------------- App Clip / application iOS (APNs) ---------------- */
   if (sub.channel === 'apns_appclip' || sub.channel === 'apns_app') {
@@ -297,6 +343,7 @@ async function sendOne(
           locationName: location.name,
           locationSlug: location.slug,
           reviewUrl,
+          eventUrl: item.kind.startsWith('event_') ? destinationUrl : null,
         },
       },
       sub.apns_environment ?? env.apns.environment,
@@ -337,7 +384,7 @@ async function sendOne(
       {
         title: copy.title,
         body: copy.body,
-        url: ticketUrl(location.slug, item.kind),
+        url: destinationUrl,
         tag: item.entry_public_id,
         kind: item.kind,
         entryId: item.entry_public_id,
