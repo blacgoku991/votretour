@@ -237,7 +237,6 @@ create or replace function public.issue_event_wave(
   entry_id uuid,
   entry_public_id text,
   pass_public_id text,
-  raw_token text,
   valid_until timestamptz,
   grace_until timestamptz
 )
@@ -321,7 +320,6 @@ begin
     entry_id := v_entry.id;
     entry_public_id := v_entry.public_id;
     pass_public_id := v_pass.public_id;
-    raw_token := v_token;
     valid_until := v_valid;
     grace_until := v_grace;
     return next;
