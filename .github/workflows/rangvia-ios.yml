@@ -1,0 +1,98 @@
+name: Rangvia iOS + App Clip
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Recuperer le projet
+        uses: actions/checkout@v4
+
+      - name: Verifier Xcode
+        run: xcodebuild -version
+
+      - name: Installer XcodeGen
+        run: brew install xcodegen
+
+      - name: Configurer Rangvia
+        run: |
+          cat > ios/Config/Local.xcconfig <<'EOF'
+          DEVELOPMENT_TEAM = 9642GYNCU9
+          VT_BUNDLE_ID = app.rangvia.ios
+          VT_CLIP_BUNDLE_ID = app.rangvia.ios.Clip
+          VT_ASSOCIATED_DOMAIN = rangvia.com
+          VT_API_BASE_URL = https://rangvia.com
+          VT_APP_GROUP = group.app.rangvia
+          EOF
+
+      - name: Installer la cle App Store Connect
+        env:
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${{ secrets.APPSTORE_API_KEY_ID }}.p8"
+          printf '%s' "$APPSTORE_API_PRIVATE_KEY" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Generer le projet Xcode
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Archiver Rangvia + App Clip
+        working-directory: ios
+        run: |
+          xcodebuild \
+            -project VotreTour.xcodeproj \
+            -scheme VotreTour \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Rangvia.xcarchive" \
+            DEVELOPMENT_TEAM=9642GYNCU9 \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CODE_SIGN_STYLE=Automatic \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "${{ secrets.APPSTORE_API_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.APPSTORE_ISSUER_ID }}" \
+            clean archive
+
+      - name: Creer ExportOptions
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+
+            <key>destination</key>
+            <string>upload</string>
+
+            <key>signingStyle</key>
+            <string>automatic</string>
+
+            <key>teamID</key>
+            <string>9642GYNCU9</string>
+
+            <key>uploadSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Envoyer vers App Store Connect
+        run: |
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$RUNNER_TEMP/Rangvia.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "${{ secrets.APPSTORE_API_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.APPSTORE_ISSUER_ID }}"
