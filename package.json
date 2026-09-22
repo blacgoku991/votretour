@@ -1,0 +1,21 @@
+{
+  "name": "votretour",
+  "private": true,
+  "version": "1.0.0",
+  "description": "VotreTour — file d'attente virtuelle pour les commerces sans rendez-vous. SaaS web + App Clip iOS + Web Push Android.",
+  "workspaces": ["apps/web"],
+  "engines": { "node": ">=20.9.0" },
+  "scripts": {
+    "dev": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace apps/web",
+    "start": "npm run start --workspace apps/web",
+    "lint": "npm run lint --workspace apps/web",
+    "typecheck": "npm run typecheck --workspace apps/web",
+    "test": "npm run test --workspace apps/web",
+    "db:push": "supabase db push",
+    "db:reset": "supabase db reset",
+    "db:types": "supabase gen types typescript --local > apps/web/src/lib/database.types.ts",
+    "keys:vapid": "node scripts/generate-vapid-keys.mjs",
+    "ios:generate": "cd ios && xcodegen generate"
+  }
+}
