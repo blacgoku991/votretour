@@ -1,0 +1,80 @@
+# =====================================================================
+# VotreTour — TLS automatique et aiguillage
+# ---------------------------------------------------------------------
+# Caddy tient lieu de passerelle à la place de Kong/Envoy. Il obtient et
+# renouvelle seul le certificat Let's Encrypt, et répartit les chemins
+# que la bibliothèque supabase-js appelle.
+# =====================================================================
+
+{
+	email {$TLS_EMAIL}
+	# Journal sobre : pas de corps de requête, donc aucun prénom de
+	# client ni jeton de session dans les fichiers de log.
+	log {
+		format console
+		level WARN
+	}
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# ------------------------------------------------------------------
+	# Authentification des professionnels (GoTrue)
+	# ------------------------------------------------------------------
+	handle /auth/v1/* {
+		uri strip_prefix /auth/v1
+		reverse_proxy auth:9999
+	}
+
+	# ------------------------------------------------------------------
+	# Temps réel (Supabase Realtime)
+	# ------------------------------------------------------------------
+	# Deux détails sans lesquels rien ne fonctionne :
+	#   — le chemin /realtime/v1 n'est PAS retiré, Realtime l'attend ;
+	#   — l'en-tête Host est réécrit, parce que Realtime déduit le
+	#     locataire du sous-domaine du Host. « realtime-dev » est le
+	#     locataire créé par SEED_SELF_HOST au premier démarrage.
+	handle /realtime/v1/* {
+		reverse_proxy realtime-dev.supabase-realtime:4000 {
+			header_up Host realtime-dev.supabase-realtime
+			# Les WebSocket restent ouverts des heures : sans cela
+			# Caddy couperait la file en plein service.
+			transport http {
+				read_timeout 0
+				write_timeout 0
+			}
+		}
+	}
+
+	# ------------------------------------------------------------------
+	# Base de données (PostgREST)
+	# ------------------------------------------------------------------
+	# Verrou de sécurité : l'API REST n'est ouverte QU'aux appels du
+	# serveur applicatif, depuis le réseau interne. Le navigateur ne
+	# parle jamais à PostgREST directement dans VotreTour — il passe par
+	# les actions serveur. Fermer cette porte côté périmètre évite qu'un
+	# jeton volé serve à interroger la base depuis l'extérieur.
+	handle /rest/v1/* {
+		@externe not remote_ip private_ranges
+		respond @externe 404
+		uri strip_prefix /rest/v1
+		reverse_proxy rest:3000
+	}
+
+	# ------------------------------------------------------------------
+	# L'application
+	# ------------------------------------------------------------------
+	handle {
+		reverse_proxy app:3000 {
+			header_up X-Forwarded-Proto https
+		}
+	}
+
+	# Le fichier d'association de domaine Apple doit être servi en
+	# application/json, sans redirection : l'iPhone le refuse sinon.
+	header /.well-known/apple-app-site-association Content-Type application/json
+}

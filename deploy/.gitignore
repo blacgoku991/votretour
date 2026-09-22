@@ -1,0 +1,7 @@
+# Secrets de l'installation : ne doivent jamais être versionnés.
+.env
+.env.*
+!.env.example
+
+# Sauvegardes de la base.
+sauvegardes/

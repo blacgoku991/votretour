@@ -27,10 +27,11 @@ votretour/
 │                        API et service worker
 ├── ios/                 Xcode — application iPhone + cible App Clip (SwiftUI)
 ├── supabase/
-│   ├── migrations/      12 migrations : schéma, moteur de file, RLS
-│   ├── tests/           suite de tests SQL (98 assertions)
+│   ├── migrations/      13 migrations : schéma, moteur de file, RLS
+│   ├── tests/           suite de tests SQL (125 assertions)
 │   └── seed.sql         jeu de démonstration
-├── scripts/             vérification de la base, génération des clés VAPID
+├── deploy/              ⭐ tout héberger sur votre propre serveur
+├── scripts/             vérification de la base, génération des clés
 ├── docs/                décisions d'architecture
 └── SETUP.md             ⭐ le guide pas-à-pas, du code au test réel
 ```
@@ -45,6 +46,23 @@ npm run dev
 
 Le guide complet — Supabase, Vercel, Apple Developer, App Clip, APNs,
 Web Push, avis Google, tags NFC et QR — est dans **[SETUP.md](./SETUP.md)**.
+
+## Mettre en ligne
+
+Deux chemins, au choix :
+
+| | Hébergé | Sur votre serveur |
+|---|---|---|
+| **Où** | Supabase + Vercel | un VPS à vous |
+| **Temps** | ~20 min | ~30 min |
+| **Coût** | gratuit pour démarrer | le prix du VPS |
+| **À votre charge** | rien | sauvegardes, mises à jour, surveillance |
+| **Guide** | [SETUP.md](./SETUP.md) §2 et §4 | [deploy/README.md](./deploy/README.md) |
+
+L'auto-hébergement installe six conteneurs — PostgreSQL, GoTrue,
+PostgREST, Realtime, l'application et Caddy — sur une machine à 2 Go de
+mémoire. Certificat TLS automatique, sauvegardes scriptées, mises à jour
+en une commande.
 
 ## Vérifier
 

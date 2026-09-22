@@ -37,6 +37,12 @@ const csp = [
 ].join('; ');
 
 const nextConfig: NextConfig = {
+  /* Image Docker autonome : Next.js recopie dans .next/standalone le
+     serveur et les seules dépendances utilisées. L'image finale n'a
+     pas besoin de node_modules complet, ce qui la fait passer de
+     ~1,2 Go à ~180 Mo. Sans conséquence hors Docker. */
+  output: 'standalone',
+
   reactStrictMode: true,
   poweredByHeader: false,
   serverExternalPackages: ['web-push'],

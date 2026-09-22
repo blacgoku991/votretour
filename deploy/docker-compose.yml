@@ -1,0 +1,284 @@
+# =====================================================================
+# VotreTour — pile complète sur un seul serveur
+# ---------------------------------------------------------------------
+# Six conteneurs, environ 1,5 Go de mémoire :
+#
+#   db        PostgreSQL 16 — le moteur de file vit ici
+#   auth      GoTrue — connexion des professionnels
+#   rest      PostgREST — l'API que le serveur applicatif interroge
+#   realtime  Supabase Realtime — la file qui avance sous les yeux
+#   app       VotreTour (Next.js)
+#   caddy     TLS automatique + aiguillage des chemins
+#
+# Caddy remplace la passerelle Kong/Envoy de Supabase : il fait déjà le
+# certificat, autant qu'il fasse le routage. Un conteneur de moins, et
+# le plus gourmand en mémoire.
+#
+# Les services Storage, Studio, Edge Functions, imgproxy et le pooler de
+# Supabase ne sont pas ici : VotreTour ne s'en sert pas.
+# =====================================================================
+
+name: votretour
+
+services:
+  # -------------------------------------------------------------------
+  db:
+  # -------------------------------------------------------------------
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-votretour}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant}
+      # Les collations françaises rendent les tris d'établissements
+      # corrects (é après e, et non après z).
+      LANG: fr_FR.UTF-8
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Rôles, schémas et fonctions auth.* attendus par les services
+      # Supabase. Exécuté une seule fois, à la création du volume.
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-votretour}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    command:
+      - postgres
+      # Realtime lit le flux de réplication logique : sans wal_level
+      # logical, « la file avance toute seule » ne marche pas.
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_wal_senders=10
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=100
+
+  # -------------------------------------------------------------------
+  auth:
+  # -------------------------------------------------------------------
+    image: supabase/gotrue:v2.196.0
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${SITE_URL:?SITE_URL manquant}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-votretour}
+      GOTRUE_SITE_URL: ${SITE_URL}
+      GOTRUE_URI_ALLOW_LIST: ${SITE_URL}/**
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:?JWT_SECRET manquant}
+      GOTRUE_JWT_ISSUER: ${SITE_URL}
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      # Sans serveur d'envoi configuré, la confirmation par courriel
+      # est impossible : on confirme donc à l'inscription. Dès que
+      # SMTP_HOST est renseigné, passez ceci à false.
+      GOTRUE_MAILER_AUTOCONFIRM: ${MAILER_AUTOCONFIRM:-true}
+      GOTRUE_SMTP_HOST: ${SMTP_HOST:-}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT:-587}
+      GOTRUE_SMTP_USER: ${SMTP_USER:-}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS:-}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL:-}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-VotreTour}
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/callback
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/callback
+      GOTRUE_MAILER_URLPATHS_INVITE: /auth/callback
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/callback
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      GOTRUE_LOG_LEVEL: warn
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  # -------------------------------------------------------------------
+  rest:
+  # -------------------------------------------------------------------
+    image: postgrest/postgrest:v14.17
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+      # GoTrue crée le schéma auth et la table auth.users, vers laquelle
+      # nos migrations pointent : il doit avoir fini avant.
+      auth: { condition: service_healthy }
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-votretour}
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_DB_EXTRA_SEARCH_PATH: public, extensions
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_EXP: "3600"
+      PGRST_DB_MAX_ROWS: "1000"
+    healthcheck:
+      test: ["CMD", "postgrest", "--ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # -------------------------------------------------------------------
+  realtime:
+  # -------------------------------------------------------------------
+    # Le nom du conteneur n'est pas décoratif : Realtime déduit le
+    # locataire du sous-domaine de l'en-tête Host. Caddy réécrit ce Host
+    # en « realtime-dev.supabase-realtime ». Changer ce nom casse le
+    # temps réel sans message d'erreur clair.
+    container_name: realtime-dev.supabase-realtime
+    image: supabase/realtime:v2.134.10
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB:-votretour}
+      DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime'
+      DB_ENC_KEY: ${REALTIME_DB_ENC_KEY:?REALTIME_DB_ENC_KEY manquant}
+      API_JWT_SECRET: ${JWT_SECRET}
+      METRICS_JWT_SECRET: ${JWT_SECRET}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?SECRET_KEY_BASE manquant}
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: "10000"
+      APP_NAME: realtime
+      # Crée le locataire « realtime-dev » au premier démarrage : sans
+      # ceci il faudrait l'insérer à la main par son API.
+      SEED_SELF_HOST: "true"
+      RUN_JANITOR: "true"
+      DISABLE_HEALTHCHECK_LOGGING: "true"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl -sSfL --head -o /dev/null
+          -H "Authorization: Bearer ${ANON_KEY}"
+          http://localhost:4000/api/tenants/realtime-dev/health
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  # -------------------------------------------------------------------
+  app:
+  # -------------------------------------------------------------------
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Figées dans le bundle du navigateur à la compilation.
+        # Changer l'une d'elles impose de reconstruire l'image.
+        NEXT_PUBLIC_SUPABASE_URL: ${SITE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY:?ANON_KEY manquant}
+        NEXT_PUBLIC_SITE_URL: ${SITE_URL}
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+    image: votretour-app:local
+    restart: unless-stopped
+    depends_on:
+      rest: { condition: service_healthy }
+    environment:
+      # Une seule et même URL pour le navigateur et pour le serveur.
+      # @supabase/ssr dérive le nom du cookie de session de cette URL :
+      # deux URL différentes donneraient deux cookies différents, et la
+      # connexion des professionnels ne tiendrait pas. Le trafic du
+      # serveur ne sort pourtant pas de la machine — voir l'alias réseau
+      # posé sur Caddy plus bas.
+      NEXT_PUBLIC_SUPABASE_URL: ${SITE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY:?SERVICE_ROLE_KEY manquant}
+      NEXT_PUBLIC_SITE_URL: ${SITE_URL}
+      SESSION_HASH_SECRET: ${SESSION_HASH_SECRET:?SESSION_HASH_SECRET manquant}
+      CRON_SECRET: ${CRON_SECRET:?CRON_SECRET manquant}
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      APNS_KEY_ID: ${APNS_KEY_ID:-}
+      APNS_TEAM_ID: ${APNS_TEAM_ID:-}
+      APNS_PRIVATE_KEY: ${APNS_PRIVATE_KEY:-}
+      APNS_BUNDLE_ID: ${APNS_BUNDLE_ID:-}
+      APNS_CLIP_BUNDLE_ID: ${APNS_CLIP_BUNDLE_ID:-}
+      APNS_ENVIRONMENT: ${APNS_ENVIRONMENT:-sandbox}
+      APPLE_APP_ID: ${APPLE_APP_ID:-}
+      APPLE_CLIP_APP_ID: ${APPLE_CLIP_APP_ID:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+
+  # -------------------------------------------------------------------
+  caddy:
+  # -------------------------------------------------------------------
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    networks:
+      default:
+        aliases:
+          # Le domaine public résout vers ce conteneur À L'INTÉRIEUR du
+          # réseau. Les appels du serveur applicatif à sa propre API ne
+          # ressortent donc jamais sur Internet — et gardent un
+          # certificat valide, puisque c'est le vrai Caddy qui répond.
+          # Sans cela, il faudrait compter sur le retour en épingle
+          # (hairpin NAT) du serveur, que beaucoup d'hébergeurs ne font
+          # pas.
+          - ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN manquant}
+      TLS_EMAIL: ${TLS_EMAIL:?TLS_EMAIL manquant}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  # -------------------------------------------------------------------
+  # Tâches planifiées, à la place de Vercel Cron.
+  # -------------------------------------------------------------------
+  cron:
+    image: alpine:3.20
+    restart: unless-stopped
+    depends_on: [app]
+    environment:
+      CRON_SECRET: ${CRON_SECRET}
+    command:
+      - sh
+      - -c
+      - |
+        apk add --no-cache curl >/dev/null
+        while true; do
+          # Relances de notifications : toutes les minutes.
+          curl -sS -m 30 -o /dev/null \
+            -H "Authorization: Bearer $$CRON_SECRET" \
+            http://app:3000/api/cron/notifications || true
+          # Purge RGPD et expiration des tickets : toutes les heures.
+          if [ "$$(date +%M)" = "07" ]; then
+            curl -sS -m 120 -o /dev/null \
+              -H "Authorization: Bearer $$CRON_SECRET" \
+              http://app:3000/api/cron/maintenance || true
+          fi
+          sleep 60
+        done
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:
