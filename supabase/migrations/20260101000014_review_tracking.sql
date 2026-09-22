@@ -41,4 +41,4 @@ revoke all on table public.review_clicks from anon, authenticated;
 grant all on table public.review_clicks to service_role;
 
 comment on table public.review_clicks is
-  'Clic unique par passage terminé vers la fiche Google. Aucun identifiant personnel n\'est stocké.';
+  'Clic unique par passage terminé vers la fiche Google. Aucun identifiant personnel n''est stocké.';
