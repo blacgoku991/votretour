@@ -20,16 +20,39 @@ export function EventPassCard({
   redeemedAt: string | null;
 }) {
   const [now, setNow] = useState(Date.now());
+  const [liveStatus, setLiveStatus] = useState(status);
+  const [liveEventStatus, setLiveEventStatus] = useState(eventStatus);
+  const [liveRedeemedAt, setLiveRedeemedAt] = useState(redeemedAt);
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
+    const clock = window.setInterval(() => setNow(Date.now()), 1000);
+    const sync = window.setInterval(async () => {
+      try {
+        const response = await fetch('/api/pass/session', { cache: 'no-store' });
+        if (!response.ok) return;
+        const payload = await response.json() as {
+          ok: boolean;
+          data?: { status?: string; eventStatus?: string; redeemedAt?: string | null };
+        };
+        if (!payload.ok || !payload.data) return;
+        if (payload.data.status) setLiveStatus(payload.data.status);
+        if (payload.data.eventStatus) setLiveEventStatus(payload.data.eventStatus);
+        if ('redeemedAt' in payload.data) setLiveRedeemedAt(payload.data.redeemedAt ?? null);
+      } catch {
+        // Le QR continue de fonctionner localement ; le prochain poll retentera.
+      }
+    }, 3000);
+
+    return () => {
+      window.clearInterval(clock);
+      window.clearInterval(sync);
+    };
   }, []);
 
   const validUntilMs = new Date(validUntil).getTime();
   const graceUntilMs = new Date(graceUntil).getTime();
   const remaining = Math.max(0, Math.ceil((validUntilMs - now) / 1000));
-  const runtimeStatus = status === 'issued' && now > graceUntilMs ? 'expired' : status;
+  const runtimeStatus = liveStatus === 'issued' && now > graceUntilMs ? 'expired' : liveStatus;
   const qrTick = Math.floor(now / 20_000);
 
   const countdown = useMemo(() => {
@@ -38,7 +61,9 @@ export function EventPassCard({
     return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   }, [remaining]);
 
-  const active = runtimeStatus === 'issued' && eventStatus !== 'sold_out' && eventStatus !== 'ended';
+  const active = runtimeStatus === 'issued'
+    && liveEventStatus !== 'sold_out'
+    && liveEventStatus !== 'ended';
 
   return (
     <main className={styles.screen}>
@@ -96,13 +121,13 @@ export function EventPassCard({
             <h2>Accès validé</h2>
             <p>
               Ce laisser-passer a déjà été utilisé
-              {redeemedAt ? ` à ${new Date(redeemedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}.
+              {liveRedeemedAt ? ` à ${new Date(liveRedeemedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}.
             </p>
           </div>
         ) : (
           <div className={styles.finalState}>
             <div className={styles.bad}>×</div>
-            <h2>{eventStatus === 'sold_out' ? 'Stock épuisé' : 'Accès expiré'}</h2>
+            <h2>{liveEventStatus === 'sold_out' ? 'Stock épuisé' : 'Accès expiré'}</h2>
             <p>Ce laisser-passer n’est plus utilisable. Ne vous déplacez pas jusqu’à l’entrée.</p>
           </div>
         )}
