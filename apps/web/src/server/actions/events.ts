@@ -264,7 +264,7 @@ export async function callEventWave(
 }
 
 const redeemSchema = z.object({
-  token: z.string().regex(/^[a-f0-9]{64}$/i),
+  passId: z.string().regex(/^[0-9A-Za-z]{12,32}$/),
   slot: z.number().int().positive(),
   signature: z.string().min(16).max(64),
 });
@@ -274,24 +274,27 @@ export async function redeemEventPass(
 ): Promise<Result<{ status: string; clientName?: string | null; redeemedAt?: string | null }>> {
   try {
     const parsed = redeemSchema.parse(input);
-    const tokenHash = hashEventPassToken(parsed.token);
-
-    if (!verifyEventPassSignature(tokenHash, parsed.slot, parsed.signature)) {
-      throw new AppError('invalid_pass', 'Ce QR a expiré. Demandez au client de rouvrir son laisser-passer.', 409);
-    }
-
     const db = supabaseAdmin();
     const { data: pass } = await db
       .from('event_access_passes')
-      .select('event_id, event_campaigns(queue_id, organization_id)')
-      .eq('token_hash', tokenHash)
+      .select('token_hash, event_id, event_campaigns(queue_id, organization_id)')
+      .eq('public_id', parsed.passId)
       .maybeSingle();
+
+    if (!pass) {
+      throw new AppError('not_found', 'Laisser-passer introuvable.', 404);
+    }
+
+    const tokenHash = pass.token_hash;
+    if (!verifyEventPassSignature(tokenHash, parsed.slot, parsed.signature)) {
+      throw new AppError('invalid_pass', 'Ce QR a expiré. Demandez au client de rouvrir son laisser-passer.', 409);
+    }
 
     const eventRelation = Array.isArray(pass?.event_campaigns)
       ? pass?.event_campaigns[0]
       : pass?.event_campaigns;
 
-    if (!pass || !eventRelation?.queue_id) {
+    if (!eventRelation?.queue_id) {
       throw new AppError('not_found', 'Laisser-passer introuvable.', 404);
     }
 
