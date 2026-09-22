@@ -52,21 +52,11 @@ export default async function AdminPlatesPage({
   const { data: plates } = await query;
   const rows = (plates ?? []) as AdminPlate[];
 
-  const orgIds = [...new Set(rows.map((p) => p.organization_id))];
-  const locationIds = [...new Set(rows.map((p) => p.location_id))];
-
-  const [{ data: organizations }, { data: allOrganizations }, { data: locations }, { data: queues }] =
+  const [{ data: allOrganizations }, { data: locations }, { data: queues }] =
     await Promise.all([
-      orgIds.length
-        ? db.from('organizations').select('id, name, slug, status').in('id', orgIds)
-        : Promise.resolve({ data: [] }),
-      db.from('organizations').select('id, name').order('name').limit(500),
-      locationIds.length
-        ? db.from('locations').select('id, name, city').in('id', locationIds)
-        : Promise.resolve({ data: [] }),
-      locationIds.length
-        ? db.from('queues').select('id, name, location_id').in('location_id', locationIds)
-        : Promise.resolve({ data: [] }),
+      db.from('organizations').select('id, name, slug, status').order('name').limit(500),
+      db.from('locations').select('id, name, city, organization_id').order('name').limit(1000),
+      db.from('queues').select('id, name, location_id').order('name').limit(2000),
     ]);
 
   const active = rows.filter((p) => p.is_active).length;
@@ -117,7 +107,7 @@ export default async function AdminPlatesPage({
           <PlateGrid
             plates={rows}
             siteUrl={env.siteUrl}
-            organizations={(organizations ?? []) as never}
+            organizations={(allOrganizations ?? []) as never}
             locations={(locations ?? []) as never}
             queues={(queues ?? []) as never}
           />
