@@ -163,7 +163,7 @@ begin
 
   return new;
 end;
-$;
+$$;
 
 create trigger queue_entries_event_ticket_number
   before insert on public.queue_entries
