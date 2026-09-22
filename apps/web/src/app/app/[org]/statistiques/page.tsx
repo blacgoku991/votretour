@@ -58,12 +58,35 @@ export default async function StatsPage({
   }
 
   const from = new Date(Date.now() - range.days * 86_400_000).toISOString();
-  const { data } = await db.rpc('location_stats', {
-    p_location_id: current.id,
-    p_from: from,
-    p_to: new Date().toISOString(),
-  });
+  const to = new Date().toISOString();
+
+  const [
+    { data },
+    { count: notificationsSent },
+    { count: reviewClicks },
+  ] = await Promise.all([
+    db.rpc('location_stats', {
+      p_location_id: current.id,
+      p_from: from,
+      p_to: to,
+    }),
+    db.from('notification_deliveries')
+      .select('id', { count: 'exact', head: true })
+      .eq('location_id', current.id)
+      .eq('status', 'sent')
+      .gte('created_at', from)
+      .lte('created_at', to),
+    db.from('review_clicks')
+      .select('id', { count: 'exact', head: true })
+      .eq('location_id', current.id)
+      .gte('created_at', from)
+      .lte('created_at', to),
+  ]);
+
   const stats = data as Stats | null;
+  const completed = stats?.totals.completed ?? 0;
+  const googleClicks = reviewClicks ?? 0;
+  const reviewClickRate = completed > 0 ? googleClicks / completed : null;
 
   const byDay = (stats?.byDay ?? []).map((d) => {
     const date = new Date(d.day);
@@ -137,6 +160,46 @@ export default async function StatsPage({
         <Stat label="Taux de passage" value={formatPercent(stats?.completionRate ?? null)}
           hint={`${formatNumber(stats?.totals.cancelled ?? 0)} départs, ${formatNumber(stats?.totals.absent ?? 0)} absents`} />
       </div>
+
+      <Section
+        title="Impact Rangvia"
+        description="Notifications réellement remises et transformation des passages terminés en clics vers la fiche Google."
+      >
+        <div className={styles.statGrid}>
+          <Stat
+            accent
+            label="Notifications envoyées"
+            value={formatNumber(notificationsSent ?? 0)}
+            hint="acceptées par le fournisseur"
+          />
+          <Stat
+            label="Clics vers Google"
+            value={formatNumber(googleClicks)}
+            hint="1 clic maximum compté par visite"
+          />
+          <Stat
+            label="Taux de clic avis"
+            value={formatPercent(reviewClickRate)}
+            hint="clics Google / clients servis"
+          />
+          <Stat
+            label="Clients servis → Google"
+            value={`${formatNumber(completed)} → ${formatNumber(googleClicks)}`}
+            hint={completed > 0
+              ? `${formatPercent(reviewClickRate)} des passages terminés`
+              : 'aucun passage terminé sur la période'}
+          />
+        </div>
+
+        <p className="t-small">
+          <strong>{formatNumber(completed)} clients servis</strong>
+          {' → '}
+          <strong>{formatNumber(googleClicks)} clics Google</strong>
+          {reviewClickRate != null && (
+            <> · {formatPercent(reviewClickRate)} de conversion vers la fiche d’avis</>
+          )}
+        </p>
+      </Section>
 
       <Section title="Jour après jour" description="Arrivées et passages terminés.">
         <div className={styles.chartCard}>
