@@ -57,8 +57,9 @@ create table if not exists public.event_access_passes (
   created_at        timestamptz not null default now()
 );
 
-create unique index if not exists event_access_passes_one_per_entry_event
-  on public.event_access_passes(event_id, queue_entry_id);
+create unique index if not exists event_access_passes_one_active_per_entry_event
+  on public.event_access_passes(event_id, queue_entry_id)
+  where status in ('issued','redeemed');
 create index if not exists event_access_passes_event_idx
   on public.event_access_passes(event_id, status, issued_at desc);
 create index if not exists event_access_passes_hash_idx
