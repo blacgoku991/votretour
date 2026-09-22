@@ -30,8 +30,8 @@ export function buildNav(orgSlug: string): NavItem[] {
   return [
     { href: `${base}/file`,          label: 'File',          short: 'File',    icon: 'rang', primary: true },
     { href: `${base}/equipe`,        label: 'Équipe',        short: 'Équipe',  icon: 'team', primary: true },
-    { href: `${base}/plaques`,       label: 'Plaques & QR',  short: 'Plaques', icon: 'plate', primary: true },
     { href: `${base}/statistiques`,  label: 'Statistiques',  short: 'Stats',   icon: 'chart', primary: true },
+    { href: `${base}/ecran`,         label: 'Écran TV',      short: 'TV',      icon: 'screen', primary: true },
     { href: `${base}/historique`,    label: 'Historique',    short: 'Historique', icon: 'history' },
     { href: `${base}/notifications`, label: 'Notifications', short: 'Notifs',  icon: 'bell' },
     { href: `${base}/reglages`,      label: 'Réglages',      short: 'Réglages', icon: 'settings' },
@@ -168,14 +168,22 @@ function OrgSwitcher({
   if (organizations.length <= 1) {
     return (
       <div className={styles.org}>
-        <span className={styles.orgMark}>{initials(current.name)}</span>
+        <span className={styles.orgMark}>
+          {current.logo_url
+            ? <img src={current.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+            : initials(current.name)}
+        </span>
         <span className={styles.orgName}>{current.name}</span>
       </div>
     );
   }
   return (
     <div className={styles.org}>
-      <span className={styles.orgMark}>{initials(current.name)}</span>
+      <span className={styles.orgMark}>
+        {current.logo_url
+          ? <img src={current.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
+          : initials(current.name)}
+      </span>
       <select
         className={styles.orgSelect}
         value={current.slug}
@@ -218,6 +226,12 @@ const ICONS = {
       <rect x="6" y="10.8" width="3.2" height="3.2" rx="0.8" />
       <rect x="10.8" y="6" width="3.2" height="3.2" rx="0.8" />
       <path d="M10.8 11.4v2.6M13.4 11.4v2.6" />
+    </>
+  ),
+  screen: (
+    <>
+      <rect x="2.5" y="3.5" width="15" height="11" rx="2.2" />
+      <path d="M7 17h6M10 14.5V17" />
     </>
   ),
   chart: (
