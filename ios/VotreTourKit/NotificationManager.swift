@@ -79,12 +79,26 @@ public final class NotificationManager: NSObject, ObservableObject {
         let center = UNUserNotificationCenter.current()
 
         if Configuration.isAppClip {
-            // Aucune demande explicite dans un App Clip : la permission
-            // éphémère est accordée par la carte App Clip. La réclamer
-            // afficherait une alerte inutile et risquerait un refus qui
-            // écraserait la fenêtre de 8 heures.
-            let settings = await center.notificationSettings()
+            // Une invocation physique (NFC / QR / App Clip Code) accorde
+            // normalement l'autorisation éphémère 8 h via la carte App Clip.
+            // Les invocations TestFlight ne sont pas des invocations physiques :
+            // elles peuvent rester en .notDetermined. Dans ce seul cas on
+            // demande une autorisation classique afin de pouvoir valider APNs
+            // avant la mise en production. En production NFC, .ephemeral est
+            // déjà présent et aucun pop-up n'est affiché.
+            var settings = await center.notificationSettings()
             authorization = settings.authorizationStatus
+
+            if settings.authorizationStatus == .notDetermined {
+                do {
+                    _ = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+                } catch {
+                    return nil
+                }
+                settings = await center.notificationSettings()
+                authorization = settings.authorizationStatus
+            }
+
             guard settings.authorizationStatus == .ephemeral
                     || settings.authorizationStatus == .authorized
                     || settings.authorizationStatus == .provisional else {
