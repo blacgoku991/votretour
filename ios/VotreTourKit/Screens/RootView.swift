@@ -52,6 +52,18 @@ public struct RootView: View {
             guard phase == .active else { return }
             Task { await model.refresh() }
         }
+        .sheet(
+            isPresented: Binding(
+                get: { notifications.pendingReviewURL != nil && model.phase != .done },
+                set: { presented in
+                    if !presented { notifications.pendingReviewURL = nil }
+                }
+            )
+        ) {
+            if let reviewURL = notifications.pendingReviewURL {
+                ReviewPromptView(url: reviewURL)
+            }
+        }
     }
 
     @ViewBuilder
@@ -115,6 +127,52 @@ struct UnavailableScreen: View {
                 .multilineTextAlignment(.center)
         }
         .padding(VT.Space.x6)
+    }
+}
+
+private struct ReviewPromptView: View {
+    let url: URL
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: VT.Space.x5) {
+            Spacer()
+
+            Text("Merci pour votre visite")
+                .font(VT.Type.display(28))
+                .foregroundStyle(VT.Color.text)
+                .multilineTextAlignment(.center)
+
+            Text("Votre avis aide énormément l'établissement.")
+                .font(VT.Type.body(16))
+                .foregroundStyle(VT.Color.textMuted)
+                .multilineTextAlignment(.center)
+
+            Spacer()
+
+            Link(destination: url) {
+                Text("Laisser un avis Google")
+                    .font(VT.Type.strong(17))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 58)
+                    .background(
+                        VT.Color.signal,
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    )
+            }
+
+            Button("Plus tard") {
+                NotificationManager.shared.pendingReviewURL = nil
+                dismiss()
+            }
+            .font(VT.Type.body(14))
+            .foregroundStyle(VT.Color.textFaint)
+            .frame(minHeight: 44)
+        }
+        .padding(VT.Space.x5)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+        .preferredColorScheme(.dark)
     }
 }
 
