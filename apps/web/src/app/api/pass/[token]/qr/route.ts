@@ -16,7 +16,22 @@ export async function GET(
   }
 
   const tokenHash = hashEventPassToken(token);
-  const { data: pass } = await supabaseAdmin()
+  const db = supabaseAdmin();
+
+  const { data: limit } = await db.rpc('consume_rate_limit', {
+    p_key: `event-pass-qr:${tokenHash.slice(0, 24)}`,
+    p_max: 240,
+    p_window_seconds: 300,
+  });
+  const rate = Array.isArray(limit) ? limit[0] : limit;
+  if (rate && rate.allowed === false) {
+    return new Response('Trop de requêtes', {
+      status: 429,
+      headers: { 'Retry-After': String(rate.retry_after_seconds ?? 30) },
+    });
+  }
+
+  const { data: pass } = await db
     .from('event_access_passes')
     .select('public_id, status, grace_until')
     .eq('token_hash', tokenHash)
