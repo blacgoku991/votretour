@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { suspendOrganization, reactivateOrganization } from '@/server/actions/admin';
 
@@ -15,22 +16,33 @@ export function OrganizationActions({
 
   if (suspended) {
     return (
-      <button type="button" className="btn btn--ghost btn--sm" disabled={pending}
-        onClick={() => startTransition(async () => {
-          const result = await reactivateOrganization(organizationId);
-          if (!result.ok) { setError(result.error); return; }
-          router.refresh();
-        })}>
-        {pending ? '…' : 'Réactiver'}
-      </button>
+      <div className="row g2 wrap">
+        <Link href={`/admin/etablissements/${organizationId}`} className="btn btn--solid btn--sm">
+          Gérer
+        </Link>
+        <button type="button" className="btn btn--ghost btn--sm" disabled={pending}
+          onClick={() => startTransition(async () => {
+            const result = await reactivateOrganization(organizationId);
+            if (!result.ok) { setError(result.error); return; }
+            router.refresh();
+          })}>
+          {pending ? '…' : 'Réactiver'}
+        </button>
+        {error && <p className="error-text">{error}</p>}
+      </div>
     );
   }
 
   if (!asking) {
     return (
-      <button type="button" className="btn btn--danger btn--sm" onClick={() => setAsking(true)}>
-        Suspendre
-      </button>
+      <div className="row g2 wrap">
+        <Link href={`/admin/etablissements/${organizationId}`} className="btn btn--solid btn--sm">
+          Gérer
+        </Link>
+        <button type="button" className="btn btn--danger btn--sm" onClick={() => setAsking(true)}>
+          Suspendre
+        </button>
+      </div>
     );
   }
 
