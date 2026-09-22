@@ -5,17 +5,19 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
 
     steps:
       - name: Recuperer le projet
         uses: actions/checkout@v4
 
-      - name: Verifier Xcode
+      - name: Verifier Xcode 26
         run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version
           swift --version
+          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Installer XcodeGen
         run: brew install xcodegen
