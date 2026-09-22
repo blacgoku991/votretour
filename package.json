@@ -2,9 +2,13 @@
   "name": "votretour",
   "private": true,
   "version": "1.0.0",
-  "description": "VotreTour — file d'attente virtuelle pour les commerces sans rendez-vous. SaaS web + App Clip iOS + Web Push Android.",
-  "workspaces": ["apps/web"],
-  "engines": { "node": ">=20.9.0" },
+  "description": "Rangvia — file d'attente virtuelle, contrôle de flux et Event/Drop avec App Clip iOS.",
+  "workspaces": [
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "npm run dev --workspace apps/web",
     "build": "npm run build --workspace apps/web",
@@ -17,5 +21,8 @@
     "db:types": "supabase gen types typescript --local > apps/web/src/lib/database.types.ts",
     "keys:vapid": "node scripts/generate-vapid-keys.mjs",
     "ios:generate": "cd ios && xcodegen generate"
+  },
+  "overrides": {
+    "postcss": "8.5.23"
   }
 }
