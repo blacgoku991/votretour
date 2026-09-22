@@ -42,6 +42,8 @@ export interface ClientEntry {
   serviceStartedAt: string | null;
   completedAt: string | null;
   staffName: string | null;
+  eventId?: string | null;
+  eventTicketNumber?: number | null;
 }
 
 export interface StaffEntry {
@@ -62,6 +64,8 @@ export interface StaffEntry {
   completedAt: string | null;
   absentAt: string | null;
   notified: Record<string, string>;
+  eventId?: string | null;
+  eventTicketNumber?: number | null;
 }
 
 export interface StaffMember {
