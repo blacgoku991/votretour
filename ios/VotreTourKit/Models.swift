@@ -32,6 +32,8 @@ public struct ClientEntry: Codable, Equatable, Sendable {
     public let serviceStartedAt: String?
     public let completedAt: String?
     public let staffName: String?
+    public let eventId: String?
+    public let eventTicketNumber: Int?
 }
 
 public struct QueueInfo: Codable, Equatable, Sendable {
