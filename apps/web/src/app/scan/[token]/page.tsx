@@ -22,13 +22,34 @@ export default async function ScanPage({
   const slot = Number(slotRaw);
   if (!Number.isInteger(slot) || !sig) notFound();
 
-  const { data: pass } = await supabaseAdmin()
+  const db = supabaseAdmin();
+
+  // Étape 1 : seulement les métadonnées minimales nécessaires au contrôle
+  // d'accès. Aucun prénom client n'est chargé avant l'autorisation tenant.
+  const { data: passAuth } = await db
+    .from('event_access_passes')
+    .select('public_id, token_hash, event_campaigns(queue_id)')
+    .eq('public_id', passId)
+    .maybeSingle();
+
+  if (!passAuth) notFound();
+
+  const authEvent = Array.isArray(passAuth.event_campaigns)
+    ? passAuth.event_campaigns[0]
+    : passAuth.event_campaigns;
+
+  if (!authEvent?.queue_id) notFound();
+
+  await assertQueueAccess(authEvent.queue_id, 'queue.operate');
+
+  // Étape 2 : l'utilisateur appartient bien à l'organisation de cette
+  // file ; on peut maintenant charger les informations visibles à l'entrée.
+  const { data: pass } = await db
     .from('event_access_passes')
     .select(`
-      public_id, token_hash, status, valid_until, grace_until, redeemed_at,
-      queue_entry_id,
+      public_id, status, valid_until, grace_until, redeemed_at,
       queue_entries(client_name),
-      event_campaigns(id, name, queue_id, organization_id),
+      event_campaigns(id, name, queue_id),
       locations(name)
     `)
     .eq('public_id', passId)
@@ -42,11 +63,7 @@ export default async function ScanPage({
 
   if (!event?.queue_id) notFound();
 
-  // Ne révèle aucune donnée client avant d'avoir vérifié que le scanner
-  // appartient bien à l'organisation de CET événement.
-  await assertQueueAccess(event.queue_id, 'queue.operate');
-
-  const signatureValid = verifyEventPassSignature(pass.token_hash, slot, sig);
+  const signatureValid = verifyEventPassSignature(passAuth.token_hash, slot, sig);
   const expired = new Date(pass.grace_until).getTime() < Date.now();
 
   return (
