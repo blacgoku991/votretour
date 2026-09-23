@@ -143,6 +143,7 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
   if (effectiveEntryPoint.status === 'suspended') {
     return (
       <main className={styles.screen} data-theme="dark">
+        <span className={`floor-marks ${styles.sideMarks}`} aria-hidden="true" />
         <div className={`client-shell ${styles.inner}`}>
           <div className={styles.emptyState}>
             <p className="t-label">Indisponible</p>
@@ -172,6 +173,8 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
 
   return (
     <main className={styles.screen} data-theme="dark" data-accent={entryPoint.settings.brandAccent}>
+      {/* À partir de 600 px, les côtés deviennent le sol (marquage discret). */}
+      <span className={`floor-marks ${styles.sideMarks}`} aria-hidden="true" />
       <div className={`client-shell ${styles.inner}`}>
         <ClientExperience
           entryPoint={effectiveEntryPoint}

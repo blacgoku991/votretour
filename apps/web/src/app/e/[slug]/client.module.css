@@ -1,17 +1,22 @@
 /* =====================================================================
-   Expérience client — conçue d'abord pour un iPhone tenu à une main,
-   debout, dans un commerce. Toutes les actions sont à portée de pouce,
-   en bas de l'écran ; l'information est en haut.
+   Expérience client /e/[slug] — sobre : on la lit dans la rue.
+
+   Un iPhone tenu à une main, debout, dans un commerce ou sur le trottoir.
+   L'information est en haut (qui, combien devant), les actions en bas, à
+   portée de pouce. Aucune caméra, aucune animation au défilement ; on
+   n'anime que transform et opacity, et le mouvement réduit donne le même
+   écran, immobile.
    ===================================================================== */
 
 .screen {
+  --gutter: 20px;
+  position: relative;
   min-height: 100dvh;
-  background: var(--surface);
-  color: var(--text);
   display: flex;
   flex-direction: column;
-  position: relative;
-  overflow-x: hidden;
+  background: var(--surface);
+  color: var(--text);
+  overflow-x: clip;
 }
 
 /* Le fond de page suit le thème sombre de l'écran client sans provoquer
@@ -20,47 +25,60 @@
   background: var(--ink-900);
 }
 
+/* Marquage au sol des côtés : seulement quand il y a des côtés. */
+.sideMarks { display: none; }
+
 .inner {
+  position: relative;
+  z-index: 1;
+  flex: 1;
   width: 100%;
   max-width: var(--maxw-phone);
   margin-inline: auto;
-  padding: calc(var(--safe-top) + var(--sp-5)) var(--sp-5)
-           calc(var(--safe-bottom) + var(--sp-7));
+  padding: calc(var(--safe-top) + 24px) var(--gutter) calc(var(--safe-bottom) + 20px);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-5);
-  flex: 1;
+  background: var(--surface);
+}
+
+@media (max-width: 379px) {
+  .screen { --gutter: 16px; }
+}
+
+/* À partir de 600 px : la colonne reste un téléphone, posée sur le sol. */
+@media (min-width: 600px) {
+  .screen { background: var(--floor); }
+  :global(body):has(.inner) { background: var(--floor); }
+  .sideMarks { display: block; opacity: 0.55; }
+  .inner {
+    padding-top: calc(var(--safe-top) + 48px);
+    padding-inline: 28px;
+    border-inline: 1px solid var(--line);
+  }
+  .screen { --gutter: 28px; }
 }
 
 .stage {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-5);
-  flex: 1;
+  gap: 28px;
 }
 
 /* ---------------------------------------------------------------------
-   En-tête
+   En-tête : le nom, puis l'état SOUS le nom
    --------------------------------------------------------------------- */
 .header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-4);
-}
-
-.identity {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  min-width: 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  column-gap: 14px;
+  align-items: start;
 }
 
 .logo, .logoFallback {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 12px;
-  flex: none;
   object-fit: cover;
   background: var(--surface-raised);
 }
@@ -68,37 +86,60 @@
 .logoFallback {
   display: grid;
   place-items: center;
-  font-variation-settings: 'wdth' 110, 'wght' 760;
-  font-size: 0.875rem;
+  font-variation-settings: 'wdth' 110, 'wght' 780;
+  font-size: 0.9375rem;
   letter-spacing: 0.02em;
-  color: var(--text-muted);
-  border: 1px solid var(--line);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--edge-light);
 }
 
-.identityText { min-width: 0; }
+.identityText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
 
 .placeName {
-  font-variation-settings: 'wdth' 108, 'wght' 720;
-  font-size: 1.0625rem;
-  line-height: 1.15;
-  letter-spacing: -0.015em;
-  /* Deux lignes plutôt qu'une coupure : le nom du commerce est ce que le
-     client vérifie en premier pour être sûr d'être au bon endroit. */
+  font-variation-settings: 'wdth' 100, 'wght' 760;
+  font-size: 1.375rem;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  /* Deux lignes au plus : le nom du commerce est ce que le client vérifie
+     en premier pour être sûr d'être au bon endroit. */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-.status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  align-self: flex-start;
-  padding-top: 3px;
+.subtitle {
+  margin-top: 4px;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  color: var(--text-muted);
 }
 
+.status {
+  margin-top: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 12px 0 11px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-strong);
+  font-variation-settings: 'wdth' 100, 'wght' 620;
+  font-size: 0.8125rem;
+  line-height: 1;
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------------
+   Événement (mode Event / Drop) : aplats, aucun dégradé
+   --------------------------------------------------------------------- */
 .eventWelcome {
   --event-accent: var(--accent);
   position: relative;
@@ -107,183 +148,303 @@
   gap: 14px;
   padding: 18px;
   border-radius: var(--r-card);
-  border: 1px solid color-mix(in srgb, var(--event-accent) 38%, var(--line));
-  background:
-    radial-gradient(circle at 10% 0%, color-mix(in srgb,var(--event-accent) 16%,transparent), transparent 34%),
-    var(--surface-raised);
+  border: 1px solid color-mix(in srgb, var(--event-accent) 45%, var(--line));
+  background-color: var(--surface-raised);
+}
+.eventWelcomeCover {
+  background-image: var(--event-cover);
   background-size: cover;
   background-position: center;
-  box-shadow: 0 22px 55px -40px color-mix(in srgb, var(--event-accent) 55%, transparent);
 }
+/* Voile uni sur la couverture : le texte reste lisible, sans dégradé. */
+.eventWelcomeCover::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--ink-900) 86%, transparent);
+}
+.eventWelcome > * { position: relative; }
 
 .eventWelcomeHead {
   display: grid;
-  grid-template-columns: auto minmax(0,1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 12px;
   align-items: center;
 }
-
 .eventWelcomeHead img {
   width: 52px;
   height: 52px;
   object-fit: cover;
-  border-radius: 15px;
-  background: rgba(255,255,255,.06);
-  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 14px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
 }
-
 .eventWelcomeHead span {
   display: block;
   color: var(--event-accent);
-  font-size: .56rem;
-  font-weight: 850;
-  letter-spacing: .16em;
+  font-variation-settings: 'wdth' 88, 'wght' 800;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
-
 .eventWelcomeHead h2 {
-  margin: 5px 0 0;
-  font-size: clamp(1.35rem, 1rem + 2vw, 2rem);
-  line-height: .98;
-  letter-spacing: -.04em;
+  margin: 6px 0 0;
+  font-variation-settings: 'wdth' 112, 'wght' 780;
+  font-size: clamp(1.375rem, 1rem + 2vw, 1.875rem);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
 }
-
 .eventWelcome > p {
   margin: 0;
   color: var(--text-muted);
-  font-size: .74rem;
+  font-size: 0.875rem;
   line-height: 1.55;
   white-space: pre-line;
 }
-
 .eventWelcomeFoot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--text-faint);
-  font-size: .625rem;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
   line-height: 1.45;
 }
-
 .eventWelcomeFoot i {
-  width: 9px;
-  height: 9px;
-  flex: 0 0 9px;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
   border-radius: 50%;
   background: var(--event-accent);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--event-accent) 72%, transparent);
 }
 
 /* ---------------------------------------------------------------------
    Panneaux
    --------------------------------------------------------------------- */
 .panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-5);
   flex: 1;
-}
-
-/* Le bloc du chiffre : c'est le cœur de l'écran, il occupe la place
-   qu'il mérite. Le motif de lattes en fond rappelle la file sans
-   décorer pour décorer. */
-.countBlock {
-  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-7) var(--sp-4) var(--sp-6);
-  border-radius: var(--r-card);
-  background: var(--surface-raised);
-  border: 1px solid var(--line);
-  overflow: hidden;
-  text-align: center;
+  gap: 28px;
 }
 
-.countBlockTurn {
-  background: var(--accent);
-  border-color: transparent;
-  color: var(--accent-ink);
-  box-shadow: 0 24px 60px -24px color-mix(in oklab, var(--accent) 85%, transparent);
-  animation: turn-arrive var(--dur-4) var(--ease-slat);
+.queued {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
 }
 
-@keyframes turn-arrive {
-  0%   { transform: scale(0.96); opacity: 0.4; }
-  60%  { transform: scale(1.012); }
-  100% { transform: scale(1); opacity: 1; }
+/* ---------------------------------------------------------------------
+   Le volet, libre : pas de boîte. Le chiffre, et à côté ce qu'il compte.
+   --------------------------------------------------------------------- */
+.count {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.countLabel {
-  font-variation-settings: 'wdth' 92, 'wght' 650;
-  font-size: 0.75rem;
-  letter-spacing: 0.18em;
+.countRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  min-width: 0;
+}
+.countRow > :first-child { flex: none; }
+
+.countUnit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Aligne le bas du libellé sur la ligne de base des chiffres. */
+  padding-bottom: 0.9rem;
+  font-variation-settings: 'wdth' 120, 'wght' 780;
+  font-size: 1.0625rem;
+  line-height: 1.08;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
   color: var(--text-muted);
-  position: relative;
+  min-width: 0;
 }
-.countBlockTurn .countLabel { color: inherit; opacity: 0.82; }
+.countUnit > :first-child { color: var(--text); }
 
-.turnKicker {
-  font-variation-settings: 'wdth' 100, 'wght' 620;
+.countNote {
+  font-variation-settings: 'wdth' 104, 'wght' 660;
   font-size: 1.125rem;
-  opacity: 0.78;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------------
+   Le comptoir, en tête du rail : la sortie de la file
+   --------------------------------------------------------------------- */
+.counter {
+  position: relative;
+  height: 24px;
+}
+.counter::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.counterLabel {
+  position: absolute;
+  left: var(--sp-5);
+  bottom: 10px;
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 0.6875rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
   line-height: 1;
-  position: relative;
+  color: var(--accent);
 }
 
-.turnTitle {
-  font-variation-settings: 'wdth' 122, 'wght' 800;
-  font-size: clamp(2.75rem, 1.6rem + 6vw, 4.25rem);
-  line-height: 0.94;
-  letter-spacing: -0.035em;
-  position: relative;
+/* Le rail part du comptoir : l'embout haut du rail touche la ligne. */
+.rangBlock,
+.previewPlane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
+/* ---------------------------------------------------------------------
+   Aperçu du Rang (avant de rejoindre) : couché en légère perspective,
+   STATIQUE. La file s'estompe vers le comptoir ; votre place est devant.
+   --------------------------------------------------------------------- */
 .preview {
-  width: 100%;
-  max-width: 190px;
-  margin-top: var(--sp-4);
-  opacity: 0.85;
+  perspective: 700px;
+  /* La base de l'aperçu vient vers vous (≈ ×1,19) : la plaque est plus
+     étroite que la colonne pour que le bas tienne dans la gouttière. */
+  padding-inline: 8%;
+  overflow-x: clip;
+}
+/* File en pause ou fermée : l'aperçu reste, éteint. */
+.previewOff { opacity: 0.4; }
+.previewPlane {
+  transform: rotateX(24deg);
+  transform-origin: 50% 0;
+}
+/* Rien à lire en 3D : l'éventuelle ligne « + n personnes » reste hors
+   de l'aperçu (le chiffre du volet le dit déjà). */
+.previewPlane p { display: none; }
+.previewPlane :global(.rang > .slat:nth-last-child(2)) { opacity: 0.85; }
+.previewPlane :global(.rang > .slat:nth-last-child(3)) { opacity: 0.66; }
+.previewPlane :global(.rang > .slat:nth-last-child(4)) { opacity: 0.5; }
+.previewPlane :global(.rang > .slat:nth-last-child(n + 5)) { opacity: 0.36; }
+.previewPlane :global(.slat--ghost) {
+  height: calc(var(--slat-h) + 14px);
+}
+
+/* Places marquées au sol derrière la vôtre : de simples tracés, sans
+   personne dessus. Le rail continue, plus discret. */
+.floorPlaces {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--slat-gap);
+  margin-top: calc(var(--slat-gap) - 10px);
+  padding-left: var(--sp-5);
+}
+.floorPlaces::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: calc(var(--slat-gap) * -1);
+  bottom: 2px;
+  width: var(--rail-w);
+  border-radius: var(--rail-w);
+  background: var(--floor-line);
+}
+.floorPlace {
+  position: relative;
+  height: var(--slat-h);
+  border-radius: var(--r-slat);
+  border: 1px solid color-mix(in oklab, var(--bone-100) 9%, transparent);
+}
+.floorPlace:nth-child(2) { opacity: 0.7; }
+.floorPlace:nth-child(3) { opacity: 0.5; }
+.floorPlace:nth-child(n + 4) { opacity: 0.35; }
+
+/* Le rail part du comptoir : il remonte jusqu'à la ligne. */
+.previewPlane :global(.rang)::before,
+.rangBlock :global(.rang)::before { top: -10px; }
+
+/* ---------------------------------------------------------------------
+   Formulaire et bouton collé en bas
+   --------------------------------------------------------------------- */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  /* Le formulaire descend vers le pouce ; l'aperçu occupe le milieu. */
+  margin-top: auto;
+}
+
+.form :global(.hint) { margin-top: -2px; }
+/* Un champ qui prend le focus ne se cache jamais sous le bouton collé. */
+.form :global(:is(.input, .select)) { scroll-margin-bottom: 120px; }
+
+/* Collé en bas (zone sûre comprise) quand le contenu dépasse ; sinon
+   simplement à sa place. Le fond uni masque ce qui défile dessous. */
+.dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin: -8px calc(var(--gutter) * -1) -12px;
+  padding: 8px var(--gutter) calc(12px + var(--safe-bottom));
+  background: var(--surface);
+}
+
+/* Pendant la saisie, le bouton reprend sa place sous le champ : le clavier
+   virtuel ne doit jamais faire passer le champ sous le bouton collé. */
+.form:focus-within .dock { position: static; }
+
+/* Écrans courts (iPhone SE…) : l'aperçu se resserre pour que le champ
+   reste visible au-dessus du bouton. */
+@media (max-height: 740px) {
+  .floorPlace:nth-child(n + 2) { display: none; }
+  .stage, .panel, .queued { gap: 22px; }
 }
 
 .reassure {
   text-align: center;
-  line-height: 1.6;
-  padding-top: var(--sp-1);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-muted);
 }
 
-/* ---------------------------------------------------------------------
-   Choix du professionnel
-   --------------------------------------------------------------------- */
+/* Choix du professionnel */
 .chooser {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: var(--sp-2);
+  gap: 8px;
 }
 
 .choice {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
-  padding: var(--sp-3) var(--sp-4);
-  min-height: 62px;
+  justify-content: center;
+  gap: 3px;
+  padding: 10px 14px;
+  min-height: 60px;
   border-radius: var(--r-field);
-  background: var(--surface-raised);
+  background: transparent;
   border: 1px solid var(--line-strong);
+  color: var(--text);
   text-align: left;
-  transition: border-color var(--dur-1) var(--ease-out),
-              background var(--dur-1) var(--ease-out),
-              transform var(--dur-1) var(--ease-out);
+  transition: transform var(--dur-1) var(--ease-out);
 }
 .choice:active { transform: scale(0.98); }
 
 .choiceActive {
   border-color: var(--accent);
-  background: color-mix(in oklab, var(--accent) 12%, var(--surface-raised));
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--accent-soft);
 }
 
 .choiceName {
@@ -291,95 +452,404 @@
   font-size: 0.9375rem;
   line-height: 1.2;
 }
+.choiceMeta {
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  color: var(--text-muted);
+}
 
 /* ---------------------------------------------------------------------
-   Bandeau notifications
+   Dans la file
    --------------------------------------------------------------------- */
-.notice, .noticeAction {
+
+/* « Plus qu'une personne devant vous » : bandeau cuivre. */
+.soon {
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  font-variation-settings: 'wdth' 100, 'wght' 640;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.soonMark {
+  flex: none;
+  width: 14px;
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 2px;
+  background: var(--copper-500);
+}
+
+/* La latte « Vous » se déplie depuis le rail quand on vient de rejoindre. */
+@media (prefers-reduced-motion: no-preference) {
+  .unfold :global(.slat--self) {
+    transform-origin: 0 50%;
+    animation: self-unfold var(--dur-4) var(--ease-slat) 120ms backwards;
+  }
+}
+@keyframes self-unfold {
+  from { scale: 0 1; opacity: 0; }
+  to   { scale: 1 1; opacity: 1; }
+}
+
+/* Notifications : une ligne, pas une carte ; l'action a un contour. */
+.notice,
+.noticeAction {
   display: flex;
-  align-items: center;
-  gap: var(--sp-3);
+  align-items: flex-start;
+  gap: 14px;
   width: 100%;
-  padding: var(--sp-4);
-  border-radius: var(--r-field);
-  background: var(--surface-raised);
-  border: 1px solid var(--line);
   text-align: left;
   color: inherit;
 }
-
+.notice {
+  padding: 16px 0;
+  border-block: 1px solid var(--line);
+}
 .noticeAction {
-  border-color: var(--line-strong);
-  transition: border-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+  align-items: center;
+  min-height: 68px;
+  padding: 14px 16px;
+  border-radius: var(--r-card);
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  transition: transform var(--dur-1) var(--ease-out);
 }
 .noticeAction:active { transform: scale(0.99); }
-.noticeAction:hover { border-color: var(--accent); }
+@media (hover: hover) {
+  .noticeAction:hover { border-color: var(--accent); }
+}
 
+.noticeIcon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+.noticeIconOn {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.noticeText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 1px;
+}
 .noticeTitle {
   font-variation-settings: 'wdth' 100, 'wght' 660;
   font-size: 0.9375rem;
-  line-height: 1.25;
+  line-height: 1.3;
 }
-
-.icon { flex: none; color: var(--accent); }
-.chevron { margin-left: auto; flex: none; color: var(--text-faint); }
-
-/* ---------------------------------------------------------------------
-   Actions
-   --------------------------------------------------------------------- */
-.actionRow {
-  display: flex;
-  gap: var(--sp-2);
-  flex-wrap: wrap;
+.noticeBody {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-muted);
 }
-.actionRow > * { flex: 1 1 auto; min-width: 110px; }
+.chevron { margin-left: auto; flex: none; color: var(--text-muted); }
 
-/* ---------------------------------------------------------------------
-   Fin de visite
-   --------------------------------------------------------------------- */
-.doneBlock {
-  position: relative;
+/* Actions */
+.actions {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-9) var(--sp-5);
-  border-radius: var(--r-card);
-  background: var(--surface-raised);
-  border: 1px solid var(--line);
-  overflow: hidden;
+  gap: 12px;
+}
+.actionRow,
+.curtainRow {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+.leave { align-self: center; }
+
+/* Confirmation en ligne, tenue par un filet brique. */
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0 4px 16px;
+  border-left: 2px solid var(--brique-500);
+}
+.confirmText {
+  font-variation-settings: 'wdth' 100, 'wght' 620;
+  font-size: 0.9375rem;
+  line-height: 1.35;
+}
+.confirmRow {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+/* ---------------------------------------------------------------------
+   « C'est votre tour » : le rideau vermillon, texte encre
+   --------------------------------------------------------------------- */
+.curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  color: var(--accent-ink);
+}
+.curtainBg {
+  position: fixed;
+  inset: 0;
+  background: var(--accent);
+  transform-origin: 0 0;
+}
+.curtainInner {
+  position: relative;
+  min-height: 100dvh;
+  max-width: var(--maxw-phone);
+  margin-inline: auto;
+  padding: calc(var(--safe-top) + 24px) var(--gutter) calc(var(--safe-bottom) + 20px);
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+@media (min-width: 600px) {
+  /* Plein écran sur ordinateur : la porte s'élargit, « votre tour » tient
+     sur une ligne. */
+  .curtainInner {
+    max-width: 560px;
+    padding-top: calc(var(--safe-top) + 48px);
+    padding-bottom: 48px;
+  }
+}
+
+/* Le texte attend que le rideau soit presque posé, puis le Seuil se
+   dessine autour de lui (poteaux, puis linteau). */
+.curtain[data-flip='from'] .curtainInner { opacity: 0; }
+.curtain[data-flip='play'] .curtainInner { transition: opacity 280ms var(--ease-out) 240ms; }
+.curtain[data-flip] :global(.seuil__post) { animation-delay: 380ms; }
+.curtain[data-flip] :global(.seuil__lintel) { animation-delay: 580ms; }
+
+/* Couleur du cadre = encre de l'accent (encre sur vermillon, 5,9:1). */
+.curtain :global(.seuil__post),
+.curtain :global(.seuil__lintel) { background: var(--accent-ink); }
+.curtain :global(.seuil__label) { color: var(--accent-ink); }
+.curtain :focus-visible { outline-color: var(--accent-ink); }
+
+.curtainPlace {
+  font-variation-settings: 'wdth' 100, 'wght' 700;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+/* Le Seuil est une porte : il occupe toute la hauteur libre, le texte
+   au milieu, et l'on sort par le bas, vers les actions. */
+.curtainMain {
+  flex: 1;
+  display: flex;
+  min-height: 360px;
+}
+.curtainSeuil {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 68px 20px 40px;
   text-align: center;
 }
+.curtainSeuil :global(.seuil__label) {
+  top: 16px;
+  font-size: 0.75rem;
+}
 
-.check {
+.turnName {
+  font-variation-settings: 'wdth' 110, 'wght' 740;
+  font-size: 1.125rem;
+  line-height: 1.2;
+  margin-bottom: 18px;
+  overflow-wrap: anywhere;
+}
+.turnKicker {
+  font-variation-settings: 'wdth' 100, 'wght' 640;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.turnTitle {
+  margin-top: 8px;
+  font-variation-settings: 'wdth' 122, 'wght' 820;
+  font-size: clamp(3rem, 2rem + 6vw, 4.5rem);
+  line-height: 0.92;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+.turnTitle:focus { outline: none; }
+.turnHint {
+  margin-top: 22px;
+  font-variation-settings: 'wdth' 100, 'wght' 700;
+  font-size: 1.0625rem;
+  line-height: 1.3;
+}
+
+.curtainActions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Boutons sur vermillon : encre, jamais de gris. */
+.inkQuiet {
+  --btn-bg: transparent;
+  --btn-bd: transparent;
+  --btn-fg: var(--accent-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+}
+.inkDanger {
+  --btn-bg: transparent;
+  --btn-bd: var(--accent-ink);
+  --btn-fg: var(--accent-ink);
+  border-width: 1.5px;
+}
+.confirmInk { border-left-color: var(--accent-ink); }
+.curtainRow .confirm { grid-column: 1 / -1; }
+
+/* ---------------------------------------------------------------------
+   Fin de passage : la latte passe le comptoir, une fois
+   --------------------------------------------------------------------- */
+/* Le récit de fin tient au milieu de l'écran ; les actions restent en bas. */
+.doneGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  margin-block: auto;
+}
+.doneRail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.doneTrack {
+  position: relative;
+  height: calc(var(--slat-h) * 2.1);
+  padding-left: var(--sp-5);
+}
+.doneTrack::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -10px;
+  bottom: 2px;
+  width: var(--rail-w);
+  border-radius: var(--rail-w);
+  background: var(--rail);
+}
+
+.doneSlot,
+.doneSlat {
+  position: absolute;
+  inset: 0 0 0 var(--sp-5);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-slat);
+}
+.doneSlot {
+  border: 2px dashed color-mix(in oklab, var(--jade-500) 65%, transparent);
   color: var(--jade-500);
-  animation: check-in var(--dur-4) var(--ease-slat) backwards;
+  font-variation-settings: 'wdth' 100, 'wght' 680;
+  font-size: 0.9375rem;
 }
-@keyframes check-in {
-  from { transform: scale(0.7) rotate(-6deg); opacity: 0; }
-  to   { transform: none; opacity: 1; }
+.doneSlot::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--sp-5) * -1 - 2px);
+  top: 50%;
+  width: var(--sp-5);
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background: var(--jade-500);
+}
+.doneSlat {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 3px 0 var(--slat-edge-self);
+  font-variation-settings: 'wdth' 104, 'wght' 720;
+  font-size: 0.9375rem;
+  transform-origin: 50% 0;
+  /* Rendu statique (mouvement réduit, sans JS) : déjà passée. */
+  opacity: 0;
+}
+.doneDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .doneSlat { opacity: 1; animation: done-pass 620ms var(--ease-in) 700ms forwards; }
+  .doneSlot { animation: done-slot var(--dur-3) var(--ease-out) 1080ms backwards; }
+}
+@keyframes done-pass {
+  0%   { transform: perspective(600px) rotateX(0deg); opacity: 1; }
+  45%  { opacity: 1; }
+  100% { transform: perspective(600px) rotateX(88deg); opacity: 0; }
+}
+@keyframes done-slot {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
+.doneText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-title);
+}
+.doneName {
+  font-size: 1.0625rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Fermé, absent, expiré : un bloc sobre tenu par un filet brique. */
+.closed {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 6px 0 6px 18px;
+  border-left: 2px solid var(--brique-500);
+  margin-block: auto;
+}
+.closedTitle {
+  font-variation-settings: 'wdth' 108, 'wght' 720;
+  font-size: clamp(1.5rem, 1.2rem + 1.2vw, 1.875rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+/* ---------------------------------------------------------------------
+   Établissement suspendu (page.tsx)
+   --------------------------------------------------------------------- */
 .emptyState {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
-  align-items: center;
-  text-align: center;
-  padding: var(--sp-11) var(--sp-4);
-  margin: auto;
-}
-
-/* ---------------------------------------------------------------------
-   Écrans très étroits (iPhone SE, 375 px)
-   --------------------------------------------------------------------- */
-@media (max-width: 380px) {
-  .inner { padding-inline: var(--sp-4); }
-  .countBlock { padding: var(--sp-6) var(--sp-3) var(--sp-5); }
-  .chooser { grid-template-columns: 1fr 1fr; }
-}
-
-/* Écrans larges : on garde la colonne téléphone et on centre. */
-@media (min-width: 700px) {
-  .inner { padding-top: calc(var(--safe-top) + var(--sp-8)); }
+  gap: 14px;
+  margin-block: auto;
+  padding: 6px 0 6px 18px;
+  border-left: 2px solid var(--brique-500);
 }

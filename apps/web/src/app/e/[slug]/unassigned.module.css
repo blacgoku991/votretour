@@ -1,48 +1,72 @@
-/* Plaque livrée mais pas encore attribuée : le rail est là, vide. */
+/* Plaque livrée mais pas encore attribuée : le seuil est là, la file
+   pas encore. Mêmes jetons et même colonne que l'écran client. */
 .wrap {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
-  padding-block: var(--sp-9) var(--sp-7);
+  gap: 24px;
 }
 
-.rang {
-  position: relative;
+/* Le sol et le texte forment une seule affiche, posée au milieu. */
+.group {
   display: flex;
   flex-direction: column;
-  gap: var(--slat-gap);
-  padding-left: calc(var(--notch) + 14px);
-  margin-bottom: var(--sp-4);
-  max-width: 280px;
+  gap: 36px;
+  margin-block: auto;
 }
-.rail {
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: var(--rail-w);
-  border-radius: 2px;
-  background: var(--rail);
+
+/* Bandeau de sol pleine largeur de la colonne. */
+.scene {
+  margin-inline: calc(var(--gutter) * -1);
+  width: auto;
+  border-block: 1px solid var(--line);
 }
-.slat {
-  height: var(--slat-h);
-  border-radius: var(--r-slat);
-  border: 1.5px dashed var(--line-strong);
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
-.slat:nth-child(3) { width: 82%; opacity: .7; }
-.slat:nth-child(4) { width: 64%; opacity: .45; }
 
 .title {
-  font-size: clamp(1.75rem, 7vw, 2.4rem);
-  line-height: 1.05;
   font-variation-settings: 'wdth' 112, 'wght' 780;
-  letter-spacing: -.02em;
+  font-size: clamp(1.875rem, 1.3rem + 2.6vw, 2.5rem);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
   text-wrap: balance;
+  margin-top: 4px;
 }
 
+.body {
+  margin-top: 4px;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/* Le code gravé sur la plaque : même graphie que le tableau des départs. */
 .code {
-  margin: var(--sp-2) 0 var(--sp-3);
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: .875rem;
-  letter-spacing: .08em;
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.codeValue {
+  font-variation-settings: 'wdth' 125, 'wght' 760;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
   color: var(--text);
 }
-.code span { color: var(--text-faint); }
+.codeSerial {
+  font-variation-settings: 'wdth' 100, 'wght' 600;
+  font-size: 0.875rem;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.action { flex: none; }
