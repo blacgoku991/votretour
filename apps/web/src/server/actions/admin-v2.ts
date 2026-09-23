@@ -6,6 +6,7 @@ import { AppError, toAppError } from '@/lib/errors';
 import { assertPlatformAdmin } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { audit } from '@/server/audit';
+import { generateTvPairCode, hashTvPairCode } from '@/server/tv-kiosk';
 
 export type AdminV2Result<T> =
   | { ok: true; data: T }
@@ -43,6 +44,12 @@ const createEventSchema = z.object({
   passValidMinutes: z.number().int().min(1).max(120).default(10),
   graceMinutes: z.number().int().min(0).max(60).default(5),
   publicNote: optionalText(500),
+  heroTitle: optionalText(140),
+  logoUrl: optionalUrl,
+  coverUrl: optionalUrl,
+  accentHex: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/).default('#FF4B1F'),
+  rulesText: optionalText(2400),
+  qrLabel: optionalText(120),
   startNow: z.boolean().default(false),
 });
 
@@ -85,6 +92,12 @@ export async function adminCreateEventCampaign(
         pass_valid_minutes: parsed.passValidMinutes,
         grace_minutes: parsed.graceMinutes,
         public_note: parsed.publicNote || null,
+        hero_title: parsed.heroTitle || null,
+        logo_url: parsed.logoUrl || null,
+        cover_url: parsed.coverUrl || null,
+        accent_hex: parsed.accentHex,
+        rules_text: parsed.rulesText || null,
+        qr_label: parsed.qrLabel || null,
         created_by: admin.id,
         started_at: now,
       })
@@ -114,6 +127,8 @@ export async function adminCreateEventCampaign(
         waveSize: parsed.waveSize,
         passValidMinutes: parsed.passValidMinutes,
         graceMinutes: parsed.graceMinutes,
+        accentHex: parsed.accentHex,
+        branded: Boolean(parsed.logoUrl || parsed.coverUrl || parsed.heroTitle),
         startNow: parsed.startNow,
       },
     });
@@ -133,6 +148,12 @@ const updateEventSchema = z.object({
   passValidMinutes: z.number().int().min(1).max(120),
   graceMinutes: z.number().int().min(0).max(60),
   publicNote: optionalText(500),
+  heroTitle: optionalText(140),
+  logoUrl: optionalUrl,
+  coverUrl: optionalUrl,
+  accentHex: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/),
+  rulesText: optionalText(2400),
+  qrLabel: optionalText(120),
 });
 
 export async function adminUpdateEventCampaign(
@@ -164,6 +185,12 @@ export async function adminUpdateEventCampaign(
       pass_valid_minutes: parsed.passValidMinutes,
       grace_minutes: parsed.graceMinutes,
       public_note: parsed.publicNote || null,
+      hero_title: parsed.heroTitle || null,
+      logo_url: parsed.logoUrl || null,
+      cover_url: parsed.coverUrl || null,
+      accent_hex: parsed.accentHex,
+      rules_text: parsed.rulesText || null,
+      qr_label: parsed.qrLabel || null,
     };
 
     const { error } = await db.from('event_campaigns').update(patch).eq('id', event.id);
@@ -416,6 +443,221 @@ export async function adminUpdateOrganizationV2(
       ok: true,
       data: { organizationId: parsed.organizationId, locationId: parsed.location.id },
     };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+
+/* ===================================================================
+   ÉCRANS TV — appairage sécurisé plateforme
+   =================================================================== */
+
+const createDisplayPairSchema = z.object({
+  organizationId: z.string().uuid(),
+  locationId: z.string().uuid(),
+  queueId: z.string().uuid(),
+  eventId: z.string().uuid().nullish(),
+  displayName: z.string().trim().min(1).max(80).default('Écran TV'),
+});
+
+export async function adminCreateDisplayPairCode(
+  input: z.input<typeof createDisplayPairSchema>,
+): Promise<AdminV2Result<{ code: string; expiresAt: string }>> {
+  try {
+    const parsed = createDisplayPairSchema.parse(input);
+    const admin = await assertPlatformAdmin();
+    const db = supabaseAdmin();
+
+    const { data: queue } = await db
+      .from('queues')
+      .select('id, organization_id, location_id')
+      .eq('id', parsed.queueId)
+      .eq('organization_id', parsed.organizationId)
+      .eq('location_id', parsed.locationId)
+      .maybeSingle();
+
+    if (!queue) {
+      throw new AppError('invalid_queue', 'La file choisie ne correspond pas à cet établissement.', 400);
+    }
+
+    if (parsed.eventId) {
+      const { data: event } = await db
+        .from('event_campaigns')
+        .select('id')
+        .eq('id', parsed.eventId)
+        .eq('organization_id', parsed.organizationId)
+        .eq('location_id', parsed.locationId)
+        .eq('queue_id', parsed.queueId)
+        .maybeSingle();
+
+      if (!event) {
+        throw new AppError('invalid_event', 'Cet événement ne correspond pas à cette file.', 400);
+      }
+    }
+
+    const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+    let code = '';
+    let inserted = false;
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      code = generateTvPairCode();
+      const { error } = await db.from('display_pair_codes').insert({
+        organization_id: parsed.organizationId,
+        location_id: parsed.locationId,
+        queue_id: parsed.queueId,
+        event_id: parsed.eventId || null,
+        display_name: parsed.displayName,
+        code_hash: hashTvPairCode(code),
+        expires_at: expiresAt,
+        created_by: admin.id,
+      });
+
+      if (!error) {
+        inserted = true;
+        break;
+      }
+
+      if (error.code !== '23505') throw error;
+    }
+
+    if (!inserted) {
+      throw new AppError('pairing_collision', 'Impossible de générer un code. Réessayez.', 500);
+    }
+
+    await audit({
+      organizationId: parsed.organizationId,
+      actor: 'platform_admin',
+      actorUserId: admin.id,
+      action: 'display.pair_code_created',
+      targetType: 'display',
+      metadata: {
+        locationId: parsed.locationId,
+        queueId: parsed.queueId,
+        eventId: parsed.eventId || null,
+        displayName: parsed.displayName,
+        expiresAt,
+      },
+    });
+
+    revalidatePath('/admin/etablissements/' + parsed.organizationId);
+    return { ok: true, data: { code, expiresAt } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+const updateDisplaySchema = z.object({
+  deviceId: z.string().uuid(),
+  name: z.string().trim().min(1).max(80).optional(),
+  queueId: z.string().uuid().optional(),
+  eventId: z.string().uuid().nullable().optional(),
+});
+
+export async function adminUpdateDisplayDevice(
+  input: z.input<typeof updateDisplaySchema>,
+): Promise<AdminV2Result<{ deviceId: string }>> {
+  try {
+    const parsed = updateDisplaySchema.parse(input);
+    const admin = await assertPlatformAdmin();
+    const db = supabaseAdmin();
+
+    const { data: device } = await db
+      .from('display_devices')
+      .select('id, organization_id, location_id, queue_id')
+      .eq('id', parsed.deviceId)
+      .maybeSingle();
+
+    if (!device) throw new AppError('not_found', 'Écran introuvable.', 404);
+
+    const nextQueueId = parsed.queueId ?? device.queue_id;
+    const { data: queue } = await db
+      .from('queues')
+      .select('id')
+      .eq('id', nextQueueId)
+      .eq('organization_id', device.organization_id)
+      .eq('location_id', device.location_id)
+      .maybeSingle();
+
+    if (!queue) throw new AppError('invalid_queue', 'File incompatible avec cet écran.', 400);
+
+    if (parsed.eventId) {
+      const { data: event } = await db
+        .from('event_campaigns')
+        .select('id')
+        .eq('id', parsed.eventId)
+        .eq('organization_id', device.organization_id)
+        .eq('location_id', device.location_id)
+        .eq('queue_id', nextQueueId)
+        .maybeSingle();
+
+      if (!event) throw new AppError('invalid_event', 'Événement incompatible avec cet écran.', 400);
+    }
+
+    const patch: Record<string, unknown> = {};
+    if (parsed.name !== undefined) patch.name = parsed.name;
+    if (parsed.queueId !== undefined) patch.queue_id = parsed.queueId;
+    if (parsed.eventId !== undefined) patch.event_id = parsed.eventId;
+
+    if (Object.keys(patch).length) {
+      const { error } = await db.from('display_devices').update(patch).eq('id', parsed.deviceId);
+      if (error) throw error;
+    }
+
+    await audit({
+      organizationId: device.organization_id,
+      actor: 'platform_admin',
+      actorUserId: admin.id,
+      action: 'display.updated',
+      targetType: 'display',
+      targetId: parsed.deviceId,
+      metadata: patch,
+    });
+
+    revalidatePath('/admin/etablissements/' + device.organization_id);
+    return { ok: true, data: { deviceId: parsed.deviceId } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function adminRevokeDisplayDevice(
+  deviceId: string,
+): Promise<AdminV2Result<{ deviceId: string }>> {
+  try {
+    const parsedId = z.string().uuid().parse(deviceId);
+    const admin = await assertPlatformAdmin();
+    const db = supabaseAdmin();
+
+    const { data: device } = await db
+      .from('display_devices')
+      .select('id, organization_id, name')
+      .eq('id', parsedId)
+      .maybeSingle();
+
+    if (!device) throw new AppError('not_found', 'Écran introuvable.', 404);
+
+    const { error } = await db
+      .from('display_devices')
+      .update({
+        status: 'revoked',
+        revoked_at: new Date().toISOString(),
+      })
+      .eq('id', parsedId);
+    if (error) throw error;
+
+    await audit({
+      organizationId: device.organization_id,
+      actor: 'platform_admin',
+      actorUserId: admin.id,
+      action: 'display.revoked',
+      targetType: 'display',
+      targetId: parsedId,
+      metadata: { name: device.name },
+    });
+
+    revalidatePath('/admin/etablissements/' + device.organization_id);
+    return { ok: true, data: { deviceId: parsedId } };
   } catch (error) {
     return fail(error);
   }
