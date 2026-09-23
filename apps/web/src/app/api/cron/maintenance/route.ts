@@ -19,6 +19,8 @@ export const maxDuration = 60;
  *     l'établissement, les prénoms sont effacés, les sessions
  *     d'appareil supprimées et les abonnements push morts nettoyés.
  *
+ *  3. CODES D'APPAIRAGE TV expirés depuis plus d'un jour : supprimés.
+ *
  * Protégée par CRON_SECRET, comparé en temps constant : une
  * comparaison naïve laisserait fuiter le secret caractère par caractère.
  */
@@ -57,6 +59,24 @@ export async function GET(request: Request) {
     report.deactivatedSubscriptions = deactivated?.length ?? 0;
   } catch (error) {
     report.subscriptionsError = error instanceof Error ? error.message : 'inconnu';
+  }
+
+  try {
+    // Codes d'appairage TV : utiles 10 minutes, conservés un jour pour
+    // l'enquête en cas d'appairage suspect, puis supprimés. Sans cela la
+    // table grossit indéfiniment d'empreintes qui ne servent plus à rien.
+    const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+    const { data: purgedCodes, error } = await supabaseAdmin()
+      .from('display_pair_codes')
+      .delete()
+      .lt('expires_at', cutoff)
+      .select('id');
+    if (error) throw error;
+    report.purgedPairCodes = purgedCodes?.length ?? 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'inconnu';
+    report.pairCodesError = message;
+    await reportError({ source: 'cron.maintenance.pair_codes', message });
   }
 
   return Response.json({ ok: true, durationMs: Date.now() - started, ...report });

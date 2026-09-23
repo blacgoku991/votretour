@@ -62,7 +62,8 @@ begin;
       'organizations','locations','staff','queues','queue_entries','queue_events',
       'client_sessions','notification_subscriptions','plates','profiles',
       'organization_members','audit_logs','system_errors','rate_limits',
-      'event_campaigns','event_access_passes'
+      'event_campaigns','event_access_passes',
+      'display_devices','display_pair_codes'
     ];
   begin
     foreach t in array tables loop
@@ -264,7 +265,8 @@ begin;
       'app_clip_sessions','plates','plate_scans','profiles','organization_members',
       'organization_settings','opening_hours','services','subscriptions','plans',
       'audit_logs','system_errors','rate_limits','support_tickets','support_messages',
-      'slug_registry','billing_events','opening_hours_overrides'
+      'slug_registry','billing_events','opening_hours_overrides',
+      'display_devices','display_pair_codes'
     ];
   begin
     foreach t in array tables loop
@@ -311,5 +313,57 @@ begin;
     raise notice '  ok  service_role journalise un envoi de notification';
   end $$;
 rollback;
+
+-- ---------------------------------------------------------------------
+-- Garde tirée du catalogue : aucune table oubliée
+-- ---------------------------------------------------------------------
+-- Les listes ci-dessus sont tenues à la main, et c'est leur faiblesse :
+-- les tables d'écran TV ont existé un temps sans y figurer. Ici on
+-- interroge pg_class directement. Toute table ajoutée demain dans public
+-- sans RLS, ou lisible par anon, fait échouer la CI — sans qu'il faille
+-- penser à l'ajouter quelque part.
+do $$
+declare
+  v_names text;
+begin
+  select string_agg(c.relname, ', ' order by c.relname) into v_names
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public'
+    and c.relkind in ('r', 'p')
+    and not c.relrowsecurity;
+  if v_names is not null then
+    raise exception 'ÉCHEC: tables public sans RLS : %', v_names;
+  end if;
+  raise notice '  ok  toutes les tables de public ont la RLS activée';
+
+  -- Seul le catalogue d'offres est public : la page tarifs le lit sans
+  -- compte. Toute autre table lisible par anon est une fuite.
+  select string_agg(c.relname, ', ' order by c.relname) into v_names
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public'
+    and c.relkind in ('r', 'p', 'v', 'm')
+    and has_table_privilege('anon', c.oid, 'select')
+    and c.relname not in ('plans');
+  if v_names is not null then
+    raise exception 'ÉCHEC: anon a le droit de lire : %', v_names;
+  end if;
+  raise notice '  ok  anon ne peut lire que le catalogue d''offres';
+
+  -- Les tables d'écran portent des empreintes de jetons : même un
+  -- professionnel connecté ne doit pas pouvoir les lire depuis le
+  -- navigateur. Seul le serveur applicatif y accède.
+  select string_agg(t, ', ') into v_names
+  from unnest(array['display_devices', 'display_pair_codes']) as t
+  where has_table_privilege('authenticated', format('public.%I', t), 'select')
+     or has_table_privilege('authenticated', format('public.%I', t), 'insert')
+     or has_table_privilege('authenticated', format('public.%I', t), 'update')
+     or has_table_privilege('authenticated', format('public.%I', t), 'delete');
+  if v_names is not null then
+    raise exception 'ÉCHEC: authenticated a des droits sur : %', v_names;
+  end if;
+  raise notice '  ok  les empreintes de jetons TV restent réservées au serveur';
+end $$;
 
 do $$ begin raise notice ''; raise notice '✅ Isolation multi-tenant : tous les tests passent.'; end $$;
