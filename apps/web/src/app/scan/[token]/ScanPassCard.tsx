@@ -1,8 +1,23 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useSyncExternalStore, useTransition } from 'react';
 import Link from 'next/link';
 import { redeemEventPass } from '@/server/actions/events';
+import styles from './scan.module.css';
+
+const noop = () => () => {};
+/** true seulement après montage : les heures dépendent du fuseau du navigateur. */
+function useMounted(): boolean {
+  return useSyncExternalStore(noop, () => true, () => false);
+}
+
+function hhmm(iso: string | null | undefined, mounted: boolean): string {
+  if (!iso) return '—';
+  if (!mounted) return '--:--';
+  return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
+type Tone = 'ok' | 'ready' | 'ko';
 
 export function ScanPassCard({
   passId, slot, signature, passStatus, signatureValid,
@@ -23,81 +38,125 @@ export function ScanPassCard({
   const [result, setResult] = useState<null | { status: string; clientName?: string | null; redeemedAt?: string | null }>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const mounted = useMounted();
 
   const effectiveStatus = result?.status ?? passStatus;
   const valid = signatureValid && effectiveStatus === 'issued';
+  const justRedeemed = result?.status === 'redeemed';
+
+  // Verdict affiché : jade pour une entrée validée, brique pour tout refus.
+  let tone: Tone;
+  let title: string;
+  let detail: string;
+  if (justRedeemed) {
+    tone = 'ok';
+    title = 'Entrée validée';
+    detail = `Enregistrée à ${hhmm(result?.redeemedAt ?? new Date().toISOString(), mounted)}. Vous pouvez laisser passer.`;
+  } else if (!signatureValid) {
+    tone = 'ko';
+    title = 'QR expiré ou invalide';
+    detail = 'Demandez au client de rouvrir son laisser-passer.';
+  } else if (effectiveStatus === 'redeemed') {
+    tone = 'ko';
+    title = 'Pass déjà utilisé';
+    detail = redeemedAt
+      ? `Ce laisser-passer a déjà été validé à ${hhmm(redeemedAt, mounted)}.`
+      : 'Ce laisser-passer a déjà été validé.';
+  } else if (effectiveStatus === 'expired') {
+    tone = 'ko';
+    title = 'Pass expiré';
+    detail = 'Le délai de ce laisser-passer est dépassé, grâce comprise.';
+  } else if (effectiveStatus === 'revoked') {
+    tone = 'ko';
+    title = 'Pass révoqué';
+    detail = 'Ce laisser-passer a été annulé (stock épuisé ou fin de l’événement).';
+  } else if (effectiveStatus !== 'issued') {
+    tone = 'ko';
+    title = 'Pass non valide';
+    detail = 'Ce laisser-passer n’est plus valide.';
+  } else {
+    tone = 'ready';
+    title = 'Pass valide';
+    detail = 'Vérifiez le prénom, puis validez l’entrée.';
+  }
+
+  const name = result?.clientName ?? clientName;
 
   return (
-    <main
-      data-theme="dark"
-      style={{
-        minHeight: '100dvh', background: '#07090d', color: '#faf9f6',
-        display: 'grid', placeItems: 'center', padding: 24,
-      }}
-    >
-      <section
-        style={{
-          width: 'min(100%, 520px)', border: '1px solid rgba(255,255,255,.1)',
-          borderRadius: 26, background: '#11151b', padding: 28,
-          boxShadow: '0 30px 90px rgba(0,0,0,.45)',
-        }}
-      >
-        <p className="t-label" style={{ color: '#ff6b45' }}>RANGVIA · CONTRÔLE D’ACCÈS</p>
-        <h1 className="t-title" style={{ marginTop: 10 }}>{eventName}</h1>
-        <p className="t-small t-muted" style={{ marginTop: 6 }}>{locationName}</p>
+    <main className={styles.page} data-theme="dark">
+      <div className={styles.sheet}>
+        <header className={styles.head}>
+          <p className={`t-label ${styles.kicker}`}>Rangvia · Contrôle d’accès</p>
+          <h1 className="t-title">{eventName}</h1>
+          <p className="t-small t-muted">{locationName}</p>
+        </header>
 
-        <div style={{ margin: '26px 0', padding: 22, borderRadius: 18, background: '#181d25' }}>
-          <p className="t-micro t-faint">Laisser-passer #{passId.slice(-6).toUpperCase()}</p>
-          <p style={{ fontSize: 28, fontWeight: 780, marginTop: 8 }}>{clientName ?? 'Client'}</p>
-          <p className="t-small t-muted" style={{ marginTop: 8 }}>
-            Valide jusqu’à {new Date(validUntil).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-            {' · '}grâce jusqu’à {new Date(graceUntil).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-          </p>
+        <section className={styles.pass} data-tone={tone} aria-label="Laisser-passer">
+          <p className="t-label">Laisser-passer #{passId.slice(-6).toUpperCase()}</p>
+          <p className={styles.client}>{name ?? 'Client'}</p>
+          <dl className={styles.times}>
+            <div>
+              <dt className="t-label">Valide jusqu’à</dt>
+              <dd className="t-num">{hhmm(validUntil, mounted)}</dd>
+            </div>
+            <div>
+              <dt className="t-label">Grâce jusqu’à</dt>
+              <dd className="t-num">{hhmm(graceUntil, mounted)}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <div
+          className={styles.verdict}
+          data-tone={tone}
+          data-fresh={justRedeemed ? '1' : undefined}
+          role="status"
+          aria-live="polite"
+        >
+          <span className={styles.verdictIcon} aria-hidden="true">
+            {tone === 'ko' ? (
+              <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17" /></svg>
+            ) : (
+              <svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+            )}
+          </span>
+          <span className={styles.verdictText}>
+            <strong>{title}</strong>
+            <span>{detail}</span>
+          </span>
         </div>
 
-        {!signatureValid ? (
-          <div className="banner banner--error">
-            <span>QR expiré ou invalide. Demandez au client de rouvrir son laisser-passer.</span>
-          </div>
-        ) : effectiveStatus === 'redeemed' ? (
-          <div className="banner" style={{ borderColor: 'rgba(31,169,122,.4)', color: '#49d7a5' }}>
-            <span>
-              ✓ Déjà validé
-              {(result?.redeemedAt ?? redeemedAt)
-                ? ` à ${new Date((result?.redeemedAt ?? redeemedAt) as string).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
-                : ''}
-            </span>
-          </div>
-        ) : effectiveStatus !== 'issued' ? (
-          <div className="banner banner--error">
-            <span>Ce laisser-passer n’est plus valide ({effectiveStatus}).</span>
-          </div>
-        ) : null}
+        {error && <p className="error-text" role="alert">{error}</p>}
 
-        {error && <p className="error-text" style={{ marginTop: 12 }}>{error}</p>}
+        <div className={styles.actions}>
+          <button
+            type="button"
+            className="btn btn--signal btn--hero"
+            disabled={!valid || pending}
+            onClick={() => startTransition(async () => {
+              setError(null);
+              const response = await redeemEventPass({ passId, slot, signature });
+              if (!response.ok) {
+                setError(response.error);
+                return;
+              }
+              setResult(response.data);
+            })}
+          >
+            {pending
+              ? 'Vérification…'
+              : valid
+                ? 'Valider l’entrée'
+                : justRedeemed
+                  ? 'Entrée enregistrée'
+                  : 'Accès non validable'}
+          </button>
 
-        <button
-          type="button"
-          className="btn btn--signal btn--hero"
-          disabled={!valid || pending}
-          style={{ marginTop: 20 }}
-          onClick={() => startTransition(async () => {
-            setError(null);
-            const response = await redeemEventPass({ passId, slot, signature });
-            if (!response.ok) {
-              setError(response.error);
-              return;
-            }
-            setResult(response.data);
-          })}
-        >
-          {pending ? 'Vérification…' : valid ? 'Valider l’entrée' : 'Accès non validable'}
-        </button>
-
-        <Link href="/app" className="btn btn--ghost btn--block" style={{ marginTop: 12 }}>
-          Retour au tableau de bord
-        </Link>
-      </section>
+          <Link href="/app" className="btn btn--ghost btn--block">
+            Retour au tableau de bord
+          </Link>
+        </div>
+      </div>
     </main>
   );
 }

@@ -1,1 +1,724 @@
-.page{width:min(1320px,calc(100% - 32px));margin:0 auto;padding:28px 0 72px;display:flex;flex-direction:column;gap:22px}.hero{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;padding:30px;border:1px solid var(--line);border-radius:28px;background:radial-gradient(circle at 10% 10%,rgba(255,75,31,.13),transparent 42%),var(--surface-raised);box-shadow:var(--shadow-2)}.kicker{font-size:10px;font-weight:850;letter-spacing:.18em;color:var(--accent);margin-bottom:8px}.hero h1{font-size:clamp(30px,4vw,58px);letter-spacing:-.055em;line-height:.95;max-width:760px}.hero p:not(.kicker){margin-top:12px;color:var(--text-muted);max-width:680px}.create{padding:26px;border:1px solid var(--line);border-radius:24px;background:var(--surface-raised);display:grid;grid-template-columns:1fr 1fr;gap:18px}.createIntro{grid-column:1/-1;display:flex;align-items:center;gap:14px}.createIcon{width:52px;height:52px;display:grid;place-items:center;border-radius:16px;background:color-mix(in oklab,var(--accent) 14%,transparent);font-size:24px}.createIntro h2{font-size:22px}.createIntro p{color:var(--text-muted);font-size:13px;margin-top:4px}.three{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.create>button{grid-column:1/-1}.events{display:grid;gap:18px}.eventCard{padding:26px;border:1px solid var(--line);border-radius:24px;background:linear-gradient(145deg,var(--surface-raised),color-mix(in oklab,var(--surface-raised) 90%,#000));box-shadow:var(--shadow-1)}.eventHead{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.eventHead h2{font-size:28px;letter-spacing:-.035em;margin-top:7px}.eventId{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text-faint);font-size:11px}.status{font-size:10px;font-weight:850;letter-spacing:.14em;color:var(--text-faint)}.status_live{color:#49d7a5}.status_paused{color:#d9903a}.status_sold_out{color:#e36f64}.status_ended{color:#69737f}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:22px 0}.metric,.metricAccent{padding:18px;border-radius:18px;background:var(--surface-sunken);border:1px solid var(--line)}.metric strong,.metricAccent strong{display:block;font-size:34px;letter-spacing:-.05em;font-variant-numeric:tabular-nums}.metric span,.metricAccent span{color:var(--text-faint);font-size:11px;text-transform:uppercase;letter-spacing:.1em}.metricAccent{background:color-mix(in oklab,var(--jade-500) 12%,var(--surface-sunken));border-color:color-mix(in oklab,var(--jade-500) 28%,var(--line))}.metricAccent strong{color:#49d7a5}.rules{display:flex;gap:10px;flex-wrap:wrap}.rules span{padding:8px 11px;border-radius:10px;background:var(--surface-sunken);color:var(--text-muted);font-size:12px}.controls{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;padding-top:20px;border-top:1px solid var(--line)}.empty{text-align:center;padding:70px 24px;border:1px dashed var(--line-strong);border-radius:24px}.empty>span{font-size:42px}.empty h2{margin-top:12px}.empty p{color:var(--text-muted);margin-top:6px}@media(max-width:760px){.page{width:min(100% - 20px,1320px);padding-top:16px}.hero{align-items:flex-start;flex-direction:column;padding:22px}.create{grid-template-columns:1fr}.three{grid-template-columns:1fr}.metrics{grid-template-columns:1fr 1fr}.eventHead h2{font-size:23px}}
+/* =====================================================================
+   ÉVÉNEMENTS / DROP — « Contrôlez le flux, pas la foule. »
+   En-tête plat posé sur un rail avec sa barrière, formulaire en lignes
+   et aperçu vivant des vagues, puis la liste des événements en lignes
+   accrochées au rail. Aucun dégradé, aucun emoji.
+   On n'anime que transform et opacity.
+   ===================================================================== */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-7);
+  padding-top: var(--sp-5);
+  padding-bottom: var(--sp-9);
+}
+@media (min-width: 900px) {
+  .page { padding-top: 0; gap: var(--sp-8); }
+}
+
+/* ---------------------------------------------------------------------
+   En-tête : texte, puis un pied posé sur le rail (bouton + barrière)
+   --------------------------------------------------------------------- */
+/* Téléphone : texte, bouton pleine largeur, puis la rangée du rail où
+   l'état du flux fait face à la barrière. À partir de 720 px, le bouton
+   rejoint le rail, et l'état passe dessous. */
+.hero {
+  --barrier-w: 150px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'text text'
+    'action action'
+    'state barrier';
+  align-items: end;
+  column-gap: var(--sp-4);
+}
+.heroText {
+  grid-area: text;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: var(--sp-6);
+}
+.heroTitle { max-width: 15ch; }
+.heroLead { margin-top: calc(var(--gap-title) - 14px); }
+
+.heroAction {
+  grid-area: action;
+  padding-bottom: var(--sp-6);
+}
+.heroAction > :global(.btn) {
+  width: 100%;
+  white-space: nowrap;
+}
+
+/* Le rail horizontal qui ferme l'en-tête, sous la barrière. */
+.hero::after {
+  content: '';
+  grid-column: 1 / -1;
+  grid-row: 3;
+  align-self: end;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+
+/* La barrière est posée sur ce rail : la ligne de sol du dessin
+   (y = 97 sur 100, soit 1,5 % de la largeur au-dessus du bas) tombe
+   pile sur le trait de 2 px. */
+.heroBarrier {
+  grid-area: barrier;
+  justify-self: end;
+  position: relative;
+  z-index: 1;
+  width: var(--barrier-w);
+  margin-bottom: calc(var(--barrier-w) * 0.015 - 1px);
+}
+/* Bras levé : sous 1024 px, la barrière partage sa rangée avec le bouton ;
+   on lui réserve la hauteur du bras dressé pour qu'il ne passe jamais
+   devant le texte. */
+.heroBarrier[data-raised='1'] { padding-top: calc(var(--barrier-w) * 0.62); }
+@media (min-width: 1024px) {
+  .heroBarrier[data-raised='1'] { padding-top: 0; }
+}
+
+.heroState {
+  grid-area: state;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 16px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+.heroState > :global(.pip) { align-self: flex-start; margin-top: 3px; }
+
+@media (min-width: 720px) {
+  .hero {
+    --barrier-w: 240px;
+    grid-template-areas:
+      'text text'
+      'action barrier'
+      'state state';
+  }
+  .hero::after { grid-row: 2; }
+  .heroAction { padding-bottom: 14px; }
+  .heroAction > :global(.btn) { width: auto; }
+  .heroState {
+    justify-self: end;
+    padding-bottom: 0;
+    margin-top: 12px;
+  }
+  .heroState > :global(.pip) { align-self: center; margin-top: 0; }
+}
+@media (min-width: 1024px) {
+  .hero {
+    --barrier-w: 300px;
+    grid-template-areas:
+      'text barrier'
+      'action barrier'
+      'state state';
+  }
+  .heroText { padding-bottom: var(--sp-7); }
+}
+@media (max-width: 379px) {
+  .hero { --barrier-w: 118px; }
+}
+
+.btnIcon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* ---------------------------------------------------------------------
+   Formulaire de création + aperçu vivant
+   --------------------------------------------------------------------- */
+.composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  overflow: clip;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .composer { animation: composer-in var(--dur-3) var(--ease-slat) backwards; }
+}
+@keyframes composer-in {
+  from { opacity: 0; transform: translateY(10px); }
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.formHead {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--sp-6) var(--sp-5) var(--sp-5);
+}
+
+.rows { display: flex; flex-direction: column; }
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  padding: 18px var(--sp-5);
+  border-top: 1px solid var(--line);
+}
+.rowText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.rowLabel {
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+}
+.rowHint {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+.rowControl { min-width: 0; }
+@media (min-width: 640px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+    align-items: center;
+    gap: var(--sp-6);
+  }
+}
+
+/* Champ numérique : crans − / +, unité visible dans le champ. */
+.unitField {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr) 50px;
+  gap: 6px;
+}
+.stepBtn {
+  display: grid;
+  place-items: center;
+  height: 50px;
+  border-radius: var(--r-field);
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.stepBtn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.stepBtn:active:not(:disabled) { transform: translateY(2px); }
+.stepBtn:disabled {
+  border-style: dashed;
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+@media (hover: hover) {
+  .stepBtn:hover:not(:disabled) { border-color: var(--text-faint); }
+}
+.unitInput { position: relative; display: block; }
+.unitInput :global(.input) {
+  padding-right: 92px;
+  font-variation-settings: 'wdth' 112, 'wght' 720;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.0625rem;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.unitInput :global(.input)::-webkit-outer-spin-button,
+.unitInput :global(.input)::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.unit {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  translate: 0 -50%;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.formFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  flex: 1 0 auto;
+  padding: var(--sp-5);
+  border-top: 1px solid var(--line);
+}
+.formFoot > :global(.btn) { width: 100%; }
+@media (min-width: 640px) {
+  .formFoot > :global(.btn) { width: auto; min-width: 240px; }
+}
+
+/* ---------------------------------------------------------------------
+   Aperçu vivant des vagues (≥ 1024 px)
+   --------------------------------------------------------------------- */
+.preview { display: none; }
+
+@media (min-width: 1024px) {
+  .composer { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); }
+  .preview {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+    padding: var(--sp-6) var(--sp-7);
+    background: var(--floor);
+    border-left: 1px solid var(--line);
+    min-width: 0;
+  }
+}
+
+.previewHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.previewNote {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.previewBody {
+  position: relative;
+  padding-left: 4px;
+}
+
+/* La barrière baissée en tête de rail : l'entrée. Le moyeu du dessin
+   (27 / 200) tombe à l'aplomb du rail. */
+.gate {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  height: 58px;
+  margin-left: -17px;
+}
+.gateBarrier { width: 128px; flex: none; margin-bottom: -18px; }
+.gateLabel { color: var(--accent); padding-bottom: 2px; }
+
+.waves {
+  position: relative;
+  margin-top: 14px;
+  --rail-x: 0px;
+  --slat-x: 24px;
+  --slat-w: min(46%, 168px);
+}
+.waves::before {
+  content: '';
+  position: absolute;
+  left: var(--rail-x);
+  top: -14px;
+  bottom: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+
+/* Une mini-latte : sur le rail par son encoche. */
+.wslat {
+  position: absolute;
+  left: var(--slat-x);
+  top: 0;
+  width: var(--slat-w);
+  height: 7px;
+  border-radius: 3px;
+  background: var(--slat);
+}
+.wslat::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 2.5px;
+  width: 20px;
+  height: 2px;
+  background: var(--rail);
+}
+/* Première vague : lattes éclaircies (calque d'opacité). */
+.wslat::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--bone-300);
+  opacity: 0;
+}
+.wslat[data-first='1']::after { opacity: 0.85; }
+
+/* Accolade : trait vertical étiré en scaleY, deux becs et une pointe. */
+.brace {
+  position: absolute;
+  top: 0;
+  left: calc(var(--slat-x) + var(--slat-w) + 12px);
+  width: 12px;
+  height: 0;
+}
+.brace > span:not(.braceLabel) {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background: var(--accent);
+}
+.braceTop,
+.braceBottom {
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+}
+.braceTop { left: -6px !important; }
+.braceBottom { left: -6px !important; }
+.braceLine {
+  width: 2px;
+  height: 1px;
+  transform-origin: 0 0;
+}
+.braceNib {
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+}
+.brace[data-on='0'] > span { opacity: 0; }
+/* Vague d'une seule latte : un simple crochet, sans pointe. */
+.brace[data-small='1'] > .braceNib { opacity: 0; }
+
+.braceLabel {
+  position: absolute;
+  left: 18px;
+  top: 0;
+  translate: 0 -50%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  white-space: nowrap;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--text-muted);
+}
+.braceLabel[data-first='1'] { color: var(--text); }
+.braceLabel em {
+  font-style: normal;
+  font-variation-settings: 'wdth' 100, 'wght' 500;
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.braceLabel[data-show='0'] { opacity: 0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .wslat {
+    transition: transform var(--dur-3) var(--ease-slat) calc(var(--i, 0) * 8ms);
+  }
+  .wslat::after { transition: opacity var(--dur-2) var(--ease-out); }
+  .brace,
+  .brace > span {
+    transition:
+      transform var(--dur-3) var(--ease-slat),
+      opacity var(--dur-2) var(--ease-out);
+  }
+}
+
+.previewSum {
+  margin-top: auto;
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--line);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 44ch;
+}
+.previewSum strong {
+  color: var(--text);
+  font-variation-settings: 'wght' 650;
+  font-weight: normal;
+}
+
+/* ---------------------------------------------------------------------
+   Liste des événements : une ligne par événement, sur le rail
+   --------------------------------------------------------------------- */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.listHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.listCount {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  color: var(--text);
+  letter-spacing: 0;
+}
+
+.events > li { border-top-color: var(--line); }
+.events > li:last-child { border-bottom: 1px solid var(--line); }
+
+.event {
+  --tone: var(--text-faint);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-6) 0 !important;
+}
+.event[data-tone='live'] { --tone: var(--jade-500); }
+.event[data-tone='paused'] { --tone: var(--copper-500); }
+.event[data-tone='soldout'] { --tone: var(--brique-500); }
+.event[data-tone='ended'] { --tone: var(--ardoise-500); }
+/* L'encoche du rail prend la couleur de l'état. */
+.events > .event::before {
+  top: 36px;
+  height: 3px;
+  background: var(--tone);
+}
+.events > .event[data-tone='draft']::before { background: var(--rail); height: 2px; }
+
+.eventTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4) var(--sp-6);
+}
+.eventTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 280px;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--tone);
+}
+.event[data-tone='soldout'] .status { color: var(--danger-text); }
+.event[data-tone='ended'] .status,
+.event[data-tone='draft'] .status { color: var(--text-muted); }
+.statusPip { background: var(--tone); }
+.event[data-tone='draft'] .statusPip {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-faint);
+}
+
+.eventName {
+  font-variation-settings: 'wdth' 108, 'wght' 720;
+  font-size: clamp(1.375rem, 1.2rem + 0.8vw, 1.75rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.rules {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+.rules > span:not(:last-child)::after {
+  content: '·';
+  margin: 0 8px;
+  color: var(--text-faint);
+}
+.rules strong {
+  font-weight: normal;
+  font-variation-settings: 'wght' 650;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.eventId {
+  margin-left: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-faint);
+}
+
+.waveBoard {
+  --flap-tile: var(--ink-600);
+  flex: none;
+  padding-top: 2px;
+}
+
+/* Métriques : bande KPI compacte, quatre cellules. */
+.kpis {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+@media (min-width: 720px) {
+  .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+}
+.metric {
+  --metric-tone: var(--text-faint);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px !important;
+}
+.metric[data-tone='signal'] { --metric-tone: var(--accent); }
+.metric[data-tone='jade'] { --metric-tone: var(--jade-500); }
+.metric[data-tone='brique'] { --metric-tone: var(--brique-500); }
+.metricValue {
+  display: block;
+  line-height: 1;
+}
+.metric[data-tone='jade'] .metricValue { color: #49D7A5; }
+.metricFoot {
+  display: flex;
+  align-items: center;
+  min-height: 16px;
+}
+.metricNote {
+  font-size: 0.8125rem;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+/* Jauge : piste de 3 px, remplissage en scaleX depuis la gauche. */
+.gauge {
+  position: relative;
+  display: block;
+  flex: 1 1 auto;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.gaugeFill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--metric-tone);
+  transform-origin: 0 50%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .gaugeFill {
+    transition: transform var(--dur-4) var(--ease-slat);
+    animation: gauge-in var(--dur-4) var(--ease-slat) 200ms backwards;
+  }
+}
+@keyframes gauge-in { from { transform: scaleX(0); } }
+
+.emitted {
+  margin-top: -6px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+/* Actions : la vague suivante en signal, le reste à droite. */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-top: var(--sp-2);
+}
+.controls :global(.btn) { white-space: nowrap; }
+.primary { gap: 12px; }
+.btnCount {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--ink-1000) 16%, transparent);
+  font-variation-settings: 'wdth' 112, 'wght' 780;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.875rem;
+}
+.extra {
+  display: inline-flex;
+  gap: 6px;
+}
+.extra > :global(.btn) { min-width: 64px; padding: 0 14px; }
+.danger {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-left: auto;
+}
+@media (max-width: 639px) {
+  .controls > .primary { width: 100%; }
+  .controls > :global(.btn):not(.primary) { flex: 1 1 auto; }
+  .extra { flex: 1 1 auto; }
+  .extra > :global(.btn) { flex: 1 1 0; }
+  .danger { width: 100%; margin-left: 0; }
+  .danger > :global(.btn) { flex: 1 1 auto; }
+}
+
+/* ---------------------------------------------------------------------
+   État vide : la barrière baissée en travers d'un rail vide
+   --------------------------------------------------------------------- */
+.empty {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  padding: 0 0 var(--sp-2) 72px;
+}
+.empty::before {
+  content: '';
+  position: absolute;
+  left: 48px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+/* Le boîtier (x 16 à 38 sur 200) se tient à gauche du rail : le bras
+   baissé passe en travers du rail. */
+.emptyGate {
+  width: 220px;
+  max-width: calc(100% + 72px);
+  margin-left: -72px;
+  margin-top: 4px;
+  margin-bottom: -30px;
+}
+.emptyText {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--line);
+}

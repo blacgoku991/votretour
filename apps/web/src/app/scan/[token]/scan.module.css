@@ -1,0 +1,169 @@
+/* Contrôle d'accès d'un laisser-passer Event : lu à l'entrée, d'un coup
+   d'œil. Verdict jade (entrée validée) ou brique (refus). */
+
+.page {
+  min-height: 100dvh;
+  background: var(--floor);
+  color: var(--text);
+  padding: var(--sp-6) var(--sp-5) calc(var(--sp-7) + var(--safe-bottom));
+}
+@media (max-width: 379px) {
+  .page { padding-inline: 16px; }
+}
+@media (min-width: 640px) {
+  .page {
+    display: grid;
+    place-items: start center;
+    padding-top: 12svh;
+  }
+}
+
+.sheet {
+  width: min(100%, 480px);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kicker { color: var(--accent); }
+.head :global(.t-title) { margin-top: 4px; }
+
+/* Le pass : une surface levée, liseré d'état à gauche. */
+.pass {
+  --tone: var(--line-strong);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--sp-5) var(--sp-5) var(--sp-5) calc(var(--sp-5) + 4px);
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: var(--edge-light);
+  overflow: clip;
+}
+.pass::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--tone);
+}
+.pass[data-tone='ok'],
+.pass[data-tone='ready'] { --tone: var(--jade-500); }
+.pass[data-tone='ko'] { --tone: var(--brique-500); }
+
+.client {
+  font-variation-settings: 'wdth' 110, 'wght' 780;
+  font-size: clamp(1.75rem, 1.4rem + 1.6vw, 2.25rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.times {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 6px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.times > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.times dd {
+  margin: 0;
+  font-variation-settings: 'wdth' 112, 'wght' 760;
+  font-size: 1.375rem;
+  line-height: 1;
+}
+
+/* Verdict : bloc plein, lisible à bout de bras. */
+.verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px 18px 18px 16px;
+  border-radius: var(--r-card);
+  border: 1px solid var(--line);
+  background: var(--surface-raised);
+}
+.verdict[data-tone='ok'] {
+  background: color-mix(in oklab, var(--jade-500) 18%, var(--floor));
+  border-color: color-mix(in oklab, var(--jade-500) 55%, transparent);
+}
+.verdict[data-tone='ko'] {
+  background: color-mix(in oklab, var(--brique-500) 20%, var(--floor));
+  border-color: color-mix(in oklab, var(--brique-500) 60%, transparent);
+}
+
+.verdictIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--surface-sunken);
+  color: var(--jade-500);
+}
+.verdict[data-tone='ok'] .verdictIcon { background: var(--jade-500); color: var(--ink-1000); }
+.verdict[data-tone='ko'] .verdictIcon { background: var(--brique-500); color: #FFFFFF; }
+.verdictIcon svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.verdictText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 1px;
+}
+.verdictText strong {
+  font-weight: normal;
+  font-variation-settings: 'wdth' 108, 'wght' 760;
+  font-size: 1.25rem;
+  line-height: 1.15;
+  color: var(--text);
+}
+.verdict[data-tone='ok'] .verdictText strong { color: #6BE3B6; }
+.verdict[data-tone='ko'] .verdictText strong { color: var(--danger-text); }
+.verdictText > span {
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Entrée validée : le bloc se pose, la coche se trace (opacité et
+     transform seulement). */
+  .verdict[data-fresh='1'] { animation: verdict-in var(--dur-3) var(--ease-slat) backwards; }
+  .verdict[data-fresh='1'] .verdictIcon { animation: icon-in var(--dur-4) var(--ease-slat) 80ms backwards; }
+}
+@keyframes verdict-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+@keyframes icon-in { from { opacity: 0; transform: scale(0.4) rotate(-20deg); } }
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: var(--sp-2);
+}

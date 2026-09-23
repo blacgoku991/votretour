@@ -1,0 +1,120 @@
+/* Accès suspendu : un rail vide, barré par la barrière baissée. */
+
+.page {
+  padding-top: var(--sp-6);
+  padding-bottom: var(--sp-9);
+}
+@media (min-width: 900px) {
+  .page { padding-top: var(--sp-8); }
+}
+
+.panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  overflow: clip;
+  max-width: 960px;
+}
+@media (min-width: 760px) {
+  .panel { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
+}
+
+/* La scène : sol plat, rail vertical, places vides en pointillés. */
+.scene {
+  position: relative;
+  min-height: 220px;
+  background: var(--floor);
+  border-bottom: 1px solid var(--line);
+  --rail-x: 72px;
+  --top: max(18px, calc(50% - 110px));
+}
+@media (min-width: 760px) {
+  .scene {
+    min-height: 360px;
+    border-bottom: 0;
+    border-right: 1px solid var(--line);
+  }
+}
+
+.rail {
+  position: absolute;
+  left: var(--rail-x);
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--rail);
+}
+
+/* Le boîtier (x 16 à 38 sur 200 du dessin) se tient à gauche du rail : le
+   bras baissé passe en travers. */
+.gate {
+  position: absolute;
+  left: calc(var(--rail-x) - 44px);
+  top: var(--top);
+  width: 210px;
+}
+
+.places {
+  position: absolute;
+  left: var(--rail-x);
+  right: 24px;
+  top: calc(var(--top) + 100px);
+  margin: 0;
+  padding: 0 0 0 22px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.places > li {
+  position: relative;
+  height: 26px;
+  max-width: 180px;
+  border-radius: var(--r-slat);
+  border: 2px dashed var(--line-strong);
+}
+.places > li:nth-child(2) { opacity: 0.75; }
+.places > li:nth-child(3) { opacity: 0.5; }
+.places > li:nth-child(4) { opacity: 0.3; }
+.places > li::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 50%;
+  width: 20px;
+  margin-top: -1px;
+  border-top: 2px dashed var(--line-strong);
+}
+@media (max-width: 759px) {
+  .places > li:nth-child(n + 3) { display: none; }
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: var(--sp-6) var(--sp-5) var(--sp-6);
+  background: var(--surface-raised);
+}
+@media (min-width: 760px) {
+  .text {
+    justify-content: center;
+    padding: var(--sp-8) var(--sp-8);
+  }
+}
+.title { max-width: 20ch; }
+.title + p {
+  margin-top: calc(var(--gap-title) - 14px);
+  max-width: 46ch;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: var(--sp-3);
+}
+@media (max-width: 479px) {
+  .actions > :global(.btn) { flex: 1 1 100%; }
+}

@@ -1,0 +1,79 @@
+/* La barrière du mode Event / Drop (voir Barrier.tsx). */
+
+.barrier {
+  --arm-angle: 0deg;
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.barrier[data-raised='1'] { --arm-angle: -78deg; }
+
+.ground {
+  stroke: var(--rail);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.fork rect { fill: var(--ink-600); }
+.fork path {
+  fill: none;
+  stroke: var(--ink-500);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+
+.housing {
+  fill: var(--ink-700);
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.slot { fill: var(--ink-1000); }
+
+/* Voyant : vermillion baissé, jade levé. Fondu d'opacité seulement. */
+.lampOff { fill: var(--ink-600); }
+.lampStop { fill: var(--accent); }
+.lampGo { fill: var(--jade-500); opacity: 0; }
+.barrier[data-raised='1'] .lampStop { opacity: 0; }
+.barrier[data-raised='1'] .lampGo { opacity: 1; }
+
+/* Le bras pivote autour du moyeu (27, 52), en unités du viewBox. */
+.arm {
+  transform-box: view-box;
+  transform-origin: 27px 52px;
+  transform: rotate(var(--arm-angle));
+}
+.armBody {
+  fill: var(--ink-1000);
+  stroke: color-mix(in oklab, var(--bone-100) 30%, transparent);
+  stroke-width: 1;
+}
+.stripe { fill: var(--accent); }
+
+.hub {
+  fill: var(--ink-600);
+  stroke: color-mix(in oklab, var(--bone-100) 30%, transparent);
+  stroke-width: 1;
+}
+.hubDot { fill: var(--bone-100); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .arm { transition: transform var(--dur-4) var(--ease-slat); }
+  .lampStop,
+  .lampGo { transition: opacity var(--dur-2) var(--ease-out) 200ms; }
+
+  /* Levée unique au montage : le bras part de l'horizontale. */
+  .barrier[data-lift='1'] .arm {
+    animation: arm-lift var(--dur-5) var(--ease-slat) 360ms backwards;
+  }
+  .barrier[data-lift='1'] .lampGo {
+    animation: lamp-go var(--dur-2) var(--ease-out) 360ms backwards;
+  }
+  .barrier[data-lift='1'] .lampStop {
+    animation: lamp-stop var(--dur-2) var(--ease-out) 360ms backwards;
+  }
+}
+
+@keyframes arm-lift { from { transform: rotate(0deg); } }
+@keyframes lamp-go { from { opacity: 0; } }
+@keyframes lamp-stop { from { opacity: 1; } }
