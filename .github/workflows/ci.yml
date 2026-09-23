@@ -5,6 +5,12 @@ on:
     branches: ['**']
   pull_request:
 
+# Une rafale de commits ne doit pas lancer dix builds Docker concurrents.
+# Seul le dernier commit d'une branche mérite d'être validé.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   web:
     name: Web — types, tests, build
