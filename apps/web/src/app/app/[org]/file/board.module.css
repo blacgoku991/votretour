@@ -13,13 +13,11 @@
   display: flex;
   flex-direction: column;
   gap: 28px;
-  padding-top: 24px;
+  /* Même départ que les autres pages du tableau de bord. */
+  padding-top: var(--sp-5);
 }
 @media (min-width: 600px) {
   .board { --rx: 14px; --lane-pad: 44px; gap: 32px; }
-}
-@media (min-width: 900px) {
-  .board { padding-top: 0; }
 }
 
 /* ---------------------------------------------------------------------
@@ -147,6 +145,39 @@
    Avis et bandeaux
    --------------------------------------------------------------------- */
 .notices { display: flex; flex-direction: column; gap: 8px; }
+
+/* Retours d'action : au-dessus de la barre basse, sans décaler la file. */
+.toasts {
+  position: fixed;
+  z-index: 40;
+  left: 16px;
+  right: 16px;
+  bottom: calc(var(--app-bottom, 0px) + 12px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.toasts:empty { display: none; }
+/* Socle opaque : les bandeaux (translucides en sombre) restent lisibles
+   par-dessus la file. */
+.toast {
+  pointer-events: auto;
+  width: min(100%, 520px);
+  border-radius: var(--r-field);
+  background: var(--surface-raised);
+  box-shadow: var(--edge-light), var(--shadow-lift);
+}
+.toastBody { justify-content: space-between; gap: 12px; padding-block: 8px; }
+.toastBody > :global(.btn) { flex: none; }
+@media (min-width: 900px) {
+  .toasts { left: auto; right: 24px; bottom: 24px; align-items: flex-end; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .toast { animation: toast-up var(--dur-2) var(--ease-slat) backwards; }
+}
+@keyframes toast-up { from { transform: translateY(12px); opacity: 0; } }
 
 .flash {
   position: relative;
@@ -392,13 +423,26 @@
 /* Le prochain : la ligne d'information peut passer sur deux lignes. */
 .nextWho .rowMeta { white-space: normal; }
 .nextActions { grid-area: actions; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.nextHint {
+  grid-column: 1 / -1;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  text-align: right;
+}
 @media (max-width: 699px) {
   .next {
-    grid-template-columns: 36px minmax(0, 1fr);
+    grid-template-columns: 44px minmax(0, 1fr);
     grid-template-areas: 'pos who' 'actions actions';
     --notch-y: 34px;
   }
-  .nextActions { justify-content: stretch; }
+  /* Tablette : les touches gardent leur largeur, calées à gauche. */
+  .nextActions { justify-content: flex-start; }
+  .nextHint { text-align: left; }
+}
+/* Téléphone seulement : touches égales, pleine largeur (cible au pouce). */
+@media (max-width: 479px) {
+  .next { grid-template-columns: 36px minmax(0, 1fr); }
   .nextActions > * { flex: 1 1 0; padding-inline: 10px; }
 }
 
@@ -426,6 +470,7 @@
 .waitRow:hover::before, .waitRow:focus-within::before { background: var(--text-muted); }
 
 .pos {
+  white-space: nowrap;
   font-variation-settings: 'wdth' 125, 'wght' 800;
   font-size: 1.5rem;
   line-height: 1;
@@ -503,6 +548,13 @@
 .rowMenu button:hover { color: var(--text); border-color: var(--text-muted); }
 .rowMenu .danger { color: var(--danger-text); border-color: color-mix(in oklab, var(--brique-500) 55%, transparent); }
 .rowMenu .startInMenu { display: none; background: var(--surface-inverse); color: var(--text-inverse); border-color: transparent; }
+.rowMenu button:disabled,
+.rowMenu .startInMenu:disabled {
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--text-faint);
+  border: 1px dashed var(--line-strong);
+}
 @media (prefers-reduced-motion: no-preference) {
   .rowMenu { animation: panel-in var(--dur-2) var(--ease-slat) backwards; }
 }

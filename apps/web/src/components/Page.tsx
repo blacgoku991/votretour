@@ -117,7 +117,10 @@ export function SaveBar({
       ) : saved && !dirty ? (
         <span className={styles.saveOk}>Enregistré</span>
       ) : (
-        <span className={styles.saveText}>Modifications non enregistrées</span>
+        <span className={styles.saveText}>
+          <span className={styles.saveLong}>Modifications non enregistrées</span>
+          <span className={styles.saveShort}>Non enregistré</span>
+        </span>
       )}
       <div className={styles.saveActions}>
         {onReset && dirty && (

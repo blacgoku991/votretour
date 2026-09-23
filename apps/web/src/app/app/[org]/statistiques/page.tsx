@@ -57,7 +57,7 @@ export default async function StatsPage({
   if (!current) {
     return (
       <div className={`shell ${styles.page}`}>
-        <PageHeader eyebrow="Suivi" title="Statistiques" description="Créez d’abord un établissement." />
+        <PageHeader title="Statistiques" description="Créez d’abord un établissement." />
       </div>
     );
   }
@@ -146,7 +146,6 @@ export default async function StatsPage({
   return (
     <div className={`shell ${styles.page}`}>
       <PageHeader
-        eyebrow="Suivi"
         title="Statistiques"
         description={`${current.name} · ${range.label}`}
         actions={

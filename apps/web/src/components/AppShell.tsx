@@ -49,7 +49,7 @@ export function buildNav(orgSlug: string): NavItem[] {
   const base = `/app/${orgSlug}`;
   return [
     { href: `${base}/file`,          label: 'File',          short: 'File',       icon: 'rang',     primary: true, group: 'comptoir' },
-    { href: `/ecran/${orgSlug}`,      label: 'Écran TV',      short: 'Écran TV',   icon: 'screen',   primary: true, group: 'comptoir' },
+    { href: `${base}/ecran`,         label: 'Écran TV',      short: 'Écran TV',   icon: 'screen',   primary: true, group: 'comptoir' },
     { href: `${base}/evenements`,    label: 'Événements',    short: 'Événements', icon: 'ticket',   group: 'comptoir' },
     { href: `${base}/statistiques`,  label: 'Statistiques',  short: 'Stats',      icon: 'chart',    primary: true, group: 'suivi' },
     { href: `${base}/historique`,    label: 'Historique',    short: 'Historique', icon: 'history',  group: 'suivi' },
@@ -111,9 +111,30 @@ export function AppShell({ organization, organizations, user, children }: Props)
     wasOpen.current = menuOpen;
   }, [menuOpen]);
 
+  // Feuille modale : Tab boucle du dernier élément au premier (et
+  // inversement), le focus ne ressort pas derrière la feuille.
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const trapFocus = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab' || !sheetRef.current) return;
+    const focusables = Array.from(
+      sheetRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'),
+    ).filter((el) => el.tabIndex >= 0);
+    if (focusables.length === 0) return;
+    const first = focusables[0]!;
+    const last = focusables[focusables.length - 1]!;
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || !sheetRef.current.contains(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }, []);
+
   return (
     <div className={styles.shell}>
-      <a href="#contenu" className="skip-link">Aller au contenu</a>
+      <a href="#contenu" className="skip-link" inert={menuOpen || undefined}>Aller au contenu</a>
 
       {/* ---------- Rail latéral (≥ 900 px) ---------- */}
       <aside className={styles.rail} inert={menuOpen || undefined}>
@@ -201,7 +222,14 @@ export function AppShell({ organization, organizations, user, children }: Props)
 
       {/* ---------- Feuille « Plus » ---------- */}
       {menuOpen && (
-        <div className={styles.sheet} role="dialog" aria-modal="true" aria-label="Toutes les rubriques">
+        <div
+          ref={sheetRef}
+          className={styles.sheet}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Toutes les rubriques"
+          onKeyDown={trapFocus}
+        >
           <button
             type="button"
             className={styles.sheetBackdrop}
@@ -393,7 +421,7 @@ function OrgSwitcher({
         className={styles.orgSelect}
         value={current.slug}
         onChange={(e) => { window.location.href = `/app/${e.target.value}/file`; }}
-        aria-label="Changer d'organisation"
+        aria-label="Changer d’organisation"
       >
         {organizations.map((org) => (
           <option key={org.slug} value={org.slug}>{org.name}</option>

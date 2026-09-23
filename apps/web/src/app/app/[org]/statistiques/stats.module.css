@@ -3,9 +3,10 @@
   display: flex;
   flex-direction: column;
   gap: 44px;
-  padding-top: 24px;
+  /* Même départ que les autres pages du tableau de bord. */
+  padding-top: var(--sp-5);
 }
-@media (min-width: 900px) { .page { padding-top: 0; gap: 52px; } }
+@media (min-width: 900px) { .page { gap: 52px; } }
 
 /* Filtres : sélecteurs segmentés de liens. */
 .filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

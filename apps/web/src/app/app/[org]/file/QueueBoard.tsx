@@ -39,6 +39,8 @@ interface Props {
   queues: QueueRef[];
   canOperate: boolean;
   canConfigure: boolean;
+  /** Fiche employé du compte connecté pour cette file (attribution des actions). */
+  actorStaffId?: string | null;
 }
 
 type Act = (id: string, action: StaffAction, options?: Record<string, unknown>) => void;
@@ -55,7 +57,7 @@ interface Ghost {
 const PASS_MS = 420;
 const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
-export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canConfigure }: Props) {
+export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canConfigure, actorStaffId = null }: Props) {
   const router = useRouter();
   const [snapshot, setSnapshot] = useState<QueueSnapshot | null>(initialSnapshot);
   const [busyEntry, setBusyEntry] = useState<string | null>(null);
@@ -184,6 +186,13 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
     [canOperate],
   );
 
+  // Une erreur d'action reste lisible 8 s, puis se retire (ou « Fermer »).
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(null), 8000);
+    return () => clearTimeout(timer);
+  }, [error]);
+
   useEffect(() => {
     if (!flash) return;
     const timer = setTimeout(() => setFlash(null), 3200);
@@ -276,6 +285,16 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
   const staffName = (id: string | null) => staff.find((s) => s.id === id)?.name ?? null;
   const empty = servingList.length === 0 && !nextUp;
 
+  // Même règle que le serveur (start_serving) : le professionnel qui
+  // démarre est le compte connecté, sinon celui attribué à la personne ;
+  // s'il sert déjà quelqu'un, « Démarrer » échouerait. On le dit avant.
+  const startBlocked = (entry: StaffEntry): boolean => {
+    const who = actorStaffId ?? entry.staffId;
+    return servingList.some((e) => e.id !== entry.id && (
+      who != null ? e.staffId === who : queue.mode === 'shared'
+    ));
+  };
+
   return (
     <div className={`shell ${styles.board}`}>
       <StatusHeader
@@ -287,24 +306,38 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
         onStatus={setStatus}
       />
 
-      {(error || flash || queue.status !== 'open') && (
-        <div className={styles.notices}>
-          {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
-          {flash && (
+      {/* Retour des actions : posé au-dessus de la barre basse, près du
+          pouce, sans pousser la file vers le bas. */}
+      <div className={styles.toasts} aria-live="polite">
+        {error && (
+          <div className={styles.toast}>
+            <div className={`banner banner--error ${styles.toastBody}`} role="alert">
+              <span>{error}</span>
+              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setError(null)}>
+                Fermer
+              </button>
+            </div>
+          </div>
+        )}
+        {flash && (
+          <div className={styles.toast}>
             <div className={styles.flash} role="status">
               <span className={styles.flashMark} aria-hidden="true" />
               {flash}
             </div>
-          )}
-          {queue.status !== 'open' && (
-            <div className="banner banner--warn">
-              <span>
-                {queue.status === 'paused'
-                  ? `File en pause${queue.pauseReason ? ` — ${queue.pauseReason}` : ''}. Personne ne peut la rejoindre.`
-                  : 'File fermée. Ouvrez-la pour que vos clients puissent approcher leur téléphone de la plaque.'}
-              </span>
-            </div>
-          )}
+          </div>
+        )}
+      </div>
+
+      {queue.status !== 'open' && (
+        <div className={styles.notices}>
+          <div className="banner banner--warn">
+            <span>
+              {queue.status === 'paused'
+                ? `File en pause${queue.pauseReason ? ` — ${queue.pauseReason}` : ''}. Personne ne peut la rejoindre.`
+                : 'File fermée. Ouvrez-la pour que vos clients puissent approcher leur téléphone de la plaque.'}
+            </span>
+          </div>
         </div>
       )}
 
@@ -377,6 +410,7 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
                     busy={busyEntry === nextUp.id}
                     entering={isNew.next(nextUp.id)}
                     quiet={servingList.length > 0}
+                    blocked={startBlocked(nextUp)}
                     disabled={!canOperate}
                     advanceMode={queue.advanceMode}
                     now={now}
@@ -393,7 +427,7 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
                 </h2>
 
                 {rest.length === 0 ? (
-                  <p className={styles.nobody}>Personne d&apos;autre n&apos;attend pour le moment.</p>
+                  <p className={styles.nobody}>Personne d’autre n’attend pour le moment.</p>
                 ) : (
                   <ol className={styles.waitList}>
                     {rest.map((entry, index) => (
@@ -404,6 +438,7 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
                         entering={isNew.waiting(entry.id)}
                         staffName={staffName(entry.staffId)}
                         busy={busyEntry === entry.id}
+                        blocked={startBlocked(entry)}
                         disabled={!canOperate}
                         moveBackBy={queue.absentMoveBackBy}
                         now={now}
@@ -484,9 +519,9 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
           )}
 
           {!empty && (
-            <Link href={`/ecran/${orgSlug}`} className={styles.tvLink}>
+            <Link href={`/app/${orgSlug}/ecran`} className={styles.tvLink}>
               <Icon name="screen" />
-              <span>Afficher l&apos;écran TV</span>
+              <span>Afficher l’écran TV</span>
               <span aria-hidden="true" className={styles.tvArrow}>→</span>
             </Link>
           )}
@@ -654,8 +689,8 @@ function StatusHeader({
           <dd><FlapNumber static value={counts.serving} size="2rem" label={`${counts.serving} en cours`} /></dd>
         </div>
         <div className={styles.counter}>
-          <dt className="t-label">aujourd&apos;hui</dt>
-          <dd><FlapNumber static value={counts.completedToday} size="2rem" label={`${counts.completedToday} aujourd'hui`} /></dd>
+          <dt className="t-label">aujourd’hui</dt>
+          <dd><FlapNumber static value={counts.completedToday} size="2rem" label={`${counts.completedToday} aujourd’hui`} /></dd>
         </div>
       </dl>
     </header>
@@ -770,9 +805,11 @@ function ServingSlat({
    ================================================================== */
 
 function NextSlat({
-  entry, staffName, busy, disabled, advanceMode, now, onAct, entering = false, quiet = false,
+  entry, staffName, busy, disabled, advanceMode, now, onAct, entering = false, quiet = false, blocked = false,
 }: {
   entering?: boolean;
+  /** Le professionnel sert déjà quelqu'un : « Démarrer » attend TERMINER. */
+  blocked?: boolean;
   /** Quelqu'un est déjà en prestation : TERMINER reste la seule touche pleine. */
   quiet?: boolean;
   entry: StaffEntry;
@@ -797,7 +834,7 @@ function NextSlat({
             staffName ? `pour ${staffName}` : null,
             `arrivé à ${formatTime(entry.joinedAt)}`,
           ].filter(Boolean).join(' · ')}
-          {now != null && <> · <span className={styles.nowrap}><span className="t-num">{waitText(entry.joinedAt)}</span> d&apos;attente</span></>}
+          {now != null && <> · <span className={styles.nowrap}><span className="t-num">{waitText(entry.joinedAt)}</span> d’attente</span></>}
         </p>
       </div>
 
@@ -805,9 +842,10 @@ function NextSlat({
         <button
           type="button"
           className={quiet ? 'btn btn--ghost' : 'btn btn--solid'}
-          disabled={disabled}
+          disabled={disabled || blocked}
           aria-busy={busy || undefined}
-          onClick={() => { if (!busy) onAct(entry.id, 'start_serving'); }}
+          aria-describedby={blocked ? `blocked-${entry.id}` : undefined}
+          onClick={() => { if (!busy && !blocked) onAct(entry.id, 'start_serving'); }}
         >
           {busy ? 'Un instant…' : 'Démarrer'}
         </button>
@@ -822,6 +860,11 @@ function NextSlat({
           Absent
         </button>
       </div>
+      {blocked && !disabled && (
+        <p className={styles.nextHint} id={`blocked-${entry.id}`}>
+          Terminez d’abord la prestation en cours pour démarrer.
+        </p>
+      )}
     </article>
   );
 }
@@ -831,9 +874,11 @@ function NextSlat({
    ================================================================== */
 
 function WaitingRow({
-  entry, position, staffName, busy, disabled, moveBackBy, now, onAct, entering = false,
+  entry, position, staffName, busy, disabled, moveBackBy, now, onAct, entering = false, blocked = false,
 }: {
   entering?: boolean;
+  /** Le professionnel sert déjà quelqu'un : pas de « Démarrer » possible. */
+  blocked?: boolean;
   entry: StaffEntry;
   position: number;
   staffName: string | null;
@@ -846,6 +891,19 @@ function WaitingRow({
   const [open, setOpen] = useState(false);
   const name = entry.name ?? 'Client sans prénom';
   const menuId = `menu-${entry.id}`;
+  const moreRef = useRef<HTMLButtonElement | null>(null);
+
+  // Échap referme le menu et rend le focus au bouton « … ».
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setOpen(false);
+      moreRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
 
   return (
     <li
@@ -873,17 +931,19 @@ function WaitingRow({
 
       {!disabled && (
         <div className={styles.rowActions}>
-          <button type="button" className={`btn btn--ghost btn--sm ${styles.startBtn}`} disabled={busy}
+          <button type="button" className={`btn btn--ghost btn--sm ${styles.startBtn}`} disabled={busy || blocked}
+            title={blocked ? 'Terminez d’abord la prestation en cours' : undefined}
             onClick={() => onAct(entry.id, 'start_serving')}>
             Démarrer
           </button>
           <button
+            ref={moreRef}
             type="button"
             className={styles.moreBtn}
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             aria-controls={menuId}
-            aria-label={`Plus d'actions pour ${name}`}
+            aria-label={`Plus d’actions pour ${name}`}
           >
             <Icon name="more" />
           </button>
@@ -892,7 +952,7 @@ function WaitingRow({
 
       {open && !disabled && (
         <div className={styles.rowMenu} id={menuId}>
-          <button type="button" className={styles.startInMenu}
+          <button type="button" className={styles.startInMenu} disabled={blocked}
             onClick={() => { onAct(entry.id, 'start_serving'); setOpen(false); }}>
             Démarrer
           </button>
@@ -943,8 +1003,8 @@ function EmptyLane({ orgSlug, paused }: { orgSlug: string; paused: boolean }) {
             ? 'Ouvrez-la : elle se remplira dès qu’un client approchera son téléphone de la plaque.'
             : 'Elle se remplit dès qu’un client approche son téléphone de la plaque.'}
         </p>
-        <Link href={`/ecran/${orgSlug}`} className={styles.emptyLink}>
-          Afficher l&apos;écran TV <span aria-hidden="true">→</span>
+        <Link href={`/app/${orgSlug}/ecran`} className={styles.emptyLink}>
+          Afficher l’écran TV <span aria-hidden="true">→</span>
         </Link>
       </div>
     </section>

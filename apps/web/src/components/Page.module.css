@@ -93,10 +93,15 @@
 @media (max-width: 639px) {
   .row { flex-direction: column; align-items: stretch; gap: 12px; }
   .rowControl { width: 100%; flex-wrap: wrap; }
-  .rowControl :global(.input), .rowControl :global(.select) { min-width: 0; width: 100%; }
-  .rowControl > :not([role='switch']) { flex: 1 1 auto; }
+  /* Les champs occupent la ligne (et se la partagent : code postal + ville). */
+  .rowControl :global(.input), .rowControl :global(.select) { min-width: 0; width: auto; flex: 1 1 160px; }
   /* L'interrupteur reste à sa taille, calé à gauche sous le libellé. */
   .rowControl:has(> [role='switch']:only-child) { width: auto; }
+}
+/* Les boutons ne s'étirent qu'au téléphone (cible au pouce) ; sur
+   tablette, ils gardent leur largeur, calés à gauche. */
+@media (max-width: 479px) {
+  .rowControl > :not([role='switch']):not(:global(.input)):not(:global(.select)) { flex: 1 1 auto; }
 }
 
 /* ---------------------------------------------------------------------
@@ -189,7 +194,21 @@
 .saveText { font-size: 0.875rem; color: var(--text-muted); }
 .saveError { color: var(--danger-text); font-size: 0.875rem; font-variation-settings: 'wght' 620; }
 .saveOk { font-size: 0.875rem; font-variation-settings: 'wght' 620; color: var(--jade-500); }
-.saveActions { display: flex; gap: 8px; margin-left: auto; }
+.saveActions { display: flex; gap: 8px; margin-left: auto; flex: none; }
+.saveShort { display: none; }
+/* Téléphone : une seule rangée — libellé court, boutons à droite. */
+@media (max-width: 419px) {
+  .saveBar { flex-wrap: nowrap; gap: 10px; padding: 8px 8px 8px 16px; }
+  .saveText, .saveError, .saveOk {
+    min-width: 0;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .saveLong { display: none; }
+  .saveShort { display: inline; }
+}
 @media (prefers-reduced-motion: no-preference) {
   .saveBar { animation: save-up var(--dur-2) var(--ease-slat) backwards; }
 }

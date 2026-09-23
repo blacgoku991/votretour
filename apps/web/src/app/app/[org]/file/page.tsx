@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { requireOrgAccess } from '@/server/auth';
+import { getStaffRecord, requireOrgAccess } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { getQueueSnapshot } from '@/server/queue';
 import { QueueBoard } from './QueueBoard';
@@ -44,7 +44,7 @@ export default async function QueuePage({
       <div className="shell">
         <div className={styles.empty}>
           <p className="t-label">Rien à afficher</p>
-          <h1 className="t-title">Aucune file pour l&apos;instant</h1>
+          <h1 className="t-title">Aucune file pour l’instant</h1>
           <p className="t-body t-muted">
             Créez votre premier établissement : sa file, son QR code et sa plaque NFC
             seront générés automatiquement.
@@ -58,7 +58,10 @@ export default async function QueuePage({
   }
 
   const selected = list.find((q) => q.id === file) ?? list[0]!;
-  const snapshot = await getQueueSnapshot(selected.id);
+  const [snapshot, staff] = await Promise.all([
+    getQueueSnapshot(selected.id),
+    getStaffRecord(access.user.id, selected.location_id),
+  ]);
 
   return (
     <QueueBoard
@@ -72,6 +75,7 @@ export default async function QueuePage({
       }))}
       canOperate={access.can('queue.operate')}
       canConfigure={access.can('queue.configure')}
+      actorStaffId={staff?.id ?? null}
     />
   );
 }
