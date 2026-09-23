@@ -116,10 +116,10 @@
   height: 40px;
   border-radius: 50%;
   background: var(--surface-sunken);
-  color: var(--jade-500);
+  color: var(--text-muted);
 }
 .verdict[data-tone='ok'] .verdictIcon { background: var(--jade-500); color: var(--ink-1000); }
-.verdict[data-tone='ko'] .verdictIcon { background: var(--brique-500); color: #FFFFFF; }
+.verdict[data-tone='ko'] .verdictIcon { background: var(--brique-500); color: var(--bone-000); }
 .verdictIcon svg {
   width: 22px;
   height: 22px;
@@ -144,7 +144,7 @@
   line-height: 1.15;
   color: var(--text);
 }
-.verdict[data-tone='ok'] .verdictText strong { color: #6BE3B6; }
+.verdict[data-tone='ok'] .verdictText strong { color: color-mix(in oklab, var(--jade-500) 62%, var(--bone-100)); }
 .verdict[data-tone='ko'] .verdictText strong { color: var(--danger-text); }
 .verdictText > span {
   font-size: 0.9375rem;
@@ -167,3 +167,4 @@
   gap: 12px;
   margin-top: var(--sp-2);
 }
+.verdict[data-tone='ready'] .verdictIcon svg { stroke-width: 1.8; }

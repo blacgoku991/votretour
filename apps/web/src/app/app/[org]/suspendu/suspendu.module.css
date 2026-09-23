@@ -31,6 +31,9 @@
 }
 @media (min-width: 760px) {
   .scene {
+    /* Composition (barrière + places, ≈ 290 × 250 px) centrée dans la scène. */
+    --rail-x: max(72px, calc(50% - 100px));
+    --top: max(24px, calc(50% - 125px));
     min-height: 360px;
     border-bottom: 0;
     border-right: 1px solid var(--line);
@@ -88,6 +91,11 @@
 }
 @media (max-width: 759px) {
   .places > li:nth-child(n + 3) { display: none; }
+}
+@media (min-width: 760px) {
+  .gate { width: 240px; left: calc(var(--rail-x) - 50px); }
+  .places { top: calc(var(--top) + 114px); }
+  .places > li { max-width: 220px; }
 }
 
 .text {

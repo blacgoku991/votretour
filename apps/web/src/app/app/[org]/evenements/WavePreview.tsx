@@ -2,6 +2,9 @@ import { Barrier } from './Barrier';
 import { PREVIEW_MAX_HEIGHT, PREVIEW_SLATS, waveLayout } from './waves';
 import styles from './events.module.css';
 
+/** Longueur du rail au-dessus de la première latte (px). */
+const RAIL_LEAD = 14;
+
 /**
  * APERÇU VIVANT des vagues (≥ 1024 px) : les 30 premiers inscrits en
  * mini-lattes sur un rail, regroupés par accolades vermillon toutes les
@@ -35,6 +38,12 @@ export function WavePreview({
         </div>
 
         <div className={styles.waves} style={{ height: PREVIEW_MAX_HEIGHT }}>
+          {/* Le rail s'arrête sous la dernière vague (scaleY), fermé par une encoche. */}
+          <span
+            className={styles.wavesRail}
+            style={{ transform: `scaleY(${(lastTop + RAIL_LEAD) / (PREVIEW_MAX_HEIGHT + RAIL_LEAD)})` }}
+          />
+          <span className={styles.wavesEnd} style={{ transform: `translateY(${lastTop + 6}px)` }} />
           {layout.slats.map((y, i) => (
             <span
               key={i}

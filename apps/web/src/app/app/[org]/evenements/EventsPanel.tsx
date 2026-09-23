@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState, useTransition } from 'react';
+import { useId, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { callEventWave, changeEventState, createEventCampaign } from '@/server/actions/events';
 import { FlapNumber, FlapText } from '@/components/FlapNumber';
@@ -34,6 +34,16 @@ const STATUS: Record<string, { label: string; tone: 'live' | 'paused' | 'soldout
 };
 
 const plural = (n: number, one: string, many: string) => (n > 1 ? many : one);
+
+/** Ordre d'affichage : les événements actionnables d'abord. */
+const ORDER: Record<string, number> = { live: 0, paused: 1, draft: 2, sold_out: 3, ended: 4 };
+
+/** Entier borné ; une saisie vide revient au minimum. */
+const clamp = (n: number, min: number, max: number) =>
+  (Number.isFinite(n) ? Math.max(min, Math.min(max, Math.round(n))) : min);
+
+/** Nom minimal exigé par le serveur. */
+const NAME_MIN = 2;
 
 export function EventsPanel({
   orgSlug, canOperate, canConfigure, queues, events,
@@ -74,7 +84,8 @@ export function EventsPanel({
       setBusy(null);
       if (!result.ok) { setError(result.error); return; }
       if (result.data.notified > 0) {
-        setFlash(`${result.data.notified} notification(s) envoyée(s)`);
+        const n = result.data.notified;
+        setFlash(`${n} ${plural(n, 'notification envoyée', 'notifications envoyées')}`);
       }
       router.refresh();
     });
@@ -87,8 +98,9 @@ export function EventsPanel({
       const result = await callEventWave({ eventId, count });
       setBusy(null);
       if (!result.ok) { setError(result.error); return; }
+      const { issued, notificationsSent: sent } = result.data;
       setFlash(
-        `${result.data.issued} accès créé(s) · ${result.data.notificationsSent} notification(s) envoyée(s)`,
+        `${issued} ${plural(issued, 'accès créé', 'accès créés')} · ${sent} ${plural(sent, 'notification envoyée', 'notifications envoyées')}`,
       );
       router.refresh();
     });
@@ -96,6 +108,26 @@ export function EventsPanel({
 
   const anyLive = events.some((event) => event.status === 'live');
   const formOpen = openCreate && canConfigure;
+  const nameOk = name.trim().length >= NAME_MIN;
+  const hintId = `${formId}-aide`;
+  const sorted = useMemo(
+    () => events
+      .map((event, i) => ({ event, i }))
+      .sort((a, b) => (ORDER[a.event.status] ?? 9) - (ORDER[b.event.status] ?? 9) || a.i - b.i)
+      .map(({ event }) => event),
+    [events],
+  );
+  // Files regroupées par établissement (le nom de la file reste lisible).
+  const groups = useMemo(() => {
+    const map = new Map<string, QueueRef[]>();
+    for (const q of queues) {
+      const list = map.get(q.locationName) ?? [];
+      list.push(q);
+      map.set(q.locationName, list);
+    }
+    return [...map.entries()];
+  }, [queues]);
+  const selectedQueue = queues.find((q) => q.id === queueId);
 
   return (
     <div className={`shell ${styles.page}`}>
@@ -125,7 +157,6 @@ export function EventsPanel({
                 className="btn btn--signal"
                 type="button"
                 aria-expanded="false"
-                aria-controls={formId}
                 onClick={() => setOpenCreate(true)}
               >
                 <PlusIcon />
@@ -135,11 +166,16 @@ export function EventsPanel({
           </div>
         )}
         <div className={styles.heroBarrier} data-raised={anyLive ? '1' : undefined}>
-          <Barrier raised={anyLive} lift />
+          <Barrier raised={anyLive} lift ground={false} fork />
         </div>
         <p className={`t-label ${styles.heroState}`}>
           <span className={`pip ${anyLive ? 'pip--live' : ''}`} />
-          {anyLive ? 'Flux ouvert · en direct' : 'Flux fermé'}
+          {anyLive ? (
+            <>
+              <span className={styles.stateLong}>Flux ouvert · en direct</span>
+              <span className={styles.stateShort}>Flux ouvert</span>
+            </>
+          ) : 'Flux fermé'}
         </p>
       </header>
 
@@ -153,16 +189,16 @@ export function EventsPanel({
             className={styles.form}
             onSubmit={(event) => {
               event.preventDefault();
-              if (!queueId || !name.trim()) return;
+              if (!queueId || !nameOk) return;
               setBusy('create');
               setError(null);
               startTransition(async () => {
                 const result = await createEventCampaign({
                   queueId,
                   name: name.trim(),
-                  waveSize,
-                  passValidMinutes: validMinutes,
-                  graceMinutes,
+                  waveSize: clamp(waveSize, 1, 200),
+                  passValidMinutes: clamp(validMinutes, 1, 120),
+                  graceMinutes: clamp(graceMinutes, 0, 60),
                 });
                 setBusy(null);
                 if (!result.ok) { setError(result.error); return; }
@@ -192,14 +228,26 @@ export function EventsPanel({
                 />
               </FormRow>
 
-              <FormRow id={`${formId}-file`} label="File utilisée" hint="Les inscrits rejoignent cette file.">
+              <FormRow
+                id={`${formId}-file`}
+                label="File utilisée"
+                hint={selectedQueue
+                  ? `Les inscrits rejoignent cette file · ${selectedQueue.locationName}.`
+                  : 'Les inscrits rejoignent cette file.'}
+              >
                 <select
                   id={`${formId}-file`}
                   className="select"
                   value={queueId}
                   onChange={(e) => setQueueId(e.target.value)}
                 >
-                  {queues.map((q) => <option key={q.id} value={q.id}>{q.locationName} · {q.name}</option>)}
+                  {groups.length > 1
+                    ? groups.map(([location, list]) => (
+                      <optgroup key={location} label={location}>
+                        {list.map((q) => <option key={q.id} value={q.id}>{q.name}</option>)}
+                      </optgroup>
+                    ))
+                    : queues.map((q) => <option key={q.id} value={q.id}>{q.name}</option>)}
                 </select>
               </FormRow>
 
@@ -244,12 +292,17 @@ export function EventsPanel({
               <button
                 className="btn btn--signal btn--lg"
                 type="submit"
-                disabled={busy === 'create' || !queueId || !name.trim()}
+                disabled={busy === 'create' || !queueId || !nameOk}
+                aria-describedby={nameOk ? undefined : hintId}
               >
                 {busy === 'create' ? 'Création…' : 'Créer l’événement'}
               </button>
-              {!name.trim() && (
-                <p className="hint">Donnez un nom à l’événement pour le créer.</p>
+              {!nameOk && (
+                <p id={hintId} className="hint">
+                  {name.trim()
+                    ? `Le nom doit compter au moins ${NAME_MIN} caractères.`
+                    : 'Donnez un nom à l’événement pour le créer.'}
+                </p>
               )}
             </div>
           </form>
@@ -278,7 +331,7 @@ export function EventsPanel({
           </div>
         ) : (
           <ol className={`rail-list ${styles.events}`}>
-            {events.map((event) => (
+            {sorted.map((event) => (
               <EventLine
                 key={event.id}
                 event={event}
@@ -311,6 +364,8 @@ function EventLine({
   // Vagues ouvertes : déduites des accès émis (une vague = wave_size accès).
   const waves = Math.ceil(emitted / size);
   const waitingWaves = Math.ceil(waiting / size);
+  // Terminé ou stock épuisé : la file n'alimente plus cet événement.
+  const closed = event.status === 'ended' || event.status === 'sold_out';
   const ratio = (n: number) => (emitted > 0 ? Math.min(1, n / emitted) : 0);
 
   return (
@@ -320,7 +375,6 @@ function EventLine({
           <p className={styles.status}>
             <span className={`pip ${status.tone === 'live' ? 'pip--live' : ''} ${styles.statusPip}`} />
             {status.label}
-            <span className={styles.eventId}>#{event.id.slice(0, 8)}</span>
           </p>
           <h3 className={styles.eventName}>{event.name}</h3>
           <p className={styles.rules}>
@@ -334,7 +388,7 @@ function EventLine({
             static
             fixed
             tile
-            cells={8}
+            cells={waves > 0 ? `VAGUE ${waves}`.length : 7}
             text={waves > 0 ? `VAGUE ${waves}` : 'VAGUE —'}
             label={waves > 0 ? `${waves} ${plural(waves, 'vague ouverte', 'vagues ouvertes')}` : 'Aucune vague ouverte'}
             size="clamp(1.375rem, 1.1rem + 0.8vw, 1.75rem)"
@@ -345,8 +399,10 @@ function EventLine({
       <div className={`kpi-band ${styles.kpis}`}>
         <Metric
           label="En attente"
-          value={waiting}
-          note={waiting > 0 ? `≈ ${waitingWaves} ${plural(waitingWaves, 'vague', 'vagues')}` : 'Personne'}
+          value={closed ? null : waiting}
+          note={closed
+            ? 'Inscriptions closes'
+            : waiting > 0 ? `≈ ${waitingWaves} ${plural(waitingWaves, 'vague', 'vagues')}` : 'Personne'}
         />
         <Metric label="Accès actifs" value={issued} gauge={ratio(issued)} tone="signal" />
         <Metric label="Entrés" value={redeemed} gauge={ratio(redeemed)} tone="jade" />
@@ -408,7 +464,8 @@ function Metric({
   label, value, note, gauge, tone,
 }: {
   label: string;
-  value: number;
+  /** null : sans objet (affiche « — »). */
+  value: number | null;
   note?: string;
   gauge?: number;
   tone?: 'signal' | 'jade' | 'brique';
@@ -417,7 +474,9 @@ function Metric({
     <div className={styles.metric} data-tone={tone}>
       <span className="t-label">{label}</span>
       <span className={styles.metricValue}>
-        <FlapNumber static value={value} size="1.75rem" />
+        {value === null
+          ? <span className={styles.metricNone} aria-label="Sans objet">—</span>
+          : <FlapNumber static value={value} size="1.75rem" />}
       </span>
       <span className={styles.metricFoot}>
         {gauge !== undefined ? (
@@ -465,8 +524,9 @@ function UnitField({
           inputMode="numeric"
           min={min}
           max={max}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
+          value={Number.isFinite(value) ? value : ''}
+          onChange={(e) => onChange(e.target.value === '' ? Number.NaN : Number(e.target.value))}
+          onBlur={() => onChange(clamp(value, min, max))}
         />
         <span className={styles.unit} aria-hidden="true">{unit}</span>
       </span>

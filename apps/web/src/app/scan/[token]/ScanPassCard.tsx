@@ -116,6 +116,11 @@ export function ScanPassCard({
           <span className={styles.verdictIcon} aria-hidden="true">
             {tone === 'ko' ? (
               <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17" /></svg>
+            ) : tone === 'ready' ? (
+              // Prêt : un QR neutre ; la coche est réservée à l'entrée validée.
+              <svg viewBox="0 0 24 24">
+                <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2" />
+              </svg>
             ) : (
               <svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
             )}

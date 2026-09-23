@@ -64,16 +64,17 @@
   background: var(--rail);
 }
 
-/* La barrière est posée sur ce rail : la ligne de sol du dessin
-   (y = 97 sur 100, soit 1,5 % de la largeur au-dessus du bas) tombe
-   pile sur le trait de 2 px. */
+/* La barrière est posée sur ce rail, qui sert de sol (le dessin ne trace
+   pas le sien). Le pied du boîtier et de la fourche (y = 96 sur 100, soit
+   2 % de la largeur au-dessus du bas du dessin) est descendu en translate
+   jusqu'au milieu du trait de 2 px. */
 .heroBarrier {
   grid-area: barrier;
   justify-self: end;
   position: relative;
   z-index: 1;
   width: var(--barrier-w);
-  margin-bottom: calc(var(--barrier-w) * 0.015 - 1px);
+  translate: 0 calc(var(--barrier-w) * 0.02 - 1px);
 }
 /* Bras levé : sous 1024 px, la barrière partage sa rangée avec le bouton ;
    on lui réserve la hauteur du bras dressé pour qu'il ne passe jamais
@@ -93,7 +94,12 @@
   line-height: 1.35;
   color: var(--text-muted);
 }
-.heroState > :global(.pip) { align-self: flex-start; margin-top: 3px; }
+.heroState { white-space: nowrap; }
+.stateShort { display: none; }
+@media (max-width: 479px) {
+  .stateLong { display: none; }
+  .stateShort { display: inline; }
+}
 
 @media (min-width: 720px) {
   .hero {
@@ -111,7 +117,6 @@
     padding-bottom: 0;
     margin-top: 12px;
   }
-  .heroState > :global(.pip) { align-self: center; margin-top: 0; }
 }
 @media (min-width: 1024px) {
   .hero {
@@ -198,6 +203,9 @@
     align-items: center;
     gap: var(--sp-6);
   }
+}
+@media (min-width: 1024px) {
+  .row { grid-template-columns: minmax(0, 1fr) minmax(0, 400px); }
 }
 
 /* Champ numérique : crans − / +, unité visible dans le champ. */
@@ -311,9 +319,9 @@
   align-items: flex-end;
   gap: 12px;
   height: 58px;
-  margin-left: -17px;
+  translate: -17px 0;
 }
-.gateBarrier { width: 128px; flex: none; margin-bottom: -18px; }
+.gateBarrier { width: 128px; flex: none; translate: 0 18px; }
 .gateLabel { color: var(--accent); padding-bottom: 2px; }
 
 .waves {
@@ -323,15 +331,28 @@
   --slat-x: 24px;
   --slat-w: min(46%, 168px);
 }
-.waves::before {
-  content: '';
+.wavesRail {
   position: absolute;
   left: var(--rail-x);
   top: -14px;
   bottom: 0;
   width: 2px;
-  border-radius: 2px;
   background: var(--rail);
+  transform-origin: 50% 0;
+}
+/* Encoche de fin de rail, posée sous la dernière vague. */
+.wavesEnd {
+  position: absolute;
+  left: calc(var(--rail-x) - 5px);
+  top: 0;
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--rail);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .wavesRail,
+  .wavesEnd { transition: transform var(--dur-3) var(--ease-slat); }
 }
 
 /* Une mini-latte : sur le rail par son encoche. */
@@ -384,8 +405,8 @@
   height: 2px;
   border-radius: 1px;
 }
-.braceTop { left: -6px !important; }
-.braceBottom { left: -6px !important; }
+.brace > .braceTop,
+.brace > .braceBottom { left: -6px; }
 .braceLine {
   width: 2px;
   height: 1px;
@@ -426,6 +447,8 @@
   color: var(--text-muted);
 }
 .braceLabel[data-show='0'] { opacity: 0; }
+/* Vague d'une latte : l'étiquette s'aligne sur sa latte au lieu de flotter. */
+.brace[data-small='1'] > .braceLabel { translate: 0 -5px; }
 
 @media (prefers-reduced-motion: no-preference) {
   .wslat {
@@ -489,8 +512,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
-  padding: var(--sp-6) 0 !important;
 }
+.events > .event { padding: var(--sp-6) 0; }
 .event[data-tone='live'] { --tone: var(--jade-500); }
 .event[data-tone='paused'] { --tone: var(--copper-500); }
 .event[data-tone='soldout'] { --tone: var(--brique-500); }
@@ -565,14 +588,6 @@
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-.eventId {
-  margin-left: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.75rem;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--text-faint);
-}
 
 .waveBoard {
   --flap-tile: var(--ink-600);
@@ -581,19 +596,19 @@
 }
 
 /* Métriques : bande KPI compacte, quatre cellules. */
-.kpis {
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+:global(.kpi-band).kpis {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 @media (min-width: 720px) {
-  .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+  :global(.kpi-band).kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 .metric {
   --metric-tone: var(--text-faint);
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 14px 16px !important;
 }
+:global(.kpi-band).kpis > .metric { padding: 14px 16px; }
 .metric[data-tone='signal'] { --metric-tone: var(--accent); }
 .metric[data-tone='jade'] { --metric-tone: var(--jade-500); }
 .metric[data-tone='brique'] { --metric-tone: var(--brique-500); }
@@ -601,7 +616,16 @@
   display: block;
   line-height: 1;
 }
-.metric[data-tone='jade'] .metricValue { color: #49D7A5; }
+.metric[data-tone='jade'] .metricValue {
+  color: color-mix(in oklab, var(--jade-500) 72%, var(--bone-100));
+}
+.metricNone {
+  display: block;
+  font-variation-settings: 'wdth' 112, 'wght' 720;
+  font-size: 1.75rem;
+  line-height: 1;
+  color: var(--text-faint);
+}
 .metricFoot {
   display: flex;
   align-items: center;
@@ -639,7 +663,7 @@
 @keyframes gauge-in { from { transform: scaleX(0); } }
 
 .emitted {
-  margin-top: -6px;
+  translate: 0 -6px;
   font-size: 0.8125rem;
   color: var(--text-muted);
 }
@@ -693,8 +717,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-5);
-  padding: 0 0 var(--sp-2) 72px;
+  padding: 0 0 var(--sp-2);
 }
 .empty::before {
   content: '';
@@ -709,16 +732,15 @@
 /* Le boîtier (x 16 à 38 sur 200) se tient à gauche du rail : le bras
    baissé passe en travers du rail. */
 .emptyGate {
-  width: 220px;
-  max-width: calc(100% + 72px);
-  margin-left: -72px;
+  position: relative;
+  width: min(220px, 100%);
   margin-top: 4px;
-  margin-bottom: -30px;
 }
 .emptyText {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin-left: 72px;
   padding-top: var(--sp-4);
   border-top: 1px solid var(--line);
 }
