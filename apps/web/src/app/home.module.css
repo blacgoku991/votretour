@@ -246,3 +246,6 @@
     color: var(--text-muted);
   }
 }
+
+/* Cible du lien « Aller au contenu » : sous l’en-tête collant. */
+.main { scroll-margin-top: var(--site-header-h); }

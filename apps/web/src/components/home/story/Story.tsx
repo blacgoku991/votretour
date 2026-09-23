@@ -49,14 +49,14 @@ const STEPS: StepCopy[] = [
   {
     kicker: 'Il arrive',
     title: 'Un geste pour prendre sa place.',
-    body: "Il approche son téléphone de votre plaque NFC ou scanne le QR code. Sur iPhone, l'App Clip s'ouvre tout seul ; sur Android, le navigateur suffit. Rien à installer, aucun compte.",
+    body: "Il approche son téléphone de votre plaque NFC ou scanne le QR code. Sur iPhone, l’App Clip s’ouvre tout seul ; sur Android, le navigateur suffit. Rien à installer, aucun compte.",
     benefit: 'Inscrit en trois secondes, sans vous déranger.',
     state: '3 personnes devant vous',
   },
   {
     kicker: 'Il sort',
     title: 'Sa place reste. Lui, il part.',
-    body: "Café, course, coup de fil : il attend où il veut. Votre salon ne ressemble plus à une salle d'attente.",
+    body: "Café, course, coup de fil : il attend où il veut. Votre salon ne ressemble plus à une salle d’attente.",
     benefit: 'Plus personne ne repart en voyant la queue.',
     state: 'Place gardée · vous pouvez partir',
     outline: true,
@@ -64,29 +64,29 @@ const STEPS: StepCopy[] = [
   {
     kicker: 'Il suit',
     title: 'Un seul chiffre. Aucune question au comptoir.',
-    body: "Son écran n'affiche qu'une chose : combien de personnes sont devant lui. Pas de numéro de ticket, pas d'heure promise qu'on ne tiendra pas.",
-    benefit: "Fini les « c'est encore long ? ».",
+    body: "Son écran n’affiche qu’une chose : combien de personnes sont devant lui. Pas de numéro de ticket, pas d’heure promise qu’on ne tiendra pas.",
+    benefit: "Fini les « c’est encore long ? ».",
     state: '2 personnes devant vous',
   },
   {
     kicker: 'Il revient',
     title: 'Prévenu au bon moment.',
-    body: "« Plus qu'une personne devant vous. Commencez à revenir. » La notification arrive toute seule, sur iPhone comme sur Android. Sans SMS payant.",
+    body: "« Plus qu’une personne devant vous. Commencez à revenir. » La notification arrive toute seule, sur iPhone comme sur Android. Sans SMS payant.",
     benefit: 'Il revient pile quand il faut.',
-    state: "Plus qu'une personne devant vous",
+    state: "Plus qu’une personne devant vous",
   },
   {
     kicker: 'Vous',
-    title: "Vous appuyez sur Terminer. C'est tout.",
+    title: "Vous appuyez sur Terminer. C’est tout.",
     body: 'Un seul geste entre deux clients : la file avance, chacun voit sa place bouger, le suivant est prévenu.',
     benefit: 'Un bouton. Même avec les mains prises.',
-    state: "C'est votre tour",
+    state: "C’est votre tour",
   },
   {
     kicker: 'Après',
-    title: "Et l'avis Google suit.",
+    title: "Et l’avis Google suit.",
     body: 'À la fin du passage, votre client voit « Merci pour votre visite » et un bouton qui ouvre directement votre fiche Google.',
-    benefit: "Plus d'avis, sans y penser.",
+    benefit: "Plus d’avis, sans y penser.",
     state: 'Merci pour votre visite',
   },
 ];
@@ -358,19 +358,19 @@ export function Story(): React.JSX.Element {
       aria-labelledby="histoire-titre"
     >
       <a className={`skip-link ${styles.skip}`} href="#apres-histoire">
-        Passer l&apos;animation
+        Passer l’animation
       </a>
 
       {/* ============================ HÉROS ============================ */}
       <div className={styles.hero}>
         <div className={styles.heroInner}>
           <p className={`t-label ${styles.heroLabel}`}>
-            File d&apos;attente virtuelle&nbsp;· barbiers, garages, ongleries, réparateurs
+            File d’attente virtuelle&nbsp;· barbiers, garages, ongleries, réparateurs
           </p>
-          <h1 className={`t-hero ${styles.title}`}>Vos clients n&apos;attendent plus debout.</h1>
+          <h1 className={`t-hero ${styles.title}`}>Vos clients n’attendent plus debout.</h1>
           <p className={`t-lead ${styles.lead}`}>
             Ils approchent leur téléphone de la plaque, prennent leur place dans la file et
-            s&apos;en vont. On les prévient quand c&apos;est leur tour.
+            s’en vont. On les prévient quand c’est leur tour.
           </p>
           <div className={styles.actions}>
             <Link href="/inscription" className="btn btn--signal btn--lg">
@@ -476,7 +476,7 @@ export function Story(): React.JSX.Element {
           </div>
 
           <div className={styles.turn}>
-            <span className={styles.turnKicker}>C&apos;est</span>
+            <span className={styles.turnKicker}>C’est</span>
             <span className={styles.turnTitle}>votre tour</span>
             <span className="t-label">Présentez-vous au comptoir</span>
           </div>

@@ -14,9 +14,9 @@ import { formatPrice } from '@/lib/format';
 import styles from './home.module.css';
 
 export const metadata: Metadata = {
-  title: "Rangvia — la file d'attente qui vous laisse partir",
+  title: "Rangvia — la file d’attente qui vous laisse partir",
   description:
-    "Vos clients approchent leur téléphone d'une plaque Rangvia, rejoignent la file et sortent. Ils voient leur position et reçoivent une notification quand leur tour approche. Sans compte ni application à installer.",
+    "Vos clients approchent leur téléphone d’une plaque Rangvia, rejoignent la file et sortent. Ils voient leur position et reçoivent une notification quand leur tour approche. Sans compte ni application à installer.",
 };
 
 // Cette page lit les offres via service_role. Elle doit donc être rendue
@@ -28,12 +28,12 @@ export const dynamic = 'force-dynamic';
 const COUNTER: Array<{ key: string; text: string }> = [
   {
     key: 'Terminer',
-    text: "La file avance, les positions se recalculent, les clients sont prévenus, l'historique s'écrit tout seul.",
+    text: "La file avance, les positions se recalculent, les clients sont prévenus, l’historique s’écrit tout seul.",
   },
   {
     // Virgules plutôt que « · » : la clé peut se couper sans laisser de point orphelin.
     key: 'Absent, décaler, retirer',
-    text: "Quelqu'un n'est pas revenu ? Il recule, il attend de côté, ou il sort. Vous pouvez toujours le remettre.",
+    text: "Quelqu’un n’est pas revenu ? Il recule, il attend de côté, ou il sort. Vous pouvez toujours le remettre.",
   },
   {
     key: 'Seul ou à plusieurs',
@@ -58,7 +58,7 @@ const COUNTER: Array<{ key: string; text: string }> = [
 ];
 
 const APP_CLIP_POINTS = [
-  "Une seule application pour tous les commerces : c'est l'URL de votre plaque qui vous identifie",
+  "Une seule application pour tous les commerces : c’est l’URL de votre plaque qui vous identifie",
   'Notifications natives, avec retour haptique quand la file avance',
   'Fonctionne aussi en QR code, et sur Android via le navigateur',
 ];
@@ -89,7 +89,7 @@ export default async function HomePage() {
     <div className={styles.page}>
       <SiteHeader />
 
-      <main>
+      <main id="contenu" className={styles.main}>
         {/* ============ 1. L'histoire : héros, scène collante, six étapes ============ */}
         <Story />
 
@@ -102,8 +102,8 @@ export default async function HomePage() {
                 <span className={styles.nowrap}>Rien à installer.</span> Vraiment.
               </h2>
               <p className={`t-body t-muted ${styles.body}`}>
-                Votre client approche son iPhone de la plaque : l&apos;App Clip s&apos;ouvre en une
-                seconde, sans passer par l&apos;App Store. Il rejoint la file, range son téléphone, et
+                Votre client approche son iPhone de la plaque : l’App Clip s’ouvre en une
+                seconde, sans passer par l’App Store. Il rejoint la file, range son téléphone, et
                 reçoit une notification native quand son tour approche.
               </p>
               <ul className={`rail-list ${styles.points}`}>
@@ -126,7 +126,7 @@ export default async function HomePage() {
                 Côté comptoir, ça tient en un bouton
               </h2>
               <p className={`t-lead ${styles.leadAfter}`}>
-                Vous travaillez. Vous n&apos;avez pas le temps de naviguer dans des menus.
+                Vous travaillez. Vous n’avez pas le temps de naviguer dans des menus.
               </p>
             </header>
             <ol className={`rail-list board ${styles.board}`}>
@@ -150,7 +150,7 @@ export default async function HomePage() {
                 par vagues.
               </h2>
               <p className={`t-body t-muted ${styles.body}`}>
-                Chaque inscrit reçoit un pass d&apos;accès à usage unique. Vous ouvrez les vagues une par
+                Chaque inscrit reçoit un pass d’accès à usage unique. Vous ouvrez les vagues une par
                 une, et un bouton Stock épuisé ferme tout proprement.
               </p>
             </div>
@@ -200,13 +200,11 @@ export default async function HomePage() {
                     <Link
                       href="/inscription"
                       className={`btn ${featured ? 'btn--signal' : 'btn--ghost'} ${styles.planBtn}`}
-                      aria-label={
-                        plan.trial_days
-                          ? `Essayer l’offre ${plan.name} pendant ${plan.trial_days}\u00a0jours`
-                          : `Essayer l’offre ${plan.name}`
-                      }
                     >
                       {plan.trial_days ? `Essayer ${plan.trial_days}\u00a0jours` : 'Essayer'}
+                      {/* Nom accessible unique par offre, qui commence par le texte
+                          visible (comme sur /tarifs). */}
+                      <span className="sr-only">, offre {plan.name}</span>
                     </Link>
                   </li>
                 );
@@ -217,7 +215,7 @@ export default async function HomePage() {
                 Comparer les offres en détail
                 <span aria-hidden="true" className={styles.moreSlat} />
               </Link>
-              <p className="t-micro t-muted">Période d&apos;essai sans carte bancaire. Résiliable à tout moment.</p>
+              <p className="t-micro t-muted">Période d’essai sans carte bancaire. Résiliable à tout moment.</p>
             </div>
           </div>
         </section>
@@ -227,7 +225,7 @@ export default async function HomePage() {
           <div className={`shell ${styles.ctaInner}`}>
             <div className={styles.ctaText}>
               <h2 id="cta-titre" className="t-hero">
-                Posez une plaque. C&apos;est tout.
+                Posez une plaque. C’est tout.
               </h2>
               <p className={`t-lead ${styles.ctaLead}`}>
                 Créez votre file en quelques minutes : votre QR code et votre URL NFC sont générés

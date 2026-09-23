@@ -11,7 +11,7 @@ export function DropPass(): React.JSX.Element {
   return (
     <div className={styles.pass} aria-hidden="true">
       <div className={styles.top}>
-        <span className={styles.kind}>Pass d&apos;accès</span>
+        <span className={styles.kind}>Pass d’accès</span>
         <svg
           className={styles.qr}
           viewBox="0 0 40 40"
