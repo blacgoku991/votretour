@@ -80,7 +80,7 @@
   font-variation-settings: 'wdth' 125, 'wght' 800;
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
-  color: var(--floor-number);
+  color: var(--text-faint);
 }
 .toc > li[aria-current='true'] .tocNum { color: var(--accent); }
 
@@ -339,4 +339,39 @@
   font-size: 0.8125rem;
   line-height: 1.45;
   color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------
+   Relais locaux (en attendant les correctifs de Page / AppShell, WP5)
+   --------------------------------------------------------------------- */
+
+/* Sous 620 px, la règle `.rowControl > * { flex: 1 }` étirerait le
+   mini-rang : sa géométrie (lattes, rail, zone en scaleX) est figée. */
+.thr.thr {
+  flex: 0 0 auto;
+  width: calc(var(--w) * 5 + var(--g) * 4);
+  align-self: flex-start;
+}
+
+/* Une puce garde la largeur de son texte, alignée à gauche. */
+.page :global([class*='rowControl']) > :global(.chip) { flex: 0 0 auto; }
+
+/* Téléphone : la barre de sauvegarde se pose AU-DESSUS de la barre
+   d'onglets basse (sinon « Enregistrer » passe dessous). */
+@media (max-width: 899px) {
+  .page :global([class*='saveBar']) {
+    bottom: calc(65px + var(--safe-bottom, 0px) + var(--sp-3));
+  }
+}
+
+/* Titres de section : encoche 14 × 2 partout, comme la future Section
+   (WP5) et les pages Abonnement, Compte, Support. */
+.page h2:global(.t-label) { display: flex; align-items: center; gap: 10px; }
+.page h2:global(.t-label)::before {
+  content: '';
+  flex: none;
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
 }

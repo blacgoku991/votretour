@@ -201,6 +201,18 @@
     color: var(--text-muted);
   }
   .headIssue { text-align: right; }
+  /* En-tête des colonnes collant, au-dessus du séparateur de jour. */
+  .head {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    height: 38px;
+    align-items: end;
+    margin-left: -40px;
+    padding-left: 40px;
+    background: var(--surface-sunken);
+  }
+  .dayHead { top: 38px; }
   .row {
     min-height: 44px;
     padding: 0;
@@ -235,3 +247,7 @@
 }
 .pager > :last-child { justify-self: end; }
 .pageNum { font-size: 0.8125rem; color: var(--text-muted); }
+
+/* Ligne 2 (téléphone) : chaque segment reste d'un bloc, pour des lignes
+   de hauteur régulière. */
+.seg { white-space: nowrap; }

@@ -332,3 +332,34 @@
   .roleLegend { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 32px; }
   .roleLine { grid-template-columns: 120px minmax(0, 1fr); gap: 12px; }
 }
+
+/* Titres de section : encoche 14 × 2 partout, comme la future Section
+   (WP5) et les pages Abonnement, Compte, Support. */
+.page h2:global(.t-label) { display: flex; align-items: center; gap: 10px; }
+.page h2:global(.t-label)::before {
+  content: '';
+  flex: none;
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+
+/* Prénom modifiable : un pointillé discret le signale, sans survol. */
+.inlineInput:not(:focus) { border-bottom: 1px dashed var(--line-strong); border-radius: 8px 8px 0 0; }
+
+/* Téléphone : pas de carte dans la carte. Les personnes sont des lignes
+   à plat accrochées au rail, séparées d'un filet ; seules les lattes
+   fantômes (ajout, invitation) gardent leur pointillé. */
+@media (max-width: 759px) {
+  .rang { gap: 0; padding-right: 16px; }
+  .slat:not(.ghost):not(.pending) {
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .slat:not(.ghost):not(.pending) .stats { border-top: 0; padding-top: 0; }
+  .ghost, .pending { margin-top: 12px; }
+}

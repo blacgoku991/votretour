@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Fragment } from 'react';
 import { requireOrgAccess } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { PageHeader, Section, EmptyState } from '@/components/Page';
@@ -164,7 +165,7 @@ export default async function HistoryPage({
                     serviceText !== '—' ? `Prestation ${serviceText}` : null,
                     member?.display_name ?? null,
                     sourceText,
-                  ].filter(Boolean).join(' · ');
+                  ].filter((m): m is string => Boolean(m));
 
                   return (
                     <li key={entry.public_id} className={styles.row} data-tone={tone}>
@@ -175,7 +176,14 @@ export default async function HistoryPage({
                           : <span className={`${styles.name} ${styles.anon}`}>Client</span>}
                         {where && <span className={styles.where}>{where}</span>}
                       </span>
-                      <span className={`t-num ${styles.meta}`}>{meta}</span>
+                      <span className={`t-num ${styles.meta}`}>
+                        {meta.map((m, i) => (
+                          <Fragment key={i}>
+                            {i > 0 && '\u00a0· '}
+                            <span className={styles.seg}>{m}</span>
+                          </Fragment>
+                        ))}
+                      </span>
                       <span className={`t-num ${styles.cell}`}>
                         <span className={styles.k}>Attente </span>{waitText}
                       </span>

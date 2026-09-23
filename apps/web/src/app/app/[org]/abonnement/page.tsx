@@ -33,12 +33,13 @@ function plural(n: number, one: string, many: string): string {
 
 /** « 3 établissements · 12 professionnels · plaques illimitées · 180 jours d'historique » */
 function limitsOf(p: PlanRow): string {
-  return [
+  const text = [
     p.max_locations < 0 ? 'établissements illimités' : `${p.max_locations} ${plural(p.max_locations, 'établissement', 'établissements')}`,
     p.max_staff < 0 ? 'professionnels illimités' : `${p.max_staff} ${plural(p.max_staff, 'professionnel', 'professionnels')}`,
     p.max_plates < 0 ? 'plaques illimitées' : `${p.max_plates} ${plural(p.max_plates, 'plaque', 'plaques')}`,
     `${p.history_days} jours d’historique`,
   ].join(' · ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /**
@@ -158,7 +159,7 @@ export default async function BillingPage({
       {!billingEnabled && (
         <div className="banner banner--warn">
           <span>
-            Stripe n’est pas configuré sur cette installation : toutes les organisations
+            Stripe n’est pas configuré sur cette installation : toutes les organisations
             fonctionnent en période d’essai. Voir SETUP.md, section Stripe, pour activer
             la facturation.
           </span>
@@ -170,7 +171,7 @@ export default async function BillingPage({
         <section className={styles.block} aria-labelledby="consommation">
           <div>
             <h2 id="consommation" className={`t-label ${styles.head}`}>Votre consommation</h2>
-            <p className={styles.desc}>Ce que votre offre autorise, et où vous en êtes.</p>
+            <p className={styles.desc}>Comptée en direct sur votre organisation ; une jauge cuivre signale une limite atteinte.</p>
           </div>
           <ol className={`rail-list ${styles.usage}`}>
             <UsageRow label="Établissements" used={counts.locations} limit={plan.max_locations} index={0} />
@@ -189,7 +190,7 @@ export default async function BillingPage({
       <section className={styles.block} aria-labelledby="offres">
         <div>
           <h2 id="offres" className={`t-label ${styles.head}`}>Les offres</h2>
-          <p className={styles.desc}>Changez d’offre à tout moment ; le prorata est géré par Stripe.</p>
+          <p className={styles.desc}>Changez d’offre à tout moment ; le prorata est géré par Stripe.</p>
         </div>
         <ol className={`rail-list board ${styles.board}`}>
           {((plans ?? []) as PlanRow[]).map((p) => {
@@ -236,7 +237,7 @@ export default async function BillingPage({
               <span className={`t-board ${styles.keyMuted}`}>Factures</span>
               <p className={styles.text}>
                 Vos factures et votre moyen de paiement sont conservés par Stripe, dans un espace
-                sécurisé : téléchargement, historique et changement de carte.
+                sécurisé : téléchargement, historique et changement de carte.
               </p>
               <div className={styles.planAside}>
                 <BillingActions

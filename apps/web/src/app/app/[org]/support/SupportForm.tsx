@@ -66,7 +66,7 @@ export function SupportForm({ organizationId }: { organizationId: string }) {
             value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })}
             aria-describedby="message-aide"
             placeholder="Décrivez ce que vous avez fait et ce qui s’est passé." />
-          <p id="message-aide" className="hint">10 caractères au moins : ce que vous avez fait, et ce qui s’est passé.</p>
+          <p id="message-aide" className="hint">10 caractères au moins : ce que vous avez fait, et ce qui s’est passé.</p>
         </div>
       </div>
 

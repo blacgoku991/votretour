@@ -391,7 +391,7 @@ export function SettingsManager({
           <div id="horaires" className={styles.anchor}>
             <Section
               title="Horaires"
-              description="Indicatifs : la file s’ouvre et se ferme d’un geste."
+              description="Indicatifs : la file s’ouvre et se ferme d’un geste."
               actions={canManage ? (
                 <button type="button" className="btn btn--ghost btn--sm" onClick={copyMonday}>
                   Copier lundi sur toute la semaine
@@ -513,7 +513,7 @@ export function SettingsManager({
           <div id="donnees" className={styles.anchor}>
             <Section
               title="Données personnelles"
-              description="Nous collectons le strict minimum : aucun e-mail, aucun numéro de téléphone client."
+              description="Nous collectons le strict minimum : aucun e-mail, aucun numéro de téléphone client."
             >
               <SettingRow
                 label="Durée de conservation"

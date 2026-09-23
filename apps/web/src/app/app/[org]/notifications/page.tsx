@@ -115,7 +115,7 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
             <h2 id="apercu-titre" className={`t-label ${styles.previewTitle}`}>Ce que reçoivent vos clients</h2>
             <p className={styles.previewDesc}>
               Les textes exacts, au nom de {locationName}. La première part à {threshold}{' '}
-              personne{threshold > 1 ? 's' : ''} devant : c’est réglable dans Réglages.
+              personne{threshold > 1 ? 's' : ''} devant : c’est réglable dans Réglages.
             </p>
           </div>
           <ol className={styles.lock}>
@@ -147,7 +147,7 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
           >
             <SettingRow
               label="App Clip iPhone (APNs)"
-              hint="Notifications éphémères, 8 h après chaque lancement de l’App Clip : c’est la limite fixée par Apple."
+              hint="Notifications éphémères, 8 h après chaque lancement de l’App Clip : c’est la limite fixée par Apple."
             >
               <StatusPill ok={integrations.apns} okLabel="Configuré" koLabel="Non configuré" />
             </SettingRow>
@@ -159,7 +159,7 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
             </SettingRow>
             <SettingRow
               label="Quand aucun canal n’est disponible"
-              hint="L’écran client le dit franchement et invite à garder la page ouverte : la position reste à jour en temps réel."
+              hint="L’écran client le dit franchement et invite à garder la page ouverte : la position reste à jour en temps réel."
             >
               <span className="chip">Suivi à l’écran</span>
             </SettingRow>
@@ -171,8 +171,8 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
                 {!integrations.apns && !integrations.webPush
                   ? "Aucun canal de notification n’est configuré sur cette installation. Les clients suivent leur position à l’écran, en temps réel, mais ils ne seront pas prévenus s’ils quittent la page."
                   : !integrations.apns
-                    ? "APNs n’est pas configuré : les App Clips iPhone ne peuvent pas recevoir de notification. Voir SETUP.md, section Apple."
-                    : "Web Push n’est pas configuré : les clients Android ne peuvent pas être prévenus. Générez une paire de clés VAPID (npm run keys:vapid)."}
+                    ? "APNs n’est pas configuré : les App Clips iPhone ne peuvent pas recevoir de notification. Voir SETUP.md, section Apple."
+                    : "Web Push n’est pas configuré : les clients Android ne peuvent pas être prévenus. Générez une paire de clés VAPID (npm run keys:vapid)."}
               </span>
             </div>
           )}
@@ -183,11 +183,11 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
       <section className={styles.kpis} aria-labelledby="sept-jours">
         <h2 id="sept-jours" className="t-label">Sur 7 jours</h2>
         <div className={`kpi-band ${styles.band}`}>
-          <Stat accent label="Envoyées" value={formatNumber(sent)} hint="remises au fournisseur" />
+          <Stat accent label="Envoyées" value={formatNumber(sent)} hint={sent <= 1 ? 'remise au fournisseur' : 'remises au fournisseur'} />
           <Stat label="En échec" value={formatNumber(failed)}
             hint={failed > 0 ? 'appareil injoignable ou jeton expiré' : 'aucun échec'} />
           <Stat label="Sans destinataire" value={formatNumber(skipped)}
-            hint="client ajouté au comptoir, ou notifications refusées" />
+            hint={skipped <= 1 ? 'client ajouté au comptoir ou notification refusée' : 'clients ajoutés au comptoir ou notifications refusées'} />
           <Stat label="Canaux utilisés"
             value={String(Object.keys(byChannel).length)}
             hint={Object.keys(byChannel).map((c) => CHANNEL_LABEL[c] ?? c).join(', ') || 'aucun pour l’instant'} />
@@ -204,7 +204,7 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
           <Section>
             <EmptyState
               title="Aucun envoi pour l’instant"
-              description="Les notifications partent automatiquement quand la file avance : plus que deux personnes, plus qu’une, c’est votre tour, puis merci."
+              description="Les notifications partent automatiquement quand la file avance : plus que deux personnes, plus qu’une, c’est votre tour, puis merci."
             />
           </Section>
         ) : (
@@ -222,8 +222,8 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
                     {row.status === 'sent'
                       ? `Remise au fournisseur ${relativeTime(row.sent_at ?? row.created_at)}`
                       : row.status === 'failed'
-                        ? `Échec : ${row.error ?? 'raison inconnue'}`
-                        : `Non envoyée : ${row.error ?? 'aucun destinataire'}`}
+                        ? `Échec : ${row.error ?? 'raison inconnue'}`
+                        : `Non envoyée : ${row.error ?? 'aucun destinataire'}`}
                     {row.channel && <> · {CHANNEL_LABEL[row.channel] ?? row.channel}</>}
                   </p>
                   {row.body && <p className={styles.logBody}>« {row.body} »</p>}
