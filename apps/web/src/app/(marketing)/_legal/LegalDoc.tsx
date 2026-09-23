@@ -17,10 +17,13 @@ export function LegalDoc({
   title,
   intro,
   sections,
+  updatedAt,
 }: {
   title: string;
   intro: React.ReactNode;
   sections: LegalSection[];
+  /** « Dernière mise à jour », affichée seulement si elle est renseignée. */
+  updatedAt?: string | null;
 }) {
   const items: TocItem[] = sections.map((s, i) => ({
     id: s.id,
@@ -34,6 +37,7 @@ export function LegalDoc({
         <p className="t-label">Document légal</p>
         <h1 className={`t-display ${styles.legalTitle}`}>{title}</h1>
         <p className={styles.legalIntro}>{intro}</p>
+        {updatedAt && <p className="t-small t-muted">Dernière mise à jour : {updatedAt}</p>}
       </header>
 
       <div className={styles.legalGrid}>

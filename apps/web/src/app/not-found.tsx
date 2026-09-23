@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { SiteFooter, SiteHeader } from '@/components/SiteChrome';
+import { hasLegalNotice } from '@/lib/legal';
 import { FloorScene, type FloorSlat } from '@/components/objects/FloorScene';
 import styles from './status.module.css';
 
@@ -50,7 +51,7 @@ export default function NotFound() {
           </div>
         </div>
       </main>
-      <SiteFooter />
+      <SiteFooter legalNotice={hasLegalNotice()} />
     </div>
   );
 }

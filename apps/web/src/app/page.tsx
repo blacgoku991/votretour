@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import QRCode from 'qrcode';
 import { SiteHeader, SiteFooter } from '@/components/SiteChrome';
+import { hasLegalNotice } from '@/lib/legal';
 import { Reveal } from '@/components/motion/Reveal';
 import { Plaque } from '@/components/objects/Plaque';
 import { Story } from '@/components/home/story/Story';
@@ -253,7 +254,7 @@ export default async function HomePage() {
         </section>
       </main>
 
-      <SiteFooter />
+      <SiteFooter legalNotice={hasLegalNotice()} />
     </div>
   );
 }

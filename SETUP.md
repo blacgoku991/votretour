@@ -1115,6 +1115,24 @@ historique de scans. **Libérer** la remet en stock.
 > **préfixe** `https://rangvia.com/e/` : toutes les plaques, même celles
 > générées plus tard, ouvrent alors l'App Clip.
 
+### 13.9 Mentions légales
+
+Les pages CGU et Confidentialité, et la page `/mentions-legales`, lisent
+l'identité de l'éditeur dans l'environnement du serveur, à chaque
+requête. Renseignez dans `deploy/.env` les variables `LEGAL_*` (société,
+forme, adresse, SIRET, e-mail de contact, hébergeur, date de mise à
+jour ; voir `deploy/.env.example`), puis :
+
+```bash
+cd /opt/votretour/deploy && docker compose up -d app
+```
+
+Rien n'est inventé : une information vide ne s'affiche pas, et la page
+`/mentions-legales` (avec son lien dans le pied de page) n'apparaît que
+lorsque société, adresse, SIRET, e-mail et hébergeur sont tous
+renseignés. Elle est obligatoire en France avant d'accueillir des
+clients payants.
+
 ## 14. Les QR codes
 
 ### 14.1 Les obtenir

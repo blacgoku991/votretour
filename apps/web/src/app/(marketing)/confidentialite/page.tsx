@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { legalInfo } from '@/lib/legal';
 import { LegalDoc, type LegalSection } from '../_legal/LegalDoc';
 
 export const metadata: Metadata = {
@@ -6,7 +7,11 @@ export const metadata: Metadata = {
   description: 'Quelles données Rangvia collecte, pourquoi, et combien de temps elles sont conservées.',
 };
 
-const SECTIONS: LegalSection[] = [
+// Lu à chaque requête : le contact et l'éditeur viennent du .env du serveur.
+export const dynamic = 'force-dynamic';
+
+function sections(contact: { company: string | null; email: string | null }): LegalSection[] {
+  return [
   {
     id: 'client',
     title: 'Pour un client qui rejoint une file',
@@ -37,12 +42,20 @@ const SECTIONS: LegalSection[] = [
     id: 'autres-clients',
     title: 'Ce que les autres clients voient',
     body: (
-      <p>
-        Rien. L’écran d’un client n’affiche qu’un nombre de
-        personnes devant lui. Le flux temps réel qui alimente cet écran ne transporte
-        aucun prénom : uniquement des identifiants de ticket opaques que seul
-        l’appareil concerné peut reconnaître.
-      </p>
+      <>
+        <p>
+          Sur leur téléphone, rien. L’écran d’un client n’affiche qu’un nombre de
+          personnes devant lui. Le flux temps réel qui alimente cet écran ne transporte
+          aucun prénom : uniquement des identifiants de ticket opaques que seul
+          l’appareil concerné peut reconnaître.
+        </p>
+        <p>
+          Si l’établissement affiche sa file sur un écran dans sa salle, les
+          personnes en attente n’y apparaissent qu’en initiales ; au moment où vous
+          êtes appelé au comptoir, l’écran montre le prénom que vous avez donné,
+          pour que vous vous reconnaissiez. Sans prénom donné, rien ne s’affiche.
+        </p>
+      </>
     ),
   },
   {
@@ -78,17 +91,31 @@ const SECTIONS: LegalSection[] = [
     id: 'droits',
     title: 'Vos droits',
     body: (
-      <p>
-        Vous pouvez demander l’accès, la rectification ou l’effacement de vos
-        données auprès de l’établissement concerné, ou directement auprès de nous.
-        Un client dans une file peut à tout moment la quitter depuis son écran : son
-        ticket est immédiatement retiré.
-      </p>
+      <>
+        <p>
+          Vous pouvez demander l’accès, la rectification ou l’effacement de vos
+          données auprès de l’établissement concerné, ou directement auprès de nous.
+          Un client dans une file peut à tout moment la quitter depuis son écran : son
+          ticket est immédiatement retiré.
+        </p>
+        {contact.email && (
+          <p>
+            Pour nous écrire{contact.company ? <> ({contact.company}, responsable du traitement)</> : null} :{' '}
+            <a href={`mailto:${contact.email}`}>{contact.email}</a>.
+          </p>
+        )}
+        <p>
+          Si vous estimez que vos droits ne sont pas respectés, vous pouvez adresser
+          une réclamation à la CNIL (<a href="https://www.cnil.fr/fr/plaintes" rel="noopener noreferrer" target="_blank">cnil.fr</a>).
+        </p>
+      </>
     ),
   },
-];
+  ];
+}
 
 export default function PrivacyPage() {
+  const info = legalInfo();
   return (
     <LegalDoc
       title="Le minimum, et rien de plus"
@@ -99,7 +126,8 @@ export default function PrivacyPage() {
           nous collectons.
         </>
       }
-      sections={SECTIONS}
+      sections={sections({ company: info.company, email: info.email })}
+      updatedAt={info.updatedAt}
     />
   );
 }

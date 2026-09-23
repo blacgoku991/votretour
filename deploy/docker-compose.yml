@@ -221,6 +221,18 @@ services:
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
       MEDIA_ROOT: ${MEDIA_ROOT:-/app/data/uploads}
+      # Mentions légales : lues à chaque requête, un redémarrage suffit.
+      LEGAL_COMPANY: ${LEGAL_COMPANY:-}
+      LEGAL_FORM: ${LEGAL_FORM:-}
+      LEGAL_ADDRESS: ${LEGAL_ADDRESS:-}
+      LEGAL_SIRET: ${LEGAL_SIRET:-}
+      LEGAL_VAT: ${LEGAL_VAT:-}
+      LEGAL_DIRECTOR: ${LEGAL_DIRECTOR:-}
+      LEGAL_EMAIL: ${LEGAL_EMAIL:-}
+      LEGAL_PHONE: ${LEGAL_PHONE:-}
+      LEGAL_HOST_NAME: ${LEGAL_HOST_NAME:-}
+      LEGAL_HOST_ADDRESS: ${LEGAL_HOST_ADDRESS:-}
+      LEGAL_UPDATED_AT: ${LEGAL_UPDATED_AT:-}
     volumes:
       - media-data:/app/data/uploads
 

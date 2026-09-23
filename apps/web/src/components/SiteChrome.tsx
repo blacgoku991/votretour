@@ -85,8 +85,16 @@ const QUEUE_MARKS = 26;
  * s'y alignent et la dernière — la tête de file — est la latte vermillon.
  * Composant serveur : l'année est calculée au rendu.
  */
-export function SiteFooter() {
+export function SiteFooter({ legalNotice = false }: {
+  /** Mentions légales publiées (informations de l'éditeur renseignées côté serveur). */
+  legalNotice?: boolean;
+} = {}) {
   const year = new Date().getFullYear();
+  const groups = legalNotice
+    ? FOOTER_GROUPS.map((group) => group.title === 'Légal'
+      ? { ...group, links: [...group.links, { href: '/mentions-legales', label: 'Mentions légales' }] }
+      : group)
+    : FOOTER_GROUPS;
   return (
     <footer className={styles.footer}>
       <div className="shell">
@@ -117,7 +125,7 @@ export function SiteFooter() {
           </div>
 
           <nav className={styles.columns} aria-label="Pied de page">
-            {FOOTER_GROUPS.map((group) => (
+            {groups.map((group) => (
               <div key={group.title} className={styles.column}>
                 <p className="t-label">{group.title}</p>
                 <ul className={styles.columnList}>
@@ -133,7 +141,7 @@ export function SiteFooter() {
 
           <nav className={styles.compact} aria-label="Pied de page">
             <ul className={`rail-list ${styles.compactList}`}>
-              {FOOTER_GROUPS.flatMap((group) => group.links).map((link) => (
+              {groups.flatMap((group) => group.links).map((link) => (
                 <li key={link.href}>
                   <Link href={link.href} className={styles.compactLink}>{link.label}</Link>
                 </li>
