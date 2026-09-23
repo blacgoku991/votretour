@@ -244,7 +244,11 @@ export function Story(): React.JSX.Element {
       Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--site-header-h')) || 56;
     const stageH = stageRef.current ? stageRef.current.getBoundingClientRect().height : 0;
     const stageBottom = headerH + stageH;
-    const line = mobile ? stageBottom + 0.4 * (vh - stageBottom) : 0.55 * vh;
+    // Mobile et tablette : une étape mesure la bande visible sous la scène.
+    // La ligne est placée bas dans cette bande, pour que les seuils d'une
+    // étape tombent pendant que son titre est lisible (et non déjà passé
+    // sous la scène).
+    const line = mobile ? stageBottom + 0.9 * (vh - stageBottom) : 0.55 * vh;
     return { steps, line, stageBottom };
   }, []);
 

@@ -72,7 +72,7 @@ export default async function HomePage() {
   const [{ data: plans }, qrSvg] = await Promise.all([
     supabaseAdmin()
       .from('plans')
-      .select('code, name, tagline, price_month_cents, currency, max_locations, max_staff, max_plates')
+      .select('code, name, tagline, price_month_cents, currency, trial_days, max_locations, max_staff, max_plates')
       .eq('is_active', true)
       .eq('is_public', true)
       .order('sort_order'),
@@ -200,8 +200,13 @@ export default async function HomePage() {
                     <Link
                       href="/inscription"
                       className={`btn ${featured ? 'btn--signal' : 'btn--ghost'} ${styles.planBtn}`}
+                      aria-label={
+                        plan.trial_days
+                          ? `Essayer l’offre ${plan.name} pendant ${plan.trial_days}\u00a0jours`
+                          : `Essayer l’offre ${plan.name}`
+                      }
                     >
-                      Essayer
+                      {plan.trial_days ? `Essayer ${plan.trial_days}\u00a0jours` : 'Essayer'}
                     </Link>
                   </li>
                 );

@@ -14,6 +14,9 @@
 /* ------------------------------------------------------------ Section */
 .story {
   --gutter: 20px;
+  /* Hauteur de la scène fixe (mobile et tablette) : partagée par la scène,
+     la hauteur d'une étape et l'ancre des liens. */
+  --stage-h: clamp(320px, 52svh, 480px);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -21,6 +24,9 @@
 }
 @media (max-width: 379px) {
   .story { --gutter: 16px; }
+}
+@media (max-width: 1023px) and (max-height: 700px) {
+  .story { --stage-h: 44svh; }
 }
 
 /* --------------------------------------------------------------- Héros */
@@ -83,15 +89,12 @@
   position: sticky;
   top: var(--site-header-h);
   z-index: 2;
-  height: clamp(320px, 52svh, 480px);
+  height: var(--stage-h);
   margin-inline: calc(-1 * var(--gutter));
   background: var(--floor);
   border-block: 1px solid var(--line);
   pointer-events: none;
   user-select: none;
-}
-@media (max-width: 1023px) and (max-height: 700px) {
-  .stage { height: 44svh; }
 }
 /* Fondu fonctionnel : le texte des étapes disparaît proprement sous la scène. */
 .stage::after {
@@ -543,11 +546,14 @@
   margin: 0;
   padding: 0;
 }
+/* Une étape = la bande visible sous la scène : un seul texte à la fois,
+   et la scène change pendant que ce texte est lisible (Story.measure). */
 .step {
-  min-height: 58svh;
+  min-height: calc(100svh - var(--site-header-h) - var(--stage-h));
   padding-top: 28px;
+  padding-bottom: 28px;
   background: var(--surface);
-  scroll-margin-top: calc(var(--site-header-h) + clamp(320px, 52svh, 480px) + 12px);
+  scroll-margin-top: calc(var(--site-header-h) + var(--stage-h) + 12px);
 }
 .stepInner { position: relative; }
 .kicker { position: relative; }
