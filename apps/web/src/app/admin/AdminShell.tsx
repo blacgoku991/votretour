@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 import { Wordmark } from '@/components/Wordmark';
 import { initials } from '@/lib/format';
 import styles from './admin.module.css';
@@ -35,6 +36,66 @@ const GROUPS = [
   },
 ];
 
+/**
+ * La latte active : UNE seule latte vermillon qui glisse le long du rail
+ * (translateY, 420 ms), comme dans l'espace commerçant. Sa position est
+ * mesurée après montage, au changement de page et au redimensionnement ;
+ * avant cela, un repli CSS sur [aria-current] donne le bon rendu serveur.
+ */
+function useSlidingLatte(pathname: string) {
+  const navRef = useRef<HTMLElement>(null);
+  const latteRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const nav = navRef.current;
+    const latte = latteRef.current;
+    if (!nav || !latte) return;
+
+    let frame = 0;
+    const place = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const active = nav.querySelector<HTMLElement>('[aria-current="page"]');
+        if (!active) {
+          nav.dataset.indicator = 'off';
+          return;
+        }
+        const navBox = nav.getBoundingClientRect();
+        const box = active.getBoundingClientRect();
+        const y = box.top - navBox.top + nav.scrollTop + box.height / 2 - 10;
+        latte.style.transform = `translateY(${Math.round(y)}px)`;
+        nav.dataset.indicator = 'on';
+        // La latte ne glisse qu'une fois posée : pas de trajet depuis 0.
+        if (!nav.dataset.ready) {
+          frame = window.requestAnimationFrame(() => { nav.dataset.ready = '1'; });
+        }
+      });
+    };
+
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(nav);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [pathname]);
+
+  return { navRef, latteRef };
+}
+
+/** Mobile : la barre d'onglets défile jusqu'à l'entrée active. */
+function useActiveTabInView(pathname: string) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const nav = ref.current;
+    const tab = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!nav || !tab || nav.scrollWidth <= nav.clientWidth) return;
+    nav.scrollLeft = Math.max(0, tab.offsetLeft - (nav.clientWidth - tab.offsetWidth) / 2);
+  }, [pathname]);
+  return ref;
+}
+
 export function AdminShell({
   user,
   children,
@@ -55,33 +116,38 @@ export function AdminShell({
     .sort((a, b) => b.length - a.length)[0];
   const active = (href: string) => href === best;
 
+  const { navRef, latteRef } = useSlidingLatte(pathname);
+  const mobileNavRef = useActiveTabInView(pathname);
+
   return (
     <div className={styles.adminShell}>
       <aside className={styles.sideRail}>
         <div className={styles.sideBrand}>
           <Link href="/admin"><Wordmark /></Link>
-          <span>SUPER ADMIN</span>
+          <span>Super admin</span>
         </div>
 
         <div className={styles.platformBadge}>
-          <i />
+          <i className="pip pip--live" aria-hidden="true" />
           <div>
             <strong>Plateforme active</strong>
             <span>Rangvia Control</span>
           </div>
         </div>
 
-        <nav className={styles.sideNav} aria-label="Navigation super admin">
+        <nav ref={navRef} className={styles.sideNav} aria-label="Navigation super admin" data-indicator="off">
+          <span ref={latteRef} className={styles.sideLatte} aria-hidden="true" />
           {GROUPS.map((group) => (
             <div className={styles.navGroup} key={group.label}>
-              <span className={styles.navGroupLabel}>{group.label}</span>
+              <span className={`t-label ${styles.navGroupLabel}`}>{group.label}</span>
               {group.items.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
+                  aria-current={active(item.href) ? 'page' : undefined}
                   className={`${styles.sideLink} ${active(item.href) ? styles.sideLinkActive : ''}`}
                 >
-                  <span className={styles.sideIcon}>{item.icon}</span>
+                  <span className={styles.sideIcon} aria-hidden="true">{item.icon}</span>
                   <span>{item.label}</span>
                 </Link>
               ))}
@@ -104,18 +170,19 @@ export function AdminShell({
       <div className={styles.adminStage}>
         <header className={styles.mobileAdminBar}>
           <Link href="/admin"><Wordmark compact /></Link>
-          <span>Super Admin</span>
+          <span className="t-label">Super admin</span>
           <Link href="/app" className="btn btn--ghost btn--sm">Espace</Link>
         </header>
 
-        <nav className={styles.mobileAdminNav} aria-label="Navigation super admin mobile">
+        <nav ref={mobileNavRef} className={styles.mobileAdminNav} aria-label="Navigation super admin mobile">
           {GROUPS.flatMap((group) => group.items).map((item) => (
             <Link
               key={item.href}
               href={item.href}
+              aria-current={active(item.href) ? 'page' : undefined}
               className={`${styles.mobileAdminLink} ${active(item.href) ? styles.mobileAdminLinkActive : ''}`}
             >
-              <span>{item.icon}</span>
+              <span aria-hidden="true">{item.icon}</span>
               <span>{item.label}</span>
             </Link>
           ))}

@@ -10,8 +10,8 @@
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: color-mix(in oklab, var(--ink-900) 62%, transparent);
-  backdrop-filter: blur(2px);
+  /* Voile plein, sans flou d’arrière-plan. */
+  background: color-mix(in oklab, var(--ink-1000) 78%, transparent);
   /* Flex et non grid : une grille en place-items:center déborde des
      DEUX côtés dès que la boîte dépasse, et la moitié gauche du
      dialogue sortait de l'écran sur un téléphone. */

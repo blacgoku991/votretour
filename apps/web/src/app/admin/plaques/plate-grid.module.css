@@ -23,9 +23,10 @@
   flex-direction: column;
   gap: var(--sp-3);
   padding: var(--sp-4);
-  background: var(--surface);
+  background: var(--surface-raised);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--r-card);
+  overflow: clip;
   /* Le liseré gauche reprend le rail : une plaque active est « dans la
      file », une plaque désactivée en est sortie. */
   border-left: 3px solid var(--jade-500);
@@ -34,24 +35,27 @@
   border-left-color: var(--line-strong);
   background: var(--surface-sunken);
 }
-.cardOff .qrFrame { opacity: .45; }
+.cardOff .plaqueStage > * { opacity: .45; }
 
 .cardTop {
-  display: grid;
-  grid-template-columns: 78px minmax(0, 1fr);
-  gap: var(--sp-3);
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
 }
 
-.qrFrame {
-  width: 78px;
-  height: 78px;
-  padding: 6px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+/* Le socle : la plaque posée sur le sol des scènes, sans marquage
+   (rien ne passe sous le QR). */
+.plaqueStage {
   display: grid;
   place-items: center;
+  height: 300px;
+  margin: calc(var(--sp-4) * -1) calc(var(--sp-4) * -1) 0;
+  padding-top: 10px;
+  border-radius: 13px 13px 0 0;
+  background: var(--floor);
+  border-bottom: 1px solid var(--line);
+  overflow: clip;
 }
 .qr { width: 100%; height: 100%; display: block; }
 
@@ -148,12 +152,9 @@
   gap: var(--sp-6);
   padding: var(--sp-6);
   margin-bottom: var(--sp-6);
-  border-radius: 22px;
+  border-radius: var(--r-card);
   border: 1px solid var(--line);
-  background:
-    radial-gradient(circle at 10% 10%, color-mix(in oklab, var(--accent) 12%, transparent), transparent 42%),
-    var(--surface-raised);
-  box-shadow: var(--shadow-2);
+  background: var(--surface-raised);
 }
 
 .createForm {

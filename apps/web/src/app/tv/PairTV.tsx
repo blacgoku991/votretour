@@ -1,8 +1,19 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { FlapText } from '@/components/FlapNumber';
+import { FloorScene } from '@/components/objects/FloorScene';
+import { Wordmark } from '@/components/Wordmark';
 import styles from './tv.module.css';
 
+/**
+ * Appairage d'un écran de salle.
+ *
+ * Le code à 6 chiffres est généré dans Rangvia (établissement › Écrans
+ * TV) puis saisi ici, à la télécommande ou au clavier. Chaque chiffre
+ * tombe dans sa case, comme sur un tableau de gare : le vrai champ de
+ * saisie est posé, transparent, par-dessus les six cellules.
+ */
 export function PairTV({ initialCode = '' }: { initialCode?: string }) {
   const [code, setCode] = useState(initialCode.replace(/\D/g, '').slice(0, 6));
   const [error, setError] = useState<string | null>(null);
@@ -35,44 +46,91 @@ export function PairTV({ initialCode = '' }: { initialCode?: string }) {
 
   return (
     <main className={styles.pairScreen}>
-      <div className={styles.pairGlow} />
-      <section className={styles.pairCard}>
-        <div className={styles.pairMark}>R</div>
-        <span className={styles.pairKicker}>RANGVIA DISPLAY</span>
-        <h1>Connecter cet écran</h1>
-        <p>
-          Dans le super-admin, ouvre l’établissement puis <strong>Écrans TV</strong>
-          et génère un code d’appairage.
-        </p>
+      <header className={styles.pairBar}>
+        <Wordmark />
+      </header>
 
-        <input
-          className={styles.codeInput}
-          value={code}
-          onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          placeholder="000000"
-          aria-label="Code d’appairage à 6 chiffres"
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') submit();
-          }}
-        />
+      <section className={styles.pairCopy} aria-labelledby="pair-title">
+        <div className={styles.pairIntro}>
+          <span className="t-label">Rangvia Display</span>
+          <h1 id="pair-title" className={`t-display ${styles.pairTitle}`}>Connecter cet écran</h1>
+          <p className={styles.pairLead}>
+            Saisissez le code affiché dans Rangvia › Écrans TV. L’écran affichera ensuite la file
+            de l’établissement, en grand.
+          </p>
+        </div>
 
-        {error && <div className={styles.pairError}>{error}</div>}
+        <div className={styles.codeBlock}>
+          <label className={styles.codeField} data-length={code.length}>
+            <FlapText
+              static
+              fixed
+              tile
+              cells={6}
+              stagger={40}
+              text={code}
+              label={code ? `Code saisi : ${code.split('').join(' ')}` : 'Aucun chiffre saisi'}
+              size="clamp(3.25rem, 1.8rem + 6vw, 6.5rem)"
+            />
+            <span
+              className={styles.codeCursor}
+              style={{ ['--i' as string]: Math.min(code.length, 5) } as React.CSSProperties}
+              aria-hidden="true"
+            />
+            <input
+              className={styles.codeInput}
+              value={code}
+              onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              autoFocus
+              aria-label="Code d’appairage à 6 chiffres"
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') submit();
+              }}
+            />
+          </label>
 
-        <button
-          className={styles.pairButton}
-          type="button"
-          disabled={pending || code.length !== 6}
-          onClick={submit}
-        >
-          {pending ? 'Connexion…' : 'Associer cet écran'}
-        </button>
+          <p className={styles.pairState}>
+            <i className="pip pip--live" aria-hidden="true" />
+            En attente d’appairage
+          </p>
+        </div>
 
-        <small>
-          L’écran reste appairé après redémarrage. Le super-admin peut le révoquer à distance.
-        </small>
+        {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
+
+        <div className={styles.pairActions}>
+          <button
+            className="btn btn--signal btn--lg"
+            type="button"
+            disabled={pending || code.length !== 6}
+            onClick={submit}
+          >
+            {pending ? 'Connexion…' : 'Associer cet écran'}
+          </button>
+          <p className={styles.pairNote}>
+            L’écran reste appairé après redémarrage. Le super-admin peut le révoquer à distance.
+          </p>
+        </div>
       </section>
+
+      <div className={styles.pairScene} aria-hidden="true">
+        <FloorScene
+          size="lg"
+          intro
+          spill
+          turn={-6}
+          positions={false}
+          slats={[
+            { id: 'p0', state: 'serving' },
+            { id: 'p1', state: 'wait' },
+            { id: 'p2', state: 'wait' },
+            { id: 'p3', state: 'wait' },
+            { id: 'p4', state: 'ghost', label: 'Prochain client' },
+          ]}
+        />
+      </div>
     </main>
   );
 }

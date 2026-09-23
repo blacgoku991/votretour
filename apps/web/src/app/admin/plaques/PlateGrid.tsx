@@ -9,6 +9,7 @@ import {
   adminDeletePlate,
 } from '@/server/actions/admin';
 import { PlateWriter, type ProgrammedResult } from '@/components/PlateWriter';
+import { Plaque } from '@/components/objects/Plaque';
 import { useMounted } from '@/hooks/useMounted';
 import { formatNumber, relativeTime } from '@/lib/format';
 import styles from './plate-grid.module.css';
@@ -219,13 +220,22 @@ function PlateCard({
   return (
     <article className={`${styles.card} ${plate.is_active ? '' : styles.cardOff}`}>
       <div className={styles.cardTop}>
-        <div className={styles.qrFrame}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={`/api/p/${plate.code}?format=svg`}
-            alt={`QR code de la plaque ${plate.label}`}
-            className={styles.qr}
-            loading="lazy"
+        {/* La plaque telle qu'elle sera posée sur le comptoir : le QR est
+            la vraie image servie par /api/p/{code}, celle que l'on scanne. */}
+        <div className={styles.plaqueStage}>
+          <Plaque
+            pose="rest"
+            interactive
+            width={180}
+            qr={
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`/api/p/${plate.code}?format=svg`}
+                alt={`QR code de la plaque ${plate.label}`}
+                className={styles.qr}
+                loading="lazy"
+              />
+            }
           />
         </div>
 

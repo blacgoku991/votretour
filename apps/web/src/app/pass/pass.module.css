@@ -1,1 +1,330 @@
-.screen{--event-accent:#ff4b1f;min-height:100dvh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 20% 10%,color-mix(in srgb,var(--event-accent) 18%,transparent),transparent 34%),radial-gradient(circle at 85% 85%,rgba(31,169,122,.11),transparent 30%),#07090d;background-size:cover;background-position:center;color:#faf9f6;position:relative;overflow:hidden}.ambient{position:absolute;inset:-35%;background:conic-gradient(from 180deg,transparent,rgba(255,75,31,.05),transparent 30%);animation:spin 18s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.pass{position:relative;z-index:1;width:min(100%,430px);border:1px solid rgba(255,255,255,.1);border-radius:30px;padding:24px;background:linear-gradient(160deg,rgba(24,29,37,.98),rgba(10,12,17,.98));box-shadow:0 30px 100px rgba(0,0,0,.48)}.header{display:flex;gap:14px;align-items:center}.logo{width:56px;height:56px;border-radius:17px;overflow:hidden;display:grid;place-items:center;background:#222833;font-weight:900}.logo img{width:100%;height:100%;object-fit:cover}.kicker{font-size:10px;font-weight:850;letter-spacing:.18em;color:var(--event-accent);margin:0 0 4px}.header h1{font-size:22px;letter-spacing:-.03em;margin:0}.place{font-size:12px;color:#9aa3af;margin:4px 0 0}.state{display:flex;align-items:center;justify-content:center;gap:9px;margin:26px 0 12px;color:#49d7a5;font-size:12px;letter-spacing:.13em}.liveDot{width:9px;height:9px;border-radius:50%;background:#1fa97a;box-shadow:0 0 22px rgba(31,169,122,.9)}.ticketNo{text-align:center;margin:10px 0 2px}.ticketNo span{display:block;color:#69737f;text-transform:uppercase;letter-spacing:.14em;font-size:10px}.ticketNo strong{display:block;font-size:44px;letter-spacing:-.05em}.client{text-align:center;color:#cdd3da;font-size:17px;font-weight:700}.qrWrap{position:relative;width:240px;height:240px;margin:20px auto;padding:14px;border-radius:26px;background:#fff;overflow:hidden;box-shadow:0 18px 60px rgba(0,0,0,.3)}.qr{width:100%;height:100%}.scanLine{position:absolute;left:12px;right:12px;height:2px;background:var(--event-accent);box-shadow:0 0 18px rgba(255,75,31,.9);animation:scan 2.2s ease-in-out infinite alternate}@keyframes scan{from{top:20px}to{top:218px}}.timer{text-align:center}.timer span,.timer small{display:block;color:#9aa3af}.timer strong{display:block;font-size:48px;line-height:1;margin:8px 0;font-variant-numeric:tabular-nums}.security{text-align:center;color:#69737f;font-size:11px;margin:18px 0}.finalState{text-align:center;padding:62px 16px}.ok,.bad{width:74px;height:74px;margin:0 auto 18px;border-radius:24px;display:grid;place-items:center;font-size:38px;font-weight:900}.ok{background:rgba(31,169,122,.16);color:#49d7a5}.bad{background:rgba(168,69,60,.18);color:#e36f64}.finalState h2{font-size:30px;letter-spacing:-.04em}.finalState p{margin-top:10px;color:#9aa3af}.footer{display:flex;justify-content:space-between;color:#59616d;font-size:10px;border-top:1px solid rgba(255,255,255,.07);padding-top:16px;margin-top:18px}.eventIntro{margin:18px 0 4px;padding:14px 15px;border-radius:16px;border:1px solid color-mix(in srgb,var(--event-accent) 24%,rgba(255,255,255,.08));background:color-mix(in srgb,var(--event-accent) 7%,rgba(255,255,255,.02))}.eventIntro h2{margin:0;font-size:19px;line-height:1.05;letter-spacing:-.035em}.eventIntro p{margin:8px 0 0;color:#aeb6c0;font-size:11px;line-height:1.55;white-space:pre-line}.qrLabel{text-align:center;margin:-8px 0 15px;color:#c3c9d1;font-size:11px;font-weight:700}
+/* =====================================================================
+   LE LAISSER-PASSER (/pass)
+
+   Un billet encre de 340 px posé sur le sol (--floor). Deux encoches en
+   demi-cercle le découpent en talon et coupon : chaque moitié porte un
+   masque STATIQUE (deux quarts de cercle), l'élément qui bascule à
+   l'entrée n'en porte aucun et n'est pas en preserve-3d.
+
+   Aucun dégradé décoratif (les radial-gradient ci-dessous ne sont que la
+   forme des encoches), aucun halo, aucune animation de `top`. Une seule
+   boucle : la barre de sécurité (transform), remplacée par l'heure à la
+   seconde en mouvement réduit.
+   ===================================================================== */
+
+.screen {
+  --event-accent: var(--signal-500);
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 28px 16px 40px;
+  background: var(--floor);
+  color: var(--bone-100);
+}
+
+.stage {
+  width: min(100%, 340px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  perspective: 900px;
+}
+
+/* L'élément qui bascule à l'entrée : ni masque ni preserve-3d. */
+.tilt {
+  width: 100%;
+  transform-origin: 50% 100%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tilt { animation: pass-in var(--dur-4) var(--ease-slat) both; }
+}
+@keyframes pass-in {
+  from { transform: rotateX(18deg) translateY(12px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+/* ---------------------------------------------------------------------
+   Le billet
+   --------------------------------------------------------------------- */
+.ticket {
+  --notch: 13px;
+  --tone: var(--jade-500);
+  --ticket: var(--ink-800);
+  --text: var(--bone-100);
+  --text-muted: #9aa3af;
+  --text-faint: #69737f;
+  --line: color-mix(in oklab, var(--bone-100) 10%, transparent);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  color: var(--text);
+}
+.ticket[data-tone='grace']   { --tone: var(--copper-500); }
+.ticket[data-tone='expired'] { --tone: var(--brique-500); }
+.ticket[data-tone='redeemed'] { --tone: var(--jade-500); }
+
+/* Talon : liseré d'état en haut, encoches (quarts de cercle) en bas. */
+.stub {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 26px 22px 22px;
+  background: var(--ticket);
+  border-radius: 20px 20px 0 0;
+  box-shadow: inset 0 5px 0 var(--tone), var(--edge-light);
+  overflow: clip;
+  -webkit-mask:
+    radial-gradient(circle at 0 100%, #0000 var(--notch), #000 calc(var(--notch) + 0.5px)) left / 51% 100% no-repeat,
+    radial-gradient(circle at 100% 100%, #0000 var(--notch), #000 calc(var(--notch) + 0.5px)) right / 51% 100% no-repeat;
+  mask:
+    radial-gradient(circle at 0 100%, #0000 var(--notch), #000 calc(var(--notch) + 0.5px)) left / 51% 100% no-repeat,
+    radial-gradient(circle at 100% 100%, #0000 var(--notch), #000 calc(var(--notch) + 0.5px)) right / 51% 100% no-repeat;
+}
+
+/* Image de l'événement : un bandeau en aplat, en tête du talon. */
+.cover {
+  display: block;
+  width: calc(100% + 44px);
+  height: 96px;
+  margin: -21px -22px 2px;
+  object-fit: cover;
+}
+
+.identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.logo {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 11px;
+  background: var(--bone-100);
+  color: var(--ink-1000);
+  font-variation-settings: 'wdth' 125, 'wght' 820;
+  font-size: 1.0625rem;
+}
+.logo img { width: 100%; height: 100%; object-fit: cover; }
+.identityText { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.kicker { color: var(--event-accent); }
+.place {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventName {
+  font-variation-settings: 'wdth' 112, 'wght' 780;
+  font-size: 1.625rem;
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.rules {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 12px;
+  border-left: 2px solid var(--event-accent);
+}
+.rulesTitle { font-variation-settings: 'wght' 680; font-size: 0.9375rem; line-height: 1.3; }
+.rulesText { font-size: 0.8125rem; line-height: 1.5; color: var(--text-muted); white-space: pre-line; }
+
+.facts {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 4px 0 0;
+}
+.fact { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin: 0; }
+.fact dd { margin: 0; }
+.fact:last-child:not(:first-child) { text-align: right; align-items: flex-end; }
+.wave { --flap-tile: var(--ink-600); color: var(--bone-100); }
+.holder {
+  font-variation-settings: 'wdth' 104, 'wght' 720;
+  font-size: 1.1875rem;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  min-height: 2.25rem;
+  display: flex;
+  align-items: center;
+}
+
+/* La ligne de découpe, entre les deux encoches. */
+.tear {
+  height: 0;
+  margin: 0 calc(var(--notch) + 6px);
+  border-top: 2px dashed color-mix(in oklab, var(--bone-100) 16%, transparent);
+  position: relative;
+  z-index: 1;
+  margin-block: -1px;
+}
+
+/* Coupon : encoches en haut, coins arrondis en bas. */
+.coupon,
+.final {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 22px 20px;
+  background: var(--ticket);
+  -webkit-mask:
+    radial-gradient(circle at 0 0, #0000 var(--notch), #000 calc(var(--notch) + 0.5px)) left / 51% 100% no-repeat,
+    radial-gradient(circle at 100% 0, #0000 var(--notch), #000 calc(var(--notch) + 0.5px)) right / 51% 100% no-repeat;
+  mask:
+    radial-gradient(circle at 0 0, #0000 var(--notch), #000 calc(var(--notch) + 0.5px)) left / 51% 100% no-repeat,
+    radial-gradient(circle at 100% 0, #0000 var(--notch), #000 calc(var(--notch) + 0.5px)) right / 51% 100% no-repeat;
+}
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--tone);
+}
+.state > i { width: 8px; height: 8px; }
+
+.qrPanel {
+  width: 236px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--bone-100);
+}
+.qr { display: block; width: 100%; height: 100%; }
+.qrLabel {
+  max-width: 30ch;
+  text-align: center;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+/* ----- Barre de sécurité ----- */
+.security {
+  width: 236px;
+  max-width: 100%;
+  display: grid;
+  place-items: center;
+  min-height: 20px;
+}
+.securityTrack {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ink-600);
+  overflow: clip;
+}
+.securitySlat {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 20%;
+  border-radius: 3px;
+  background: var(--bone-100);
+  transform: translateX(-100%);
+}
+.securityClock {
+  display: none;
+  font-variation-settings: 'wdth' 118, 'wght' 760;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+  color: var(--bone-100);
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* La seule boucle justifiée : preuve que l'écran est vivant. */
+  .securitySlat { animation: pass-security 3s linear infinite; }
+}
+@keyframes pass-security {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(500%); }
+}
+/* Mouvement réduit : l'heure à la seconde remplace la latte. */
+@media (prefers-reduced-motion: reduce) {
+  .securityTrack { display: none; }
+  .securityClock { display: block; }
+}
+
+/* ----- Temps restant ----- */
+.timer {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+}
+.timerMain { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.countdown { color: var(--bone-100); line-height: 1; }
+.until {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.until strong { color: var(--text); font-variation-settings: 'wght' 680; font-weight: 400; }
+
+/* ----- États finaux ----- */
+.final { padding-block: 40px 28px; text-align: center; gap: 12px; }
+.finalMark {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  border: 2px solid var(--tone);
+  color: var(--tone);
+  margin-bottom: 6px;
+}
+.finalMark svg { width: 30px; height: 30px; }
+.finalMark[data-tone='bad'] { color: var(--danger-text, #e8766b); }
+.finalTitle {
+  font-variation-settings: 'wdth' 112, 'wght' 780;
+  font-size: 1.75rem;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+.finalText {
+  max-width: 30ch;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 22px 18px;
+  background: var(--ticket);
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 20px 20px;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+.brand {
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.note {
+  max-width: 34ch;
+  text-align: center;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}

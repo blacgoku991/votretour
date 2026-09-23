@@ -1,11 +1,8 @@
 .creator {
   border: 1px solid rgba(255,255,255,.09);
-  border-radius: 24px;
+  border-radius: 20px;
   padding: 22px;
-  background:
-    radial-gradient(circle at 0 0, rgba(255,75,31,.10), transparent 30%),
-    linear-gradient(145deg, #12161d, #0c0f14);
-  box-shadow: 0 30px 80px rgba(0,0,0,.22);
+  background: var(--surface-raised);
 }
 
 .creatorHead {
@@ -32,10 +29,11 @@
 }
 
 .eyebrow {
-  color: #ff6b45;
-  font-size: 9px;
-  font-weight: 850;
-  letter-spacing: .17em;
+  color: var(--accent);
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: .6875rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
 }
 
 .formGrid {
@@ -77,8 +75,8 @@
 
 .switchCard small {
   margin-top: 4px;
-  color: #69737f;
-  font-size: 10px;
+  color: var(--text-muted);
+  font-size: .75rem;
 }
 
 .creatorActions {
@@ -90,8 +88,8 @@
 }
 
 .creatorHint {
-  color: #69737f;
-  font-size: 10px;
+  color: var(--text-muted);
+  font-size: .75rem;
 }
 
 .orgIdentity {
@@ -112,7 +110,7 @@
   background: #1a2029;
   border: 1px solid rgba(255,255,255,.08);
   color: #fff;
-  font-size: 10px;
+  font-size: .75rem;
   font-weight: 850;
 }
 
@@ -129,8 +127,8 @@
 
 .orgIdentityText span {
   margin-top: 3px;
-  color: #69737f;
-  font-size: 9px;
+  color: var(--text-muted);
+  font-size: .6875rem;
 }
 
 .detailToolbar {
@@ -164,7 +162,7 @@
   border: 1px solid rgba(255,255,255,.07);
   background: rgba(255,255,255,.025);
   color: #8f98a5;
-  font-size: 10px;
+  font-size: .75rem;
   font-weight: 760;
   cursor: pointer;
 }
@@ -195,8 +193,8 @@
 
 .configSectionHeader p {
   margin: 5px 0 0;
-  color: #69737f;
-  font-size: 10px;
+  color: var(--text-muted);
+  font-size: .75rem;
   max-width: 620px;
 }
 
@@ -236,8 +234,8 @@
 
 .previewCard span {
   margin-top: 5px;
-  color: #69737f;
-  font-size: 10px;
+  color: var(--text-muted);
+  font-size: .75rem;
 }
 
 .toggleGrid {
@@ -261,7 +259,7 @@
   border: 1px solid rgba(255,255,255,.07);
   background: rgba(255,255,255,.025);
   color: #8f98a5;
-  font-size: 10px;
+  font-size: .75rem;
   cursor: pointer;
 }
 
@@ -282,14 +280,13 @@
   padding: 12px 14px;
   border: 1px solid rgba(255,255,255,.09);
   border-radius: 14px;
-  background: rgba(10,13,18,.92);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 18px 50px rgba(0,0,0,.3);
+  background: var(--ink-800);
+  box-shadow: var(--edge-light), 0 12px 32px -16px rgba(0,0,0,.8);
 }
 
 .saveBar span {
   color: #8f98a5;
-  font-size: 10px;
+  font-size: .75rem;
 }
 
 .dangerZone {
@@ -310,7 +307,7 @@
 .dangerZone p {
   margin: 8px 0 12px;
   color: #8f98a5;
-  font-size: 10px;
+  font-size: .75rem;
 }
 
 .eventEdit {
@@ -373,9 +370,7 @@
   padding: 22px;
   border: 1px solid rgba(255,75,31,.45);
   border-radius: 22px;
-  background:
-    radial-gradient(circle at 8% 0%, rgba(255,75,31,.12), transparent 32%),
-    #0b0f14;
+  background-color: var(--ink-900);
   background-size: cover;
   background-position: center;
   overflow: hidden;
@@ -401,7 +396,7 @@
 }
 
 .eventPreview > div:last-child > span {
-  font-size: 9px;
+  font-size: .6875rem;
   font-weight: 850;
   letter-spacing: .17em;
 }
@@ -417,7 +412,7 @@
   margin: 10px 0 0;
   max-width: 760px;
   color: #b3bbc5;
-  font-size: 11px;
+  font-size: .8125rem;
   line-height: 1.55;
   white-space: pre-line;
 }
@@ -441,7 +436,7 @@
 
 .pairingMeta {
   color: #8f98a5;
-  font-size: 10px;
+  font-size: .75rem;
 }
 
 .deviceGrid {
@@ -474,13 +469,13 @@
 .deviceCardHead span {
   display: block;
   margin-top: 4px;
-  color: #69737f;
-  font-size: 9px;
+  color: var(--text-muted);
+  font-size: .6875rem;
 }
 
 .deviceLive {
   color: #49d7a5;
-  font-size: 9px;
+  font-size: .6875rem;
   font-weight: 800;
 }
 
@@ -510,7 +505,7 @@
   content:'';
   position:absolute;
   inset:0;
-  background:linear-gradient(to bottom,rgba(7,9,13,.05),rgba(7,9,13,.72));
+  background: rgba(7,9,13,.4);
 }
 
 .eventCardIdentity {
@@ -566,7 +561,7 @@
 
 .pairingQr span {
   color: #11151b;
-  font-size: 9px;
+  font-size: .6875rem;
   font-weight: 760;
   text-align: center;
   line-height: 1.35;
@@ -574,7 +569,7 @@
 
 .deviceOffline {
   color: #8f98a5;
-  font-size: 9px;
+  font-size: .6875rem;
   font-weight: 800;
 }
 

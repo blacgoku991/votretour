@@ -1,0 +1,53 @@
+/* Aperçu de l'écran de salle dans le tableau de bord : l'écran est un
+   objet (un moniteur posé sur son pied), pas une carte. */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-7);
+  min-width: 0;
+  padding-top: var(--sp-5);
+}
+
+.preview {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+.preview > :first-child { width: 100%; }
+@media (max-width: 719px) {
+  /* Écran vertical : on ne l'étire pas sur toute la largeur. */
+  .preview > :first-child { width: min(100%, 380px); }
+}
+
+.caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-4);
+}
+/* Le pied du moniteur : une colonne et un socle, en aplat. */
+.stand {
+  width: 180px;
+  height: 22px;
+  background: var(--ink-700);
+  clip-path: polygon(40% 0, 60% 0, 62% 64%, 100% 64%, 100% 100%, 0 100%, 0 64%, 38% 64%);
+}
+@media (max-width: 719px) {
+  .stand { width: 120px; }
+}
+
+.steps { max-width: 72ch; }
+.steps > li {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: baseline;
+  color: var(--text-muted);
+}
+.stepKey {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}

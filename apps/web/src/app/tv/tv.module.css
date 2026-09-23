@@ -1,122 +1,172 @@
+/* =====================================================================
+   Appairage d'un écran de salle (/tv).
+
+   Sur le sol (--floor), à plat : le texte et le code à gauche, la file
+   en relief à droite (ordinateur). Le code tombe en volets, une case par
+   chiffre. Aucun dégradé, aucune lueur, aucune boucle décorative (la
+   pastille « En attente » est la boucle partagée du site).
+   ===================================================================== */
+
 .pairScreen {
   min-height: 100dvh;
-  position: relative;
-  overflow: hidden;
   display: grid;
-  place-items: center;
-  padding: 24px;
-  color: #faf9f6;
-  background:
-    radial-gradient(circle at 15% 10%, rgba(255,75,31,.18), transparent 34%),
-    radial-gradient(circle at 88% 88%, rgba(31,169,122,.10), transparent 30%),
-    #07090d;
+  grid-template-columns: minmax(0, 1fr);
+  background: var(--floor);
+  color: var(--bone-100);
 }
 
-.pairGlow {
-  position: absolute;
-  inset: -40%;
-  background: conic-gradient(from 180deg, transparent, rgba(255,75,31,.035), transparent 30%);
-  animation: drift 20s linear infinite;
-}
-
-@keyframes drift { to { transform: rotate(360deg); } }
-
-.pairCard {
-  position: relative;
-  z-index: 1;
-  width: min(100%, 560px);
-  display: grid;
-  gap: 18px;
-  padding: clamp(26px, 5vw, 46px);
-  border-radius: 30px;
-  border: 1px solid rgba(255,255,255,.09);
-  background: linear-gradient(155deg, rgba(24,29,37,.98), rgba(10,12,17,.98));
-  box-shadow: 0 40px 120px rgba(0,0,0,.5);
-}
-
-.pairMark {
-  width: 62px;
-  height: 62px;
-  display: grid;
-  place-items: center;
-  border-radius: 18px;
-  background: #ff4b1f;
-  color: #fff;
-  font-size: 28px;
-  font-weight: 900;
-  box-shadow: 0 18px 50px rgba(255,75,31,.26);
-}
-
-.pairKicker {
-  margin-top: 6px;
-  color: #ff6b45;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: .18em;
-}
-
-.pairCard h1 {
-  margin: -8px 0 0;
-  font-size: clamp(34px, 6vw, 58px);
-  line-height: .95;
-  letter-spacing: -.055em;
-}
-
-.pairCard p {
-  margin: 0;
-  color: #9aa3af;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.codeInput {
-  width: 100%;
-  min-height: 92px;
+.pairBar {
+  display: flex;
+  align-items: center;
+  order: -2;
+  min-height: 64px;
   padding: 0 20px;
-  border-radius: 20px;
-  border: 1px solid rgba(255,255,255,.11);
-  outline: none;
-  background: #0c1016;
-  color: #fff;
-  text-align: center;
-  font-size: clamp(36px, 9vw, 62px);
-  font-weight: 850;
-  letter-spacing: .22em;
-  font-variant-numeric: tabular-nums;
 }
 
-.codeInput:focus {
-  border-color: rgba(255,75,31,.55);
-  box-shadow: 0 0 0 4px rgba(255,75,31,.08);
+.pairCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  padding: 32px 20px 48px;
+  min-width: 0;
 }
 
-.pairButton {
-  min-height: 56px;
+.pairIntro {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.pairTitle { max-width: 12ch; }
+.pairLead {
+  max-width: 44ch;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 1.0625rem;
+  line-height: 1.55;
+}
+
+/* ----- Le code, en six cellules ----- */
+.codeBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.codeField {
+  --code-size: clamp(3.25rem, 1.8rem + 6vw, 6.5rem);
+  position: relative;
+  align-self: flex-start;
+  font-size: var(--code-size);
+  line-height: 1;
+  border-radius: 0.12em;
+  cursor: text;
+  --flap-tile: var(--ink-700);
+}
+.codeField :global(.flap-row--tile) { gap: 0.08em; }
+.codeField :global(.flap) { color: var(--bone-100); }
+
+.codeField:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 16px;
+}
+
+/* La case suivante : un trait vermillon sous la cellule à remplir. */
+.codeCursor {
+  position: absolute;
+  left: calc(var(--i, 0) * 0.82em);
+  top: calc(100% + 0.06em);
+  width: 0.74em;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transform-origin: 0 50%;
+}
+.codeField:focus-within .codeCursor { opacity: 1; }
+.codeField[data-length='6'] .codeCursor { opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .codeCursor { transition: transform var(--dur-2) var(--ease-slat), left var(--dur-2) var(--ease-slat), opacity var(--dur-1) var(--ease-out); }
+}
+
+/* Le vrai champ, transparent, par-dessus les cellules. */
+.codeInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   border: 0;
-  border-radius: 15px;
-  background: #ff4b1f;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 800;
-  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  font-size: 16px;
+  outline: none;
+  cursor: text;
+}
+.codeInput::selection { background: transparent; }
+
+.pairState {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
-.pairButton:disabled {
-  opacity: .45;
-  cursor: not-allowed;
+.pairActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+.pairNote {
+  max-width: 46ch;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
 }
 
-.pairCard small {
-  color: #59616d;
-  text-align: center;
-  font-size: 10px;
+/* ----- La file en relief (décor) ----- */
+.pairScene {
+  position: relative;
+  order: -1;
+  height: 200px;
+  border-block: 1px solid var(--line);
+  overflow: clip;
+}
+.pairScene > :global(.scene3d) {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  min-height: 0;
+  --world-top: 44%;
 }
 
-.pairError {
-  padding: 11px 13px;
-  border-radius: 12px;
-  border: 1px solid rgba(227,111,100,.22);
-  background: rgba(168,69,60,.08);
-  color: #e36f64;
-  font-size: 11px;
+@media (max-width: 1023px) {
+  .pairScene > :global(.scene3d) :global(.world3d) { scale: 0.72; }
+}
+
+@media (min-width: 1024px) {
+  .pairScreen { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); }
+  .pairCopy {
+    justify-content: center;
+    gap: 44px;
+    padding: 56px max(48px, calc((100vw - 1440px) / 2 + 56px));
+    padding-right: 56px;
+  }
+  .pairBar { position: absolute; top: 28px; left: max(48px, calc((100vw - 1440px) / 2 + 56px)); padding: 0; }
+  .pairScreen { position: relative; }
+  .pairScene {
+    order: 0;
+    height: auto;
+    min-height: 100dvh;
+    border-block: 0;
+    border-left: 1px solid var(--line);
+  }
+  .pairScene > :global(.scene3d) { --world-top: 34%; }
+  .pairScene > :global(.scene3d) :global(.world3d) { scale: 1.3; }
 }

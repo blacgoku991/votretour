@@ -22,7 +22,7 @@ export default async function PassHomePage() {
   const { data: pass } = await supabaseAdmin()
     .from('event_access_passes')
     .select(`
-      public_id, status, issued_at, valid_until, grace_until, redeemed_at,
+      public_id, event_id, status, issued_at, valid_until, grace_until, redeemed_at,
       event_campaigns(name, status, hero_title, logo_url, cover_url, accent_hex, rules_text, qr_label),
       locations(name, city, logo_url),
       queue_entries(client_name)
@@ -35,6 +35,19 @@ export default async function PassHomePage() {
   const event = Array.isArray(pass.event_campaigns) ? pass.event_campaigns[0] : pass.event_campaigns;
   const location = Array.isArray(pass.locations) ? pass.locations[0] : pass.locations;
   const entry = Array.isArray(pass.queue_entries) ? pass.queue_entries[0] : pass.queue_entries;
+
+  // Numéro de vague : une vague est émise en une seule transaction, donc
+  // tous ses pass partagent le même issued_at. On compte les émissions
+  // distinctes de l'événement jusqu'à celle de ce pass (lecture seule).
+  const { data: issuedRows } = await supabaseAdmin()
+    .from('event_access_passes')
+    .select('issued_at')
+    .eq('event_id', pass.event_id)
+    .lte('issued_at', pass.issued_at)
+    .limit(5000);
+  const wave = issuedRows && issuedRows.length > 0
+    ? new Set(issuedRows.map((row) => row.issued_at)).size
+    : null;
 
   const expired = pass.status === 'issued' && new Date(pass.grace_until).getTime() < Date.now();
   const status = expired ? 'expired' : pass.status;
@@ -57,6 +70,7 @@ export default async function PassHomePage() {
       validUntil={pass.valid_until}
       graceUntil={pass.grace_until}
       redeemedAt={pass.redeemed_at}
+      wave={wave}
     />
   );
 }

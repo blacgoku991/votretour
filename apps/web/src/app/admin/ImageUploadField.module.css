@@ -8,7 +8,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 11px;
+  font-size: .8125rem;
   font-weight: 720;
   color: #c9cfd6;
 }
@@ -18,7 +18,7 @@
   background: transparent;
   color: #8f98a5;
   font: inherit;
-  font-size: 10px;
+  font-size: .75rem;
   cursor: pointer;
 }
 
@@ -63,8 +63,8 @@
   place-items: center;
   background: #151a21;
   border: 1px dashed rgba(255,255,255,.12);
-  color: #59616d;
-  font-size: 10px;
+  color: var(--text-muted);
+  font-size: .75rem;
   font-weight: 760;
   text-transform: uppercase;
   letter-spacing: .08em;
@@ -86,7 +86,7 @@
   background: rgba(7,9,13,.82);
   color: #fff;
   font-style: normal;
-  font-size: 9px;
+  font-size: .6875rem;
   letter-spacing: .08em;
 }
 
@@ -115,13 +115,13 @@
 }
 
 .dropHint {
-  color: #69737f;
-  font-size: 9px;
+  color: var(--text-muted);
+  font-size: .6875rem;
 }
 
 .controls small {
-  color: #69737f;
-  font-size: 9px;
+  color: var(--text-muted);
+  font-size: .6875rem;
 }
 
 .hidden {
@@ -131,7 +131,7 @@
 .error {
   margin: 0;
   color: #e36f64;
-  font-size: 10px;
+  font-size: .75rem;
 }
 
 .compact .body {
