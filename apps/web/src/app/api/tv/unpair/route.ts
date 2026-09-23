@@ -10,7 +10,7 @@ export async function POST() {
     httpOnly: true,
     secure: env.isProduction,
     sameSite: 'lax',
-    path: '/tv',
+    path: '/',
     maxAge: 0,
   });
   return response;
