@@ -73,16 +73,20 @@
     display: grid;
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   }
+  /* La marque tombe exactement où elle est dans l'en-tête public (.shell :
+     colonne de --maxw-app centrée, gouttière --sp-5 ; barre de
+     --site-header-h) : elle ne saute pas entre /tarifs et /connexion. En
+     dessous de 1360 px, la gouttière reste d'au moins 40 px. */
   .side {
     min-height: 100dvh;
-    padding-inline: clamp(40px, 6.8vw, 104px) 48px;
+    padding-inline: max(40px, calc((100vw - var(--maxw-app)) / 2 + var(--sp-5))) 48px;
   }
-  .bar { height: 96px; padding-inline: 0; }
+  .bar { height: var(--site-header-h); padding-inline: 0; }
   .switch { display: none; }
   .band { display: none; }
   .content {
     max-width: 400px;
-    padding: max(24px, calc(18svh - 96px)) 0 72px;
+    padding: max(56px, calc(18svh - var(--site-header-h))) 0 72px;
     gap: 32px;
   }
   .panel {

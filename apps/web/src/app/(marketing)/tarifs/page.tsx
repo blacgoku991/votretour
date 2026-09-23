@@ -7,7 +7,7 @@ import styles from '../../marketing.module.css';
 
 export const metadata: Metadata = {
   title: 'Tarifs',
-  description: "Des offres simples pour une file d'attente virtuelle : App Clip iPhone, QR code, plaque NFC et avis Google inclus.",
+  description: "Des offres simples pour une file d’attente virtuelle : App Clip iPhone, QR code, plaque NFC et avis Google inclus.",
 };
 // Les offres sont lues avec le client serveur privilégié : rendu au runtime
 // pour ne jamais injecter SUPABASE_SERVICE_ROLE_KEY pendant le build Docker.
@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 const INCLUDED = [
   {
     key: 'Aucun SMS',
-    text: "Les notifications passent par l'App Clip iPhone ou le navigateur : rien à payer à l'unité.",
+    text: "Les notifications passent par l’App Clip iPhone ou le navigateur : rien à payer à l’unité.",
   },
   {
     key: 'Aucune application à installer',
@@ -38,19 +38,19 @@ const FAQ = [
     a: 'Non. Un QR imprimé suffit pour démarrer. Si vous voulez des plaques NFC gravées, vous pouvez en faire la demande depuis votre espace : nous revenons vers vous avec un devis avant toute production.',
   },
   {
-    q: "Faut-il une carte bancaire pour l'essai\u202f?",
-    a: "Non. L'essai démarre dès la création de votre file, sans moyen de paiement.",
+    q: "Faut-il une carte bancaire pour l’essai\u202f?",
+    a: "Non. L’essai démarre dès la création de votre file, sans moyen de paiement.",
   },
   {
-    q: "Et si je change d'offre\u202f?",
+    q: "Et si je change d’offre\u202f?",
     a: 'Le changement est immédiat et le prorata est calculé automatiquement.',
   },
   {
     q: 'Puis-je résilier à tout moment\u202f?',
-    a: "Oui, depuis votre espace. La résiliation prend effet à la fin de la période en cours, et vos données restent accessibles jusqu'à cette date.",
+    a: "Oui, depuis votre espace. La résiliation prend effet à la fin de la période en cours, et vos données restent accessibles jusqu’à cette date.",
   },
   {
-    q: "Mes données m'appartiennent-elles\u202f?",
+    q: "Mes données m’appartiennent-elles\u202f?",
     a: 'Oui. Vous choisissez la durée de conservation ; au-delà, les prénoms de vos clients sont effacés automatiquement.',
   },
 ] as const;
@@ -76,13 +76,13 @@ export default async function PricingPage() {
   }));
 
   return (
-    <main className={styles.pricing}>
+    <main id="contenu" className={styles.pricing}>
       <header className={`shell ${styles.intro}`}>
         <p className="t-label">Tarifs</p>
         <h1 className={`t-hero ${styles.introTitle}`}>Une file ouverte, un prix clair</h1>
         <p className={`t-lead ${styles.introLead}`}>
-          Tout est inclus dans chaque offre : l&apos;App Clip iPhone, le QR code,
-          l&apos;URL NFC, les notifications et le lien d&apos;avis Google. Seuls
+          Tout est inclus dans chaque offre : l’App Clip iPhone, le QR code,
+          l’URL NFC, les notifications et le lien d’avis Google. Seuls
           les volumes changent.
         </p>
       </header>
@@ -128,7 +128,7 @@ export default async function PricingPage() {
         <span className={`floor-marks ${styles.finalMarks}`} aria-hidden="true" />
         <div className={`shell ${styles.finalInner}`}>
           <div className={styles.finalText}>
-            <h2 id="final" className="t-hero">Posez une plaque. C&apos;est tout.</h2>
+            <h2 id="final" className="t-hero">Posez une plaque. C’est tout.</h2>
             <p className="t-lead">
               Créez votre file en quelques minutes : votre QR code et votre URL NFC
               sont générés immédiatement.

@@ -37,7 +37,7 @@ export default function SignupPage() {
       <div className={styles.outro}>
         <p className={`t-micro ${styles.legal}`}>
           En créant un compte, vous acceptez les{' '}
-          <Link href="/cgu">conditions d&apos;utilisation</Link> et la{' '}
+          <Link href="/cgu">conditions d’utilisation</Link> et la{' '}
           <Link href="/confidentialite">politique de confidentialité</Link>.
         </p>
 

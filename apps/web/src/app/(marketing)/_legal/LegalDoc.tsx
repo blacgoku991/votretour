@@ -29,7 +29,7 @@ export function LegalDoc({
   }));
 
   return (
-    <main className={`shell ${styles.legal}`}>
+    <main id="contenu" className={`shell ${styles.legal}`}>
       <header className={styles.legalHead}>
         <p className="t-label">Document légal</p>
         <h1 className={`t-display ${styles.legalTitle}`}>{title}</h1>

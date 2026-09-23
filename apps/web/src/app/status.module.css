@@ -1,7 +1,9 @@
 /* Écrans d'état : 404 et erreur (§6.4). Le sol en relief, sur --floor :
    on reste dans le produit même quand ça ne va pas. */
 
-.screen {
+/* La coque du site public (SiteHeader, et SiteFooter sur la 404) : le
+   visiteur garde la navigation, Tarifs et Connexion compris. */
+.page {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -9,17 +11,14 @@
   overflow-x: clip;
 }
 
-.bar {
+/* L'écran d'état occupe toute la hauteur sous l'en-tête : le pied, quand
+   il y en a un, commence sous la ligne de flottaison. */
+.screen {
+  flex: 1 0 auto;
+  min-height: calc(100dvh - var(--site-header-h));
   display: flex;
-  align-items: center;
-  height: var(--site-header-h);
-  flex: none;
-}
-.home {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  border-radius: 8px;
+  flex-direction: column;
+  scroll-margin-top: var(--site-header-h);
 }
 
 /* Téléphone : le bloc part du haut, à distance mesurée du Wordmark (le

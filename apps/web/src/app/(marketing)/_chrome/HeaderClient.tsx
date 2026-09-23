@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import styles from '@/components/SiteChrome.module.css';
 
 /**
  * Parties client de l'en-tête public (SiteChrome).
@@ -40,6 +41,90 @@ export function SiteNav({ className, linkClassName }: { className?: string; link
         </Link>
       ))}
     </nav>
+  );
+}
+
+/**
+ * Navigation mobile (< 760 px) : un bouton « Menu » qui déplie, sous la
+ * barre, la même navigation posée sur un rail. Motif de divulgation
+ * (aria-expanded + aria-controls) : le focus reste sur le bouton.
+ *
+ * Fermé, le volet est `inert` (ni focus, ni lecteur d'écran) et
+ * transparent ; seules son opacité et sa translation changent. Il se
+ * referme au choix d'un lien, sur Échap (le focus revient au bouton), au
+ * toucher hors de l'en-tête et au changement de page.
+ */
+export function MobileNav() {
+  const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+  const [openedAt, setOpenedAt] = useState(pathname);
+  const panelId = useId();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Changement de page : ajusté pendant le rendu, pas dans un effet.
+  if (open && openedAt !== pathname) setOpen(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const header = buttonRef.current?.closest('header');
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
+    const onPointer = (event: PointerEvent) => {
+      if (header && event.target instanceof Node && !header.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onPointer);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onPointer);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        className={`btn btn--quiet btn--sm ${styles.menuButton}`}
+        aria-expanded={open}
+        aria-controls={panelId}
+        aria-label="Menu"
+        data-open={open ? '1' : undefined}
+        onClick={() => {
+          setOpenedAt(pathname);
+          setOpen((v) => !v);
+        }}
+      >
+        <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" className={styles.menuIcon}>
+          <rect className={styles.menuBarTop} x="3" y="5.5" width="14" height="2" rx="1" fill="currentColor" />
+          <rect className={styles.menuBarBottom} x="3" y="12.5" width="14" height="2" rx="1" fill="currentColor" />
+        </svg>
+      </button>
+      <div id={panelId} className={styles.menuPanel} data-open={open ? '1' : undefined} inert={!open || undefined}>
+        <nav aria-label="Navigation principale" className="shell">
+          <ul className={`rail-list ${styles.menuList}`}>
+            {NAV.map((item) => {
+              const current = item.path !== null && pathname === item.path;
+              return (
+                <li key={item.href} aria-current={current ? 'true' : undefined}>
+                  <Link
+                    href={item.href}
+                    className={styles.menuLink}
+                    aria-current={current ? 'page' : undefined}
+                    onClick={() => setOpen(false)}
+                  >
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+      </div>
+    </>
   );
 }
 

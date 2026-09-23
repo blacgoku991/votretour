@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
-import { Wordmark } from '@/components/Wordmark';
+import { SiteFooter, SiteHeader } from '@/components/SiteChrome';
 import { FloorScene, type FloorSlat } from '@/components/objects/FloorScene';
 import styles from './status.module.css';
 
@@ -31,40 +31,39 @@ export default function ErrorScreen({
   }, [error]);
 
   return (
-    <main className={styles.screen}>
-      <div className={`shell ${styles.bar}`}>
-        <Link href="/" aria-label="Rangvia" className={styles.home}><Wordmark /></Link>
-      </div>
+    <div className={styles.page}>
+      <SiteHeader />
+      <main id="contenu" className={styles.screen}>
+        <div className={styles.stage}>
+          <div className={styles.sceneBand} aria-hidden="true">
+            <FloorScene size="sm" slats={SLATS} seuil="Comptoir" positions={false} />
+          </div>
 
-      <div className={styles.stage}>
-        <div className={styles.sceneBand} aria-hidden="true">
-          <FloorScene size="sm" slats={SLATS} seuil="Comptoir" positions={false} />
-        </div>
-
-        <div className={`shell ${styles.body}`}>
-          <div className={styles.text}>
-            <p className="t-kicker"><span className="t-kicker__num">500</span> Incident</p>
-            <h1 className={`t-display ${styles.title}`}>Quelque chose a coincé.</h1>
-            <p className={styles.lead}>
-              Votre place n&apos;est pas perdue : les positions sont enregistrées côté
-              serveur. Réessayez dans un instant.
-            </p>
-            {error.digest && (
-              <p className={styles.ref}>
-                Référence de l&apos;incident : <span className={styles.refCode}>{error.digest}</span>
+          <div className={`shell ${styles.body}`}>
+            <div className={styles.text}>
+              <p className="t-kicker"><span className="t-kicker__num">500</span> Incident</p>
+              <h1 className={`t-display ${styles.title}`}>Quelque chose a coincé.</h1>
+              <p className={styles.lead}>
+                Votre place n’est pas perdue : les positions sont enregistrées côté
+                serveur. Réessayez dans un instant.
               </p>
-            )}
-            <div className={styles.actions}>
-              <button type="button" className="btn btn--signal btn--lg" onClick={reset}>Réessayer</button>
-              <Link href="/" className="btn btn--ghost btn--lg">Retour à l&apos;accueil</Link>
+              {error.digest && (
+                <p className={styles.ref}>
+                  Référence de l’incident : <span className={styles.refCode}>{error.digest}</span>
+                </p>
+              )}
+              <div className={styles.actions}>
+                <button type="button" className="btn btn--signal btn--lg" onClick={reset}>Réessayer</button>
+                <Link href="/" className="btn btn--ghost btn--lg">Retour à l’accueil</Link>
+              </div>
+            </div>
+
+            <div className={styles.sceneSide} aria-hidden="true">
+              <FloorScene size="lg" slats={SLATS} seuil="Comptoir" />
             </div>
           </div>
-
-          <div className={styles.sceneSide} aria-hidden="true">
-            <FloorScene size="lg" slats={SLATS} seuil="Comptoir" />
-          </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }

@@ -44,15 +44,37 @@ function priceParts(cents: number, currency: string) {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }).formatToParts(cents / 100);
-  // Un tableau à palettes ne groupe pas les milliers : « 1290 », pas « 1 290 ».
+  // Montant groupé comme le texte (« 1 290 ») : chaque groupe de milliers
+  // devient une rangée de tuiles, séparée de la suivante par un blanc.
   const amount = new Intl.NumberFormat('fr-FR', {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
-    useGrouping: false,
   }).format(cents / 100);
+  const groups = amount.split(/\s+/).filter(Boolean);
   const symbol = parts.find((p) => p.type === 'currency')?.value ?? currency;
   const full = parts.map((p) => p.value).join('').replace(/\s+/g, '\u00a0').trim();
-  return { amount, symbol, full };
+  return { amount, groups, symbol, full };
+}
+
+/**
+ * Le prix en volets : un groupe de tuiles par tranche de milliers. Groupes
+ * comptés depuis la droite (19 → 190 → 1 290 : les unités restent les
+ * unités) ; le texte lu est le prix complet, une seule fois.
+ */
+function PriceTiles({ groups, label }: { groups: string[]; label: string }) {
+  return (
+    <>
+      <span className="sr-only">{label}</span>
+      {groups.map((group, i) => {
+        const key = `g${groups.length - 1 - i}`;
+        return /^\d+$/.test(group) ? (
+          <FlapNumber key={key} static tile value={Number(group)} pad={i > 0 ? group.length : 1} label="" size="1em" />
+        ) : (
+          <FlapText key={key} static fixed tile text={group} label="" size="1em" stagger={36} />
+        );
+      })}
+    </>
+  );
 }
 
 function limits(plan: PublicPlan): string[] {
@@ -63,7 +85,7 @@ function limits(plan: PublicPlan): string[] {
     n(plan.max_staff, 'professionnel', 'professionnels', 'Professionnels illimités'),
     n(plan.max_plates, 'plaque NFC / QR', 'plaques NFC / QR', 'Plaques illimitées'),
     n(plan.max_queues, 'file', 'files', 'Files illimitées'),
-    `${plan.history_days} jour${plan.history_days > 1 ? 's' : ''} d'historique`,
+    `${plan.history_days} jour${plan.history_days > 1 ? 's' : ''} d’historique`,
   ];
 }
 
@@ -71,16 +93,6 @@ export function PricingBoard({ plans }: { plans: PublicPlan[] }) {
   const [period, setPeriod] = useState<Period>('month');
 
   const bestOffer = Math.max(0, ...plans.map(monthsOffered));
-  // Une seule largeur de prix pour TOUT le tableau (toutes offres, deux
-  // périodes) : « € /MOIS HT » tombe à la même abscisse sur chaque ligne,
-  // et le prix ne change pas de largeur quand il tombe.
-  const boardCells = Math.max(
-    1,
-    ...plans.flatMap((p) => [
-      priceParts(p.price_month_cents, p.currency).amount.length,
-      priceParts(p.price_year_cents, p.currency).amount.length,
-    ]),
-  );
 
   return (
     <div className={styles.board}>
@@ -95,7 +107,7 @@ export function PricingBoard({ plans }: { plans: PublicPlan[] }) {
         </div>
         {bestOffer >= 1 && (
           <p className={styles.boardNote}>
-            À l&apos;année : jusqu&apos;à {bestOffer} mois offert{bestOffer > 1 ? 's' : ''}
+            À l’année : jusqu’à {bestOffer} mois offert{bestOffer > 1 ? 's' : ''}
           </p>
         )}
       </div>
@@ -116,19 +128,10 @@ export function PricingBoard({ plans }: { plans: PublicPlan[] }) {
                   <span className="t-board">{plan.name}</span>
                   {featured && <span className={`chip chip--signal ${styles.planChip}`}>Le plus choisi</span>}
                 </h2>
-                <p
-                  className={styles.price}
-                  style={{ ['--cells' as string]: boardCells } as React.CSSProperties}
-                >
-                  {/* Chiffres calés à droite dans une colonne de largeur fixe :
-                      aucune tuile vide. Prix entier : cellules comptées depuis
-                      la droite (19 → 190 : les unités restent les unités). */}
+                <p className={styles.price}>
+                  {/* Calé à gauche, à l'aplomb du nom de l'offre. */}
                   <span className={styles.priceDigits}>
-                    {cents % 100 === 0 ? (
-                      <FlapNumber static tile value={cents / 100} label={spoken} size="1em" />
-                    ) : (
-                      <FlapText static fixed tile text={price.amount} label={spoken} size="1em" stagger={36} />
-                    )}
+                    <PriceTiles groups={price.groups} label={spoken} />
                   </span>
                   <span className={styles.priceUnit} aria-hidden="true">
                     <span className={styles.priceSymbol}>{price.symbol}</span>
@@ -164,7 +167,10 @@ export function PricingBoard({ plans }: { plans: PublicPlan[] }) {
                   href="/inscription"
                   className={featured ? 'btn btn--signal' : 'btn btn--ghost'}
                 >
-                  {plan.trial_days} jours d&apos;essai
+                  {/* Nom accessible propre à chaque offre, qui COMMENCE par le
+                      libellé visible (commande vocale : « Essayer 14 jours »). */}
+                  Essayer {plan.trial_days} jours
+                  <span className="sr-only">, offre {plan.name}</span>
                 </Link>
               </div>
             </li>

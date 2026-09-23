@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/browser';
 import { PasswordField } from '../PasswordField';
+import { signupErrorMessage } from '../authErrors';
 import styles from '../auth.module.css';
 
 export function SignupForm() {
@@ -35,11 +36,7 @@ export function SignupForm() {
       });
 
       if (authError) {
-        setError(
-          authError.message.includes('already registered')
-            ? 'Un compte existe déjà avec cette adresse.'
-            : authError.message,
-        );
+        setError(signupErrorMessage(authError));
         return;
       }
 

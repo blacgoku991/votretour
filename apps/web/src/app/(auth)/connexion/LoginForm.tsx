@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/browser';
 import { PasswordField } from '../PasswordField';
+import { loginErrorMessage } from '../authErrors';
 import styles from '../auth.module.css';
 
 /**
@@ -27,13 +28,7 @@ export function LoginForm({ next }: { next: string | null }) {
         password,
       });
       if (authError) {
-        setError(
-          authError.message.includes('Invalid login')
-            ? 'Adresse e-mail ou mot de passe incorrect.'
-            : authError.message.includes('Email not confirmed')
-              ? "Confirmez d'abord votre adresse e-mail."
-              : authError.message,
-        );
+        setError(loginErrorMessage(authError));
         return;
       }
       router.push(next && next.startsWith('/') ? next : '/app');

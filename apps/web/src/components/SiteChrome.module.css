@@ -109,6 +109,64 @@
   .login, .open { min-height: 44px; }
 }
 
+/* ---------------------------------------------------------------------
+   Navigation mobile (< 760 px) : bouton « Menu » + volet sous la barre.
+   Le volet est hors flux (absolu sous l'en-tête) : la hauteur de
+   l'en-tête ne change pas.
+   --------------------------------------------------------------------- */
+.menuButton { width: 44px; min-height: 44px; padding: 0; color: var(--text); }
+.menuIcon { display: block; overflow: visible; }
+/* Deux lattes qui se croisent quand le volet est ouvert (transform seul). */
+.menuBarTop, .menuBarBottom { transform-box: fill-box; transform-origin: 50% 50%; }
+.menuButton[data-open='1'] .menuBarTop { transform: translateY(3.5px) rotate(45deg); }
+.menuButton[data-open='1'] .menuBarBottom { transform: translateY(-3.5px) rotate(-45deg); }
+
+.menuPanel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 12px 24px -16px rgb(0 0 0 / 0.45);
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+}
+.menuPanel[data-open='1'] { opacity: 1; transform: none; pointer-events: auto; }
+/* Filet haut : l'en-tête n'affiche le sien qu'après défilement. */
+.menuPanel::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: var(--line);
+}
+.menuList { padding-block: var(--sp-2) var(--sp-4); }
+.menuList > li { padding: 0; }
+.menuList > li:first-child { border-top: 0; }
+.menuList > li::before { top: 25px; }
+.menuList > li[aria-current='true']::before { top: 24px; }
+.menuLink {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  font-size: 1.0625rem;
+  font-variation-settings: 'wdth' 100, 'wght' 620;
+  color: var(--text);
+}
+
+@media (min-width: 760px) {
+  .menuButton, .menuPanel { display: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .menuPanel { transition: opacity var(--dur-1) var(--ease-out), transform var(--dur-2) var(--ease-out); }
+  .menuBarTop, .menuBarBottom { transition: transform var(--dur-2) var(--ease-out); }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .header::after { transition: opacity var(--dur-2) var(--ease-out); }
   .navLink { transition: color var(--dur-1) var(--ease-out); }
@@ -221,7 +279,9 @@
   .end { grid-template-columns: minmax(0, 1fr) auto; }
   .head { display: contents; }
   .headSlat { grid-column: 2; grid-row: 1; align-self: end; padding: 0 14px; font-size: 0.875rem; }
-  .headCta { grid-column: 1 / -1; grid-row: 2; justify-self: end; }
+  /* Le bouton ne pend plus seul sous la pastille : il occupe toute la
+     largeur sous le rail, à l'aplomb du texte du pied. */
+  .headCta { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; }
 }
 
 .body {

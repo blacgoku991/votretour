@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Wordmark } from './Wordmark';
-import { HeaderScrollFlag, SiteNav } from '@/app/(marketing)/_chrome/HeaderClient';
+import { HeaderScrollFlag, MobileNav, SiteNav } from '@/app/(marketing)/_chrome/HeaderClient';
 import styles from './SiteChrome.module.css';
 
 /**
@@ -28,6 +28,8 @@ function UserIcon() {
 export function SiteHeader() {
   return (
     <header className={styles.header}>
+      {/* Premier arrêt de tabulation. Chaque page publique porte id="contenu" sur son <main>. */}
+      <a href="#contenu" className="skip-link">Aller au contenu</a>
       <HeaderScrollFlag />
       <div className={`shell ${styles.headerInner}`}>
         <Link href="/" aria-label="Rangvia" className={styles.home}>
@@ -42,6 +44,7 @@ export function SiteHeader() {
           <Link href="/inscription" className={`btn btn--signal btn--sm ${styles.open}`}>
             Ouvrir ma file
           </Link>
+          <MobileNav />
         </div>
       </div>
     </header>
@@ -69,7 +72,7 @@ const FOOTER_GROUPS: ReadonlyArray<{ title: string; links: ReadonlyArray<FooterL
     title: 'Légal',
     links: [
       { href: '/confidentialite', label: 'Confidentialité' },
-      { href: '/cgu', label: "Conditions d'utilisation" },
+      { href: '/cgu', label: "Conditions d’utilisation" },
     ],
   },
 ];
@@ -110,7 +113,7 @@ export function SiteFooter() {
             <Link href="/" aria-label="Rangvia" className={styles.home}>
               <Wordmark />
             </Link>
-            <p className={styles.tagline}>La file d&apos;attente qui laisse vos clients respirer.</p>
+            <p className={styles.tagline}>La file d’attente qui laisse vos clients respirer.</p>
           </div>
 
           <nav className={styles.columns} aria-label="Pied de page">
