@@ -1,10 +1,23 @@
 'use client';
 
+import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchQueueSnapshot } from '@/server/actions/queue';
 import { formatTime, initials } from '@/lib/format';
 import type { QueueSnapshot } from '@/lib/types';
 import styles from './tv.module.css';
+
+export interface TVEventTheme {
+  id?: string;
+  name: string;
+  status: string;
+  heroTitle: string | null;
+  logoUrl: string | null;
+  coverUrl: string | null;
+  accentHex: string;
+  rulesText: string | null;
+  qrLabel: string | null;
+}
 
 export function TVBoard({
   orgSlug,
@@ -12,22 +25,56 @@ export function TVBoard({
   logoUrl,
   initialSnapshot,
   queues,
+  snapshotEndpoint = null,
+  eventTheme: initialEventTheme = null,
+  kioskMode = false,
 }: {
   orgSlug: string;
   organizationName: string;
   logoUrl: string | null;
   initialSnapshot: QueueSnapshot | null;
   queues: { id: string; name: string }[];
+  snapshotEndpoint?: string | null;
+  eventTheme?: TVEventTheme | null;
+  kioskMode?: boolean;
 }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [eventTheme, setEventTheme] = useState<TVEventTheme | null>(initialEventTheme);
   const [now, setNow] = useState(new Date());
   const queueId = snapshot?.queue.id ?? queues[0]?.id ?? null;
 
   const refresh = useCallback(async () => {
     if (!queueId) return;
+
+    if (snapshotEndpoint) {
+      try {
+        const response = await fetch(snapshotEndpoint, { cache: 'no-store' });
+        if (response.status === 401) {
+          window.location.reload();
+          return;
+        }
+
+        const payload = await response.json() as {
+          ok: boolean;
+          data?: {
+            snapshot?: QueueSnapshot | null;
+            event?: TVEventTheme | null;
+          };
+        };
+
+        if (payload.ok && payload.data) {
+          if ('snapshot' in payload.data) setSnapshot(payload.data.snapshot ?? null);
+          if ('event' in payload.data) setEventTheme(payload.data.event ?? null);
+        }
+      } catch {
+        // L'écran garde le dernier état connu et réessaie au prochain poll.
+      }
+      return;
+    }
+
     const result = await fetchQueueSnapshot(queueId);
     if (result.ok) setSnapshot(result.data.snapshot);
-  }, [queueId]);
+  }, [queueId, snapshotEndpoint]);
 
   useEffect(() => {
     const clock = window.setInterval(() => setNow(new Date()), 1000);
@@ -50,36 +97,57 @@ export function TVBoard({
     return [...snapshot.called, ...snapshot.waiting].slice(0, 6);
   }, [snapshot]);
 
+  const screenStyle = {
+    '--tv-accent': eventTheme?.accentHex || '#FF4B1F',
+    ...(eventTheme?.coverUrl
+      ? {
+          backgroundImage:
+            `linear-gradient(145deg, rgba(7,9,13,.90), rgba(7,9,13,.78)), url(${JSON.stringify(eventTheme.coverUrl)})`,
+        }
+      : {}),
+  } as CSSProperties;
+
   if (!snapshot) {
-    return <main className={styles.screen}><div className={styles.empty}>Aucune file à afficher.</div></main>;
+    return (
+      <main className={styles.screen} style={screenStyle}>
+        <div className={styles.empty}>Aucune file à afficher.</div>
+      </main>
+    );
   }
 
   const { queue, location, serving, counts, staff } = snapshot;
+  const activeLogo = eventTheme?.logoUrl || logoUrl;
 
   return (
-    <main className={styles.screen}>
+    <main className={styles.screen} style={screenStyle} data-event={eventTheme ? 'true' : 'false'}>
       <div className={styles.ambient} />
 
       <header className={styles.header}>
         <div className={styles.brand}>
           <div className={styles.logo}>
-            {logoUrl
-              ? <img src={logoUrl} alt="" />
-              : <span>{initials(organizationName)}</span>}
+            {activeLogo
+              ? <img src={activeLogo} alt="" />
+              : <span>{initials(eventTheme?.name || organizationName)}</span>}
           </div>
           <div>
-            <p className={styles.kicker}>RANGVIA · FILE EN DIRECT</p>
-            <h1>{organizationName}</h1>
-            <p className={styles.location}>{location.name}</p>
+            <p className={styles.kicker}>
+              {eventTheme ? 'RANGVIA · EVENT LIVE' : 'RANGVIA · FILE EN DIRECT'}
+            </p>
+            <h1>{eventTheme?.name || organizationName}</h1>
+            <p className={styles.location}>
+              {organizationName} · {location.name}
+            </p>
           </div>
         </div>
 
         <div className={styles.controls}>
-          {queues.length > 1 && (
+          {queues.length > 1 && !kioskMode && (
             <select
               className={styles.select}
               value={queue.id}
-              onChange={(e) => { window.location.href = `/app/${orgSlug}/ecran?file=${e.target.value}`; }}
+              onChange={(e) => {
+                window.location.href = `/ecran/${orgSlug}?file=${encodeURIComponent(e.target.value)}`;
+              }}
             >
               {queues.map((q) => <option key={q.id} value={q.id}>{q.name}</option>)}
             </select>
@@ -96,6 +164,23 @@ export function TVBoard({
           </time>
         </div>
       </header>
+
+      {eventTheme && (
+        <section className={styles.eventHero}>
+          <div className={styles.eventCopy}>
+            <p className={styles.kicker}>DROP / ÉVÉNEMENT</p>
+            <h2>{eventTheme.heroTitle || eventTheme.name}</h2>
+            {eventTheme.rulesText && <p>{eventTheme.rulesText}</p>}
+          </div>
+
+          {eventTheme.id && (
+            <div className={styles.eventQr}>
+              <img src={'/api/event/qr?event=' + encodeURIComponent(eventTheme.id)} alt="QR pour rejoindre l’événement" />
+              <span>{eventTheme.qrLabel || 'Scannez pour rejoindre la file'}</span>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className={styles.hero}>
         <div className={styles.now}>
@@ -189,7 +274,9 @@ export function TVBoard({
       </section>
 
       <footer className={styles.footer}>
-        <span>Approchez votre téléphone de la plaque Rangvia pour rejoindre la file.</span>
+        <span>
+          {eventTheme?.qrLabel || 'Approchez votre téléphone de la plaque Rangvia pour rejoindre la file.'}
+        </span>
         <strong>{counts.completedToday} clients servis aujourd’hui</strong>
       </footer>
     </main>
