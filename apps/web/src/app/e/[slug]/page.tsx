@@ -5,7 +5,8 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { getClientSession } from '@/server/client-session';
 import { vapidPublicKey } from '@/server/notifications/webpush';
 import { ACTIVITY_LABEL } from '@/lib/copy';
-import { ClientExperience } from './ClientExperience';
+import type { EntryPoint } from '@/lib/types';
+import { ClientExperience, type StaffGate } from './ClientExperience';
 import { UnassignedPlate } from './UnassignedPlate';
 import { findUnassignedStockPlate } from '@/server/plate-stock';
 import { getSessionUser } from '@/server/auth';
@@ -147,9 +148,9 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
         <div className={`client-shell ${styles.inner}`}>
           <div className={styles.emptyState}>
             <p className="t-label">Indisponible</p>
-            <h1 className="t-title">Cette file n&apos;est pas accessible</h1>
+            <h1 className="t-title">Cette file n’est pas accessible</h1>
             <p className="t-body t-muted">
-              L&apos;établissement a suspendu son service. Adressez-vous directement au comptoir.
+              L’établissement a suspendu son service. Adressez-vous directement au comptoir.
             </p>
           </div>
         </div>
@@ -162,6 +163,8 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
   // place exactement là où il l'avait laissée.
   const session = await getClientSession(effectiveEntryPoint.organization.id);
   const initialTicket = session ? await findActiveTicket(session.id) : null;
+
+  const staffGate = await readStaffGate(effectiveEntryPoint.queue);
 
   const source = (() => {
     const raw = typeof query.src === 'string' ? query.src : undefined;
@@ -182,10 +185,49 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
           eventId={eventId}
           eventTheme={eventTheme}
           source={source}
+          staffGate={staffGate}
           vapidPublicKey={vapidPublicKey()}
           activityLabel={ACTIVITY_LABEL[entryPoint.organization.activity] ?? null}
         />
       </div>
     </main>
   );
+}
+
+/**
+ * Qui peut prendre la file, lu au rendu.
+ *
+ * Reproduit EXACTEMENT la règle de join_queue (VT008) : en mode
+ * « par professionnel », sans choix explicite retenu, l’inscription
+ * échoue si aucun professionnel du lieu de la file n’est actif,
+ * n’accepte la file et n’est hors pause. Un choix explicite n’est
+ * retenu que pour un professionnel actif qui accepte la file (même en
+ * pause). Hors de ce mode, aucune condition : null.
+ */
+async function readStaffGate(queue: EntryPoint['queue']): Promise<StaffGate | null> {
+  if (!queue || queue.mode !== 'per_staff') return null;
+  try {
+    const db = supabaseAdmin();
+    const { data: row } = await db
+      .from('queues')
+      .select('location_id')
+      .eq('id', queue.id)
+      .maybeSingle();
+    if (!row) return null;
+    const { data: staff, error } = await db
+      .from('staff')
+      .select('id, is_on_break')
+      .eq('location_id', row.location_id)
+      .eq('is_active', true)
+      .eq('accepts_queue', true);
+    if (error || !staff) return null;
+    return {
+      autoAssign: staff.some((s) => !s.is_on_break),
+      eligibleIds: staff.map((s) => s.id),
+    };
+  } catch {
+    // Lecture impossible : on ne promet rien de plus qu’avant ; le refus
+    // éventuel du serveur reste affiché près du bouton.
+    return null;
+  }
 }

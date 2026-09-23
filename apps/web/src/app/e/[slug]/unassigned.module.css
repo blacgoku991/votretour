@@ -7,12 +7,29 @@
   gap: 24px;
 }
 
-/* Le sol et le texte forment une seule affiche, posée au milieu. */
+/* La marque, en haut à gauche : même en-tête que la 404. */
+.bar {
+  display: flex;
+  align-items: center;
+  flex: none;
+  margin-top: -8px;
+}
+.home {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  border-radius: 8px;
+  color: var(--text);
+}
+
+/* Le sol et le texte forment une seule affiche, qui part du haut (un
+   centrage laissait ~200 px de vide au-dessus sur téléphone). */
 .group {
   display: flex;
   flex-direction: column;
   gap: 36px;
-  margin-block: auto;
+  margin-top: 8px;
+  margin-bottom: auto;
 }
 
 /* Bandeau de sol pleine largeur de la colonne. */
@@ -21,6 +38,10 @@
   width: auto;
   border-block: 1px solid var(--line);
 }
+/* Le seuil porte son nom : sans lui, le bandeau n'est qu'un trait. */
+.scene.scene :global(.seuil3d__label) { display: block; }
+/* La place vide reste vide : pas de tiret qui passerait pour un nom. */
+.scene :global(.slot3d__tick) { visibility: hidden; }
 
 .text {
   display: flex;

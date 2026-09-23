@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { formatSerial, formatStockCode } from '@/lib/plate-stock';
 import type { UnassignedStockPlate } from '@/server/plate-stock';
 import { FloorScene } from '@/components/objects/FloorScene';
+import { Wordmark } from '@/components/Wordmark';
 import clientStyles from './client.module.css';
 import styles from './unassigned.module.css';
 
@@ -27,12 +28,20 @@ export function UnassignedPlate({
       <span className={`floor-marks ${clientStyles.sideMarks}`} aria-hidden="true" />
       <div className={`client-shell ${clientStyles.inner}`}>
         <div className={styles.wrap}>
+          {/* La marque en haut, comme sur la 404 et l'écran TV. */}
+          <div className={styles.bar}>
+            <Link href="/" aria-label="Rangvia" className={styles.home}><Wordmark /></Link>
+          </div>
+
           <div className={styles.group}>
             {/* Le seuil est là, la file pas encore : une seule place, vide
-                (ou tombée, si la plaque est retirée du service). */}
+                (ou tombée, si la plaque est retirée du service). Pas de
+                numéros au sol : il n'y a personne à compter. */}
             <FloorScene
               size="sm"
               className={styles.scene}
+              seuil="Comptoir"
+              positions={false}
               slats={[{ id: 'place', state: voided ? 'fallen' : 'ghost' }]}
             />
 

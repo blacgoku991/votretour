@@ -27,9 +27,33 @@ import styles from './client.module.css';
 
 type Phase = 'join' | 'queued' | 'turn' | 'done' | 'closed';
 
+/**
+ * File « par professionnel » : qui peut la prendre, lu au rendu (même
+ * règle que join_queue). null : aucune condition sur les professionnels.
+ */
+export interface StaffGate {
+  /** Au moins un professionnel actif, qui accepte la file, hors pause. */
+  autoAssign: boolean;
+  /** Professionnels qu’un choix explicite peut désigner. */
+  eligibleIds: string[];
+}
+
+/** Les messages du serveur, à la typographie de l’écran. */
+const typo = (message: string) => message.replace(/'/g, '’');
+
+/** Monogramme : les deux premiers mots en lettres du nom, jamais un chiffre. */
+function monogram(name: string): string {
+  const brand = name.split(/\s[—–-]\s/)[0] ?? name;
+  const words = brand.split(/\s+/).filter((w) => /^\p{L}/u.test(w));
+  if (words.length >= 2) return (words[0]!.charAt(0) + words[1]!.charAt(0)).toUpperCase();
+  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
+  return initials(name);
+}
+
 interface Props {
   entryPoint: EntryPoint;
   initialTicket: TicketState | null;
+  staffGate?: StaffGate | null;
   source: 'qr' | 'nfc' | 'appclip' | 'link';
   vapidPublicKey: string | null;
   activityLabel: string | null;
@@ -58,6 +82,7 @@ function phaseFor(ticket: TicketState | null): Phase {
 export function ClientExperience({
   entryPoint,
   initialTicket,
+  staffGate = null,
   source,
   vapidPublicKey,
   activityLabel,
@@ -165,7 +190,7 @@ export function ClientExperience({
           | { ok: false; error: string };
 
         if (!payload.ok) {
-          setError(payload.error);
+          setError(typo(payload.error));
           return;
         }
         await refetch();
@@ -194,13 +219,13 @@ export function ClientExperience({
             | { ok: false; error: string };
 
           if (!payload.ok) {
-            setError(payload.error);
+            setError(typo(payload.error));
             return;
           }
           setTicket(payload.data.ticket);
           if (action === 'leave') setTicket(null);
         } catch {
-          setError("L'action n'a pas pu être enregistrée. Réessayez.");
+          setError('L’action n’a pas pu être enregistrée. Réessayez.');
         } finally {
           setBusy(false);
         }
@@ -221,6 +246,16 @@ export function ClientExperience({
     if (phase === 'join') setSawJoin(true);
   }, [phase]);
 
+  // File par professionnel sans personne pour la prendre : on le dit
+  // AVANT le bouton (même règle que le serveur, voir page.tsx).
+  const chosenStaff = entryPoint.plate?.staffId ?? staffId;
+  const noStaff = Boolean(
+    staffGate
+    && !staffGate.autoAssign
+    && !(chosenStaff && staffGate.eligibleIds.includes(chosenStaff)),
+  );
+  const queueStatus = ticket?.queue.status ?? entryPoint.queue?.status ?? 'closed';
+
   const locationName = ticket?.location.name ?? entryPoint.location.name;
   const subtitle = [
     activityLabel,
@@ -234,7 +269,11 @@ export function ClientExperience({
         subtitle={subtitle}
         logoUrl={eventTheme?.logoUrl ?? entryPoint.location.logoUrl}
         connection={connection}
-        queueStatus={ticket?.queue.status ?? entryPoint.queue?.status ?? 'closed'}
+        queueStatus={
+          phase === 'join' && queueStatus === 'open' && staffGate && !staffGate.autoAssign
+            ? 'no_staff'
+            : queueStatus
+        }
         inQueue={phase === 'queued' || phase === 'turn'}
       />
 
@@ -258,6 +297,8 @@ export function ClientExperience({
           onName={setName}
           staffId={staffId}
           onStaff={setStaffId}
+          staffGate={staffGate}
+          noStaff={noStaff}
           serviceId={serviceId}
           onService={setServiceId}
           onJoin={join}
@@ -319,7 +360,7 @@ function Header({
       : connection === 'offline' ? 'pip pip--off'
       : 'pip pip--warn'
     : queueStatus === 'open' ? 'pip pip--live'
-      : queueStatus === 'paused' ? 'pip pip--warn'
+      : queueStatus === 'paused' || queueStatus === 'no_staff' ? 'pip pip--warn'
       : 'pip pip--off';
   const label = inQueue ? connectionLabel : queueLabel(queueStatus);
 
@@ -329,7 +370,7 @@ function Header({
         // eslint-disable-next-line @next/next/no-img-element
         <img src={logoUrl} alt="" className={styles.logo} />
       ) : (
-        <span className={styles.logoFallback} aria-hidden="true">{initials(name)}</span>
+        <span className={styles.logoFallback} aria-hidden="true">{monogram(name)}</span>
       )}
       <div className={styles.identityText}>
         <h1 className={styles.placeName}>{name}</h1>
@@ -346,6 +387,7 @@ function Header({
 function queueLabel(status: string): string {
   if (status === 'open') return 'File ouverte';
   if (status === 'paused') return 'En pause';
+  if (status === 'no_staff') return 'Personne de disponible';
   return 'File fermée';
 }
 
@@ -379,7 +421,7 @@ function CounterLine() {
    ================================================================== */
 
 function JoinPanel({
-  entryPoint, waitingCount, name, onName, staffId, onStaff,
+  entryPoint, waitingCount, name, onName, staffId, onStaff, staffGate, noStaff,
   serviceId, onService, onJoin, busy, error,
 }: {
   entryPoint: EntryPoint;
@@ -388,6 +430,8 @@ function JoinPanel({
   onName: (v: string) => void;
   staffId: string | null;
   onStaff: (v: string | null) => void;
+  staffGate: StaffGate | null;
+  noStaff: boolean;
   serviceId: string | null;
   onService: (v: string | null) => void;
   onJoin: () => void;
@@ -395,7 +439,7 @@ function JoinPanel({
   error: string | null;
 }) {
   const queue = entryPoint.queue;
-  const closed = !queue || queue.status !== 'open';
+  const queueClosed = !queue || queue.status !== 'open';
   const askName = queue?.askClientName ?? true;
   const nameRequired = queue?.clientNameRequired ?? false;
   // Une plaque dédiée à un professionnel impose déjà le choix.
@@ -405,12 +449,21 @@ function JoinPanel({
     (queue?.allowStaffChoice || queue?.mode === 'per_staff') &&
     entryPoint.staff.length > 0;
   const showServices = queue?.allowServiceChoice && entryPoint.services.length > 0;
+  // Personne pour prendre la file : sans professionnel à choisir, rien ne
+  // peut aboutir, l'écran se comporte comme une file fermée. Avec des
+  // professionnels à choisir (tous en pause), seul un choix explicite
+  // permet de s'inscrire.
+  const nobodyFree = Boolean(staffGate && !staffGate.autoAssign);
+  const blocked = !queueClosed && noStaff && !showStaff;
+  const closed = queueClosed || blocked;
 
   const unit = waitingCount <= 1 ? 'personne dans la file' : 'personnes dans la file';
   const typed = name.trim();
   const mapsHref = useMemo(() => directionsUrl(entryPoint.location), [entryPoint.location]);
   const closedMessage = !closed
     ? null
+    : blocked
+      ? 'Personne ne peut prendre la file pour le moment. Présentez-vous directement au comptoir.'
     : queue?.status === 'paused'
       ? queue.pauseReason
         ? `En pause : ${queue.pauseReason}`
@@ -423,7 +476,9 @@ function JoinPanel({
         {closed && waitingCount === 0 ? (
           // Fermée ou en pause, personne : on dit l'état, pas « 0 ».
           <h2 className={styles.closedHead}>
-            {queue?.status === 'paused' ? 'File en pause' : 'File fermée'}
+            {blocked
+              ? 'Aucun professionnel disponible'
+              : queue?.status === 'paused' ? 'File en pause' : 'File fermée'}
           </h2>
         ) : (
           <div className={styles.countRow}>
@@ -435,8 +490,14 @@ function JoinPanel({
             <CountUnit count={waitingCount} rest="dans la file" />
           </div>
         )}
-        {waitingCount === 0 && !closed && (
+        {waitingCount === 0 && !closed && !nobodyFree && (
           <p className={styles.countNote}>Vous serez le prochain.</p>
+        )}
+        {!closed && nobodyFree && (
+          <p className={styles.closedMsg}>
+            Tous les professionnels sont en pause. Choisissez avec qui patienter,
+            ou présentez-vous au comptoir.
+          </p>
         )}
         {closedMessage && <p className={styles.closedMsg}>{closedMessage}</p>}
       </section>
@@ -453,16 +514,16 @@ function JoinPanel({
       ) : (
         // L'aperçu du Rang, couché en légère perspective (statique) : la
         // file telle qu'elle est, et au bout, votre place. Au-delà de
-        // PREVIEW_SLATS personnes, une coupure du rail dit qu'il y en a
-        // davantage que de lattes dessinées.
+        // PREVIEW_SLATS personnes, une coupure du rail porte le compte des
+        // personnes non dessinées : lattes + coupure = le chiffre du volet.
         <div className={styles.preview} aria-hidden="true">
           <div className={styles.previewPlane}>
             <CounterLine />
             {waitingCount > PREVIEW_SLATS && (
               <div className={styles.railCut}>
-                <span />
-                <span />
-                <span />
+                <span className={styles.railCutLabel}>
+                  + {waitingCount - (PREVIEW_SLATS - 1)} personnes
+                </span>
               </div>
             )}
             <Rang
@@ -518,7 +579,7 @@ function JoinPanel({
                 value={name}
                 onChange={(e) => onName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (!nameRequired || name.trim())) onJoin();
+                  if (e.key === 'Enter' && !noStaff && (!nameRequired || name.trim())) onJoin();
                 }}
               />
               <p id="prenom-aide" className="hint">Pour vous appeler au comptoir</p>
@@ -531,12 +592,15 @@ function JoinPanel({
               <div className={styles.chooser}>
                 <button
                   type="button"
-                  className={`${styles.choice} ${staffId === null ? styles.choiceActive : ''}`}
+                  className={`${styles.choice} ${staffId === null && !nobodyFree ? styles.choiceActive : ''}`}
                   onClick={() => onStaff(null)}
-                  aria-pressed={staffId === null}
+                  aria-pressed={staffId === null && !nobodyFree}
+                  disabled={nobodyFree}
                 >
                   <span className={styles.choiceName}>Peu importe</span>
-                  <span className={styles.choiceMeta}>Le prochain disponible</span>
+                  <span className={styles.choiceMeta}>
+                    {nobodyFree ? 'Personne de libre' : 'Le prochain disponible'}
+                  </span>
                 </button>
                 {entryPoint.staff.map((member) => (
                   <button
@@ -594,14 +658,14 @@ function JoinPanel({
               type="button"
               className="btn btn--signal btn--hero"
               onClick={onJoin}
-              disabled={busy || (nameRequired && !name.trim())}
+              disabled={busy || noStaff || (nameRequired && !name.trim())}
             >
-              {busy ? 'Un instant…' : 'Rejoindre la file'}
+              {busy ? 'Un instant…' : noStaff ? 'Choisissez avec qui' : 'Rejoindre la file'}
             </button>
           </div>
 
           <p className={styles.reassure}>
-            Pas de compte, pas d&apos;application, pas de SMS.
+            Pas de compte, pas d’application, pas de SMS.
           </p>
         </div>
       )}
@@ -720,7 +784,7 @@ function QueuedPanel({
         {ahead === 1 && !isTurn && (
           <div className={`banner banner--warn ${styles.soon}`} role="status">
             <span className={styles.soonMark} aria-hidden="true" />
-            <span>Plus qu&apos;une personne devant vous. Commencez à revenir.</span>
+            <span>Plus qu’une personne devant vous. Commencez à revenir.</span>
           </div>
         )}
 
@@ -736,9 +800,16 @@ function QueuedPanel({
               <span>{error}</span>
             </div>
           )}
+          {/* « Je suis de retour » ne devient l'action principale qu'au
+              moment de revenir (plus qu'une personne devant) : juste après
+              l'inscription, le client n'est parti nulle part. */}
           <button
             type="button"
-            className={isReturning ? 'btn btn--ghost btn--hero' : 'btn btn--signal btn--hero'}
+            className={
+              isReturning ? 'btn btn--ghost btn--hero'
+              : ahead <= 1 ? 'btn btn--signal btn--hero'
+              : 'btn btn--ghost btn--block'
+            }
             onClick={() => onAction('returning')}
             disabled={busy || isReturning}
           >
@@ -779,7 +850,7 @@ function QueuedPanel({
         >
           <a className="btn btn--solid btn--hero" href={mapsHref} target="_blank" rel="noreferrer">
             <PinIcon />
-            Ouvrir l&apos;itinéraire
+            Ouvrir l’itinéraire
           </a>
           <div className={styles.curtainRow}>
             {ticket.location.phone && (
@@ -933,7 +1004,7 @@ function NotificationPanel({
         <div className={styles.noticeText}>
           <p className={styles.noticeTitle}>Vous serez prévenu</p>
           <p className={styles.noticeBody}>
-            Une notification arrivera quand il ne restera plus qu&apos;une personne devant vous.
+            Une notification arrivera quand il ne restera plus qu’une personne devant vous.
           </p>
         </div>
       </div>
@@ -952,7 +1023,7 @@ function NotificationPanel({
           </p>
           <p className={styles.noticeBody}>
             {reason === 'ios_needs_pwa'
-              ? "Sur iPhone, approchez votre téléphone de la plaque : l'App Clip vous préviendra. Sinon, gardez cette page ouverte."
+              ? "Sur iPhone, approchez votre téléphone de la plaque : l’App Clip vous préviendra. Sinon, gardez cette page ouverte."
               : state === 'denied'
                 ? 'Gardez cette page ouverte : votre position se met à jour toute seule.'
                 : 'Gardez un œil sur cette page : votre position se met à jour toute seule.'}
@@ -1035,7 +1106,7 @@ function DonePanel({ ticket, onRejoin }: { ticket: TicketState; onRejoin: () => 
 function ClosedPanel({ ticket, onRejoin }: { ticket: TicketState; onRejoin: () => void }) {
   const status = ticket.entry.status;
   const message =
-    status === 'absent' ? "Vous avez été noté absent. Présentez-vous au comptoir pour reprendre votre place."
+    status === 'absent' ? 'Vous avez été noté absent. Présentez-vous au comptoir pour reprendre votre place.'
     : status === 'skipped' ? 'Vous avez été retiré de la file par le professionnel.'
     : status === 'expired' ? 'Votre place a expiré.'
     : 'Vous avez quitté la file.';

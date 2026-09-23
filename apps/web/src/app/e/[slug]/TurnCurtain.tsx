@@ -89,7 +89,7 @@ export function TurnCurtain({
         <div className={styles.curtainMain} role={animate ? undefined : 'alert'}>
           <Seuil tone="ink" draw label="Comptoir" className={styles.curtainSeuil}>
             {clientName && <p className={styles.turnName}>{clientName}</p>}
-            <p className={styles.turnKicker}>C&apos;est</p>
+            <p className={styles.turnKicker}>C’est</p>
             <h2 ref={titleRef} tabIndex={-1} className={styles.turnTitle}>votre tour</h2>
             <p className={styles.turnHint}>Présentez-vous au comptoir</p>
           </Seuil>

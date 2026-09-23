@@ -317,9 +317,11 @@
    --------------------------------------------------------------------- */
 .preview {
   perspective: 700px;
-  /* La base de l'aperçu vient vers vous (≈ ×1,19) : la plaque est plus
-     étroite que la colonne pour que le bas tienne dans la gouttière. */
-  padding-inline: 8%;
+  /* La base de l'aperçu vient vers vous (jusqu'à ≈ ×1,3 sous « Votre
+     place ») : la plaque est plus étroite que la colonne pour que la
+     dernière place au sol tienne entière dans la colonne (mesuré à
+     390 px : 7 px de marge à droite). */
+  padding-inline: 10%;
   overflow-x: clip;
 }
 /* File en pause ou fermée : l'aperçu reste, éteint. */
@@ -371,13 +373,12 @@
 .floorPlace:nth-child(n + 4) { opacity: 0.35; }
 
 /* Plus de monde que de lattes dessinées : le rail se coupe en tirets et
-   trois lattes tassées disent « il y en a d'autres », sans texte en 3D. */
+   une étiquette tassée porte le compte de celles qu'on ne dessine pas
+   (lattes dessinées + étiquette = le chiffre du volet). */
 .railCut {
   position: relative;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 5px;
+  align-items: center;
   height: 40px;
   padding-left: var(--sp-5);
 }
@@ -390,14 +391,28 @@
   width: 0;
   border-left: var(--rail-w) dashed var(--rail);
 }
-.railCut span {
-  height: 3px;
-  border-radius: 3px;
-  background: var(--rail);
+.railCutLabel {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding-inline: 12px;
+  border-radius: var(--r-slat);
+  border: 1px dashed var(--line-strong);
+  font-variation-settings: 'wdth' 110, 'wght' 720;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
-.railCut span:nth-child(1) { width: 38%; opacity: 0.5; }
-.railCut span:nth-child(2) { width: 52%; opacity: 0.7; }
-.railCut span:nth-child(3) { width: 66%; }
+
+/* Lattes anonymes : vides. Un tiret sur chacune passait pour un contenu
+   factice ; la latte de tête garde sa teinte propre. */
+.previewPlane :global(.rang > .slat:not(.slat--ghost):not(.slat--self)) > span,
+.rangBlock :global(.rang > .slat:not(.slat--ghost):not(.slat--self)) > span {
+  visibility: hidden;
+}
 
 /* File fermée ou en pause : le rail seul, sans place à prendre. */
 .railOnly {
@@ -533,6 +548,13 @@
   transition: transform var(--dur-1) var(--ease-out);
 }
 .choice:active { transform: scale(0.98); }
+/* « Peu importe » quand personne n'est libre : visible, mais éteint. */
+.choice:disabled {
+  opacity: 0.5;
+  border-style: dashed;
+  cursor: not-allowed;
+}
+.choice:disabled:active { transform: none; }
 
 .choiceActive {
   border-color: var(--accent);
