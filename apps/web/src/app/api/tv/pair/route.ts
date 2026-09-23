@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       httpOnly: true,
       secure: env.isProduction,
       sameSite: 'lax',
-      path: '/tv',
+      path: '/',
       maxAge: 60 * 60 * 24 * 365,
     });
 
