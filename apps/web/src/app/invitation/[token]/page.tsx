@@ -5,7 +5,8 @@ import { getSessionUser } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { hashInviteToken } from '@/lib/crypto';
 import { audit } from '@/server/audit';
-import { Wordmark } from '@/components/Wordmark';
+import { AuthFrame } from '../../(auth)/AuthFrame';
+import { FloorPanel } from '../../(auth)/panels';
 import styles from '../../(auth)/auth.module.css';
 
 export const metadata: Metadata = { title: 'Invitation', robots: { index: false } };
@@ -63,18 +64,32 @@ export default async function InvitePage({
   })();
 
   if (problem || !invite || !organization) {
+    // Personne n'attend à cette place : une latte fantôme.
     return (
-      <main className={styles.screen}>
-        <span className={styles.rails} aria-hidden="true" />
-        <div className={styles.panel}>
-          <Wordmark />
-          <div className={styles.card}>
-            <h1 className="t-title">Invitation indisponible</h1>
-            <p className="t-small t-muted">{problem}</p>
-            <Link href="/app" className="btn btn--ghost">Aller à mon espace</Link>
-          </div>
+      <AuthFrame
+        switchHref="/app"
+        switchLabel="Mon espace"
+        band={[
+          { id: 'i0', state: 'wait' },
+          { id: 'i1', state: 'wait' },
+          { id: 'i2', state: 'ghost' },
+        ]}
+        aside={
+          <FloorPanel
+            slats={[
+              { id: 'i0', state: 'serving' },
+              { id: 'i1', state: 'wait' },
+              { id: 'i2', state: 'ghost', label: 'Place libre' },
+            ]}
+          />
+        }
+      >
+        <div className={styles.head}>
+          <h1 className="t-display">Invitation indisponible</h1>
+          <p className={styles.problem}>{problem}</p>
         </div>
-      </main>
+        <Link href="/app" className="btn btn--ghost btn--lg btn--block">Aller à mon espace</Link>
+      </AuthFrame>
     );
   }
 
@@ -97,23 +112,33 @@ export default async function InvitePage({
   });
 
   return (
-    <main className={styles.screen}>
-      <span className={styles.rails} aria-hidden="true" />
-      <div className={`${styles.panel} fade-in`}>
-        <Wordmark />
-        <div className={styles.card}>
-          <div className={styles.head}>
-            <p className="t-label">Invitation acceptée</p>
-            <h1 className="t-title">Bienvenue chez {organization.name}</h1>
-            <p className="t-small t-muted">
-              Vous y êtes {ROLE_LABEL[invite.role] ?? invite.role}.
-            </p>
-          </div>
-          <Link href={`/app/${organization.slug}/file`} className="btn btn--signal btn--lg">
-            Ouvrir la file
-          </Link>
-        </div>
+    <AuthFrame
+      band={[
+        { id: 'a0', state: 'serving' },
+        { id: 'a1', state: 'wait' },
+        { id: 'a2', state: 'self' },
+      ]}
+      aside={
+        <FloorPanel
+          spill
+          slats={[
+            { id: 'a0', state: 'serving' },
+            { id: 'a1', state: 'wait' },
+            { id: 'a2', state: 'self', label: 'Vous', hint: organization.name },
+          ]}
+        />
+      }
+    >
+      <div className={styles.head}>
+        <p className={`t-label ${styles.accepted}`}>Invitation acceptée</p>
+        <h1 className="t-display">Bienvenue chez {organization.name}</h1>
+        <p className={`t-lead ${styles.lead}`}>
+          Vous y êtes {ROLE_LABEL[invite.role] ?? invite.role}.
+        </p>
       </div>
-    </main>
+      <Link href={`/app/${organization.slug}/file`} className="btn btn--signal btn--lg btn--block">
+        Ouvrir la file
+      </Link>
+    </AuthFrame>
   );
 }

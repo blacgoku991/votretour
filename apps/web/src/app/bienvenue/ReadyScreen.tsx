@@ -1,0 +1,128 @@
+'use client';
+
+import { useState, useTransition } from 'react';
+import Link from 'next/link';
+import { Wordmark } from '@/components/Wordmark';
+import { Plaque } from '@/components/objects/Plaque';
+import { Seuil } from '@/components/objects/Seuil';
+import { openQueueNow, type OnboardingResult } from '@/server/actions/onboarding';
+import styles from './onboarding.module.css';
+
+/**
+ * ÉCRAN FINAL : « Votre file est prête ».
+ *
+ * Sur le sol (--floor), le Seuil « Comptoir » se dessine et encadre la
+ * vraie plaque de l'établissement (vrai QR). La plaque entre une fois, de
+ * couchée (rotateX 70°) à posée (10°, légèrement tournée), en 700 ms.
+ * Le marquage au sol reste AUTOUR du seuil, jamais sous un texte.
+ *
+ * Logique inchangée : ouverture de la file, copie du lien, QR en PNG,
+ * affiche, test comme un client, tableau de bord.
+ */
+
+const PLAQUE_POSE = {
+  ['--plaque-rx' as string]: '10deg',
+  ['--plaque-ry' as string]: '0deg',
+  ['--plaque-rz' as string]: '-3deg',
+} as React.CSSProperties;
+
+export function ReadyScreen({ result }: { result: OnboardingResult }) {
+  const [opened, setOpened] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  const qr = (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={`/api/p/${result.plateCode}?format=svg`} alt="QR code de votre file" />
+  );
+
+  return (
+    <main className={styles.ready}>
+      <header className={styles.readyBar}>
+        <Wordmark />
+      </header>
+
+      <div className={styles.readyStage}>
+        <Seuil draw label="Comptoir" className={styles.readySeuil}>
+          <div className={styles.plaqueEntry}>
+            <Plaque
+              width={240}
+              pose="none"
+              qr={qr}
+              name={result.locationName}
+              className={styles.plaqueWide}
+              style={PLAQUE_POSE}
+            />
+            <Plaque
+              width={200}
+              pose="none"
+              qr={qr}
+              name={result.locationName}
+              className={styles.plaqueNarrow}
+              style={PLAQUE_POSE}
+            />
+          </div>
+        </Seuil>
+        {/* Le sol devant le comptoir : le marquage commence au seuil. */}
+        <div className={styles.readyFloor} aria-hidden="true">
+          <span className="floor-marks" />
+        </div>
+      </div>
+
+      <div className={styles.readyText}>
+        <p className={`t-label ${styles.readyKicker}`}>C&apos;est prêt</p>
+        <h1 className={`t-display ${styles.readyTitle}`}>Votre file est prête</h1>
+        <p className={`t-lead ${styles.readyLead}`}>
+          {result.locationName} peut recevoir ses premiers clients. Posez ce QR au
+          comptoir, ou écrivez ce lien sur une plaque NFC.
+        </p>
+
+        <code className={styles.url}>{result.plateUrl}</code>
+
+        <div className={styles.readyActions}>
+          {!opened ? (
+            <button type="button" className="btn btn--signal btn--hero" disabled={pending}
+              onClick={() => startTransition(async () => {
+                const response = await openQueueNow(result.queueId);
+                if (response.ok) setOpened(true);
+              })}>
+              {pending ? 'Ouverture…' : 'Ouvrir la file maintenant'}
+            </button>
+          ) : (
+            <div className={`banner ${styles.openBanner}`} role="status">
+              <span className="pip pip--live" />
+              <span>La file est ouverte. Vos clients peuvent scanner.</span>
+            </div>
+          )}
+
+          <a className="btn btn--outline-signal btn--lg" href={result.plateUrl} target="_blank" rel="noreferrer">
+            Tester comme un client
+          </a>
+
+          <div className={styles.tools}>
+            <button type="button" className="btn btn--ghost btn--sm"
+              onClick={async () => {
+                await navigator.clipboard.writeText(result.plateUrl);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1800);
+              }}>
+              {copied ? 'Copié' : 'Copier le lien'}
+            </button>
+            <a className="btn btn--ghost btn--sm" download
+              href={`/api/p/${result.plateCode}?format=png&size=1200`}>
+              QR en PNG
+            </a>
+            <a className="btn btn--ghost btn--sm" target="_blank" rel="noreferrer"
+              href={`/api/p/${result.plateCode}?format=affiche`}>
+              Affiche à imprimer
+            </a>
+          </div>
+
+          <Link className="btn btn--quiet" href={`/app/${result.organizationSlug}/file`}>
+            Aller au tableau de bord
+          </Link>
+        </div>
+      </div>
+    </main>
+  );
+}

@@ -1,19 +1,11 @@
-import Link from 'next/link';
-import { Wordmark } from '@/components/Wordmark';
-import styles from './auth.module.css';
-
+/**
+ * Groupe (auth) : connexion et inscription.
+ *
+ * Le gabarit à écran partagé est porté par <AuthFrame> (./AuthFrame.tsx),
+ * que chaque page remplit avec son propre panneau (sol en relief pour la
+ * connexion, parcours en trois lattes pour l'inscription) et son lien de
+ * bascule. L'invitation réutilise le même gabarit.
+ */
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <main className={styles.screen}>
-      {/* Le motif de lattes, très en retrait : on reconnaît le produit
-          avant même d'avoir vu une file. */}
-      <span className={styles.rails} aria-hidden="true" />
-      <div className={styles.panel}>
-        <Link href="/" className={styles.brand}>
-          <Wordmark />
-        </Link>
-        {children}
-      </div>
-    </main>
-  );
+  return children;
 }

@@ -3,6 +3,8 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/browser';
+import { PasswordField } from '../PasswordField';
+import styles from '../auth.module.css';
 
 /**
  * L'authentification professionnelle passe par Supabase Auth côté
@@ -40,35 +42,38 @@ export function LoginForm({ next }: { next: string | null }) {
   };
 
   return (
-    <form onSubmit={submit} className="stack g4" noValidate>
-      {error && (
-        <div className="banner banner--error" role="alert">
-          <span>{error}</span>
+    <form onSubmit={submit} className={styles.form} noValidate>
+      <div className="field-rail">
+        <div className="field">
+          <label htmlFor="email">Adresse e-mail</label>
+          <input
+            id="email" className={`input ${styles.input}`} type="email" required
+            autoComplete="email" inputMode="email" enterKeyHint="next"
+            autoCapitalize="none" spellCheck={false}
+            value={email} onChange={(e) => setEmail(e.target.value)}
+            placeholder="vous@votre-salon.fr"
+          />
         </div>
-      )}
 
-      <div className="field">
-        <label htmlFor="email">Adresse e-mail</label>
-        <input
-          id="email" className="input" type="email" required
-          autoComplete="email" inputMode="email" enterKeyHint="next"
-          value={email} onChange={(e) => setEmail(e.target.value)}
-          placeholder="vous@votre-salon.fr"
+        <PasswordField
+          id="password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="current-password"
+          enterKeyHint="go"
         />
       </div>
 
-      <div className="field">
-        <label htmlFor="password">Mot de passe</label>
-        <input
-          id="password" className="input" type="password" required
-          autoComplete="current-password" enterKeyHint="go"
-          value={password} onChange={(e) => setPassword(e.target.value)}
-        />
+      <div className={styles.submit}>
+        {error && (
+          <div className="banner banner--error" role="alert">
+            <span>{error}</span>
+          </div>
+        )}
+        <button type="submit" className="btn btn--signal btn--lg btn--block" disabled={pending}>
+          {pending ? 'Connexion…' : 'Se connecter'}
+        </button>
       </div>
-
-      <button type="submit" className="btn btn--signal btn--lg btn--block" disabled={pending}>
-        {pending ? 'Connexion…' : 'Se connecter'}
-      </button>
     </form>
   );
 }

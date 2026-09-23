@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import Link from 'next/link';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { Wordmark } from '@/components/Wordmark';
+import { TimeField } from '@/components/TimeField';
+import { useReducedMotion } from '@/components/motion/useMotionPreference';
 import { ACTIVITY_OPTIONS } from '@/lib/copy';
 import { WEEKDAYS } from '@/lib/format';
-import { completeOnboarding, openQueueNow, type OnboardingResult } from '@/server/actions/onboarding';
+import { completeOnboarding, type OnboardingResult } from '@/server/actions/onboarding';
+import { RailNote, StepBand, StepRail } from './StepRail';
+import { ReadyScreen } from './ReadyScreen';
 import styles from './onboarding.module.css';
 
 /**
@@ -16,6 +19,10 @@ import styles from './onboarding.module.css';
  * seule décision réellement structurante (file commune ou file par
  * professionnel), et un écran final qui donne le QR, le lien, et de quoi
  * tester immédiatement comme un client.
+ *
+ * Habillage « Le Rang en relief » : la progression est un rail de lattes
+ * (StepRail), les étapes glissent de 16 px en 240 ms, les horaires sont en
+ * 24 h (TimeField, « 09 h 00 ») et envoient toujours « HH:MM ».
  */
 
 type Step = 'place' | 'team' | 'queue' | 'review' | 'hours' | 'done';
@@ -42,6 +49,9 @@ const DEFAULT_HOURS: Hours[] = WEEKDAYS.map((_, index) => ({
   closesAt: '19:00',
 }));
 
+/** Durée de la sortie d'une étape (l'entrée, en CSS, dure 240 ms). */
+const LEAVE_MS = 160;
+
 export function OnboardingFlow({ userName }: { userName: string | null }) {
   const [step, setStep] = useState<Step>('place');
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +72,39 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
   const [staffNames, setStaffNames] = useState<string[]>(['']);
   const [hours, setHours] = useState<Hours[]>(DEFAULT_HOURS);
 
+  // Transition entre étapes : sortie (-16 px), puis entrée (+16 px → 0).
+  const reduced = useReducedMotion();
+  const [leaving, setLeaving] = useState(false);
+  const [direction, setDirection] = useState<1 | -1>(1);
+  const leaveTimer = useRef<number | null>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const moved = useRef(false);
+
+  useEffect(() => () => {
+    if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current);
+  }, []);
+
+  // Après un changement d'étape (pas au premier affichage), le focus va au
+  // titre : le lecteur d'écran annonce la nouvelle étape.
+  useEffect(() => {
+    if (!moved.current) return;
+    titleRef.current?.focus();
+  }, [step]);
+
   const index = STEPS.findIndex((s) => s.id === step);
+
+  const goTo = (target: Step, dir: 1 | -1) => {
+    if (leaving) return;
+    setDirection(dir);
+    moved.current = true;
+    if (reduced) { setStep(target); return; }
+    setLeaving(true);
+    leaveTimer.current = window.setTimeout(() => {
+      leaveTimer.current = null;
+      setStep(target);
+      setLeaving(false);
+    }, LEAVE_MS);
+  };
 
   const submit = () => {
     setError(null);
@@ -97,134 +139,158 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
     return <ReadyScreen result={result} />;
   }
 
+  const greeting = `${userName ? `Bonjour ${userName.split(' ')[0]}.` : 'Bienvenue.'} Créons votre file.`;
+  const kicker = (
+    <p className="t-kicker">
+      <span className="t-kicker__num">{String(index + 1).padStart(2, '0')}</span>
+      <span className="sr-only">{`Étape ${index + 1}`}</span>
+      {`sur ${String(STEPS.length).padStart(2, '0')} · ${STEPS[index]?.label ?? ''}`}
+    </p>
+  );
+  const title = (text: React.ReactNode) => (
+    <h1 ref={titleRef} tabIndex={-1} className={`t-title ${styles.title}`}>{text}</h1>
+  );
+
   return (
     <main className={styles.screen}>
-      <span className={styles.rails} aria-hidden="true" />
-
-      <div className={styles.panel}>
-        <header className={styles.head}>
+      <aside className={styles.aside}>
+        <div className={styles.asideInner}>
           <Wordmark />
-          <p className="t-small t-muted">
-            {userName ? `Bonjour ${userName.split(' ')[0]}.` : 'Bienvenue.'} Créons votre file.
-          </p>
-        </header>
-
-        {/* La progression est dessinée comme la file elle-même : des
-            lattes qui se remplissent. */}
-        <div className={styles.progress} aria-hidden="true">
-          {STEPS.map((s, i) => (
-            <span
-              key={s.id}
-              className={`${styles.progressSlat} ${i <= index ? styles.progressSlatDone : ''}`}
-            />
-          ))}
+          <StepRail steps={STEPS} index={index} greeting={greeting} />
+          <RailNote />
         </div>
-        <p className="t-label">{`Étape ${index + 1} sur ${STEPS.length} · ${STEPS[index]?.label ?? ''}`}</p>
+      </aside>
 
-        {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
+      <header className={styles.mobileHead}>
+        <StepBand steps={STEPS} index={index} />
+      </header>
 
-        <div className={styles.card}>
+      <div className={styles.main}>
+        <div
+          key={step}
+          className={styles.pane}
+          data-leaving={leaving ? '1' : undefined}
+          data-dir={direction}
+        >
+          <p className={styles.mobileGreeting}>{greeting}</p>
+
           {step === 'place' && (
-            <div className="stack g4">
-              <div>
-                <h1 className="t-title">Votre commerce</h1>
-                <p className="t-small t-muted">C&apos;est le nom que verront vos clients.</p>
+            <div className={styles.stepBody}>
+              <div className={styles.stepHead}>
+                {kicker}
+                {title('Votre commerce')}
+                <p className={styles.lead}>C&apos;est le nom que verront vos clients.</p>
               </div>
-              <div className="field">
-                <label htmlFor="org">Nom du commerce</label>
-                <input id="org" className="input" autoFocus value={form.organizationName}
-                  placeholder="Barber House"
-                  onChange={(e) => setForm({ ...form, organizationName: e.target.value })} />
-              </div>
-              <div className="field">
-                <label htmlFor="activity">Activité</label>
-                <select id="activity" className="select" value={form.activity}
-                  onChange={(e) => setForm({ ...form, activity: e.target.value })}>
-                  {ACTIVITY_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="place">Nom de l&apos;établissement</label>
-                <input id="place" className="input" value={form.locationName}
-                  placeholder="Barber House — Paris 11"
-                  onChange={(e) => setForm({ ...form, locationName: e.target.value })} />
-                <p className="hint">Utile si vous avez plusieurs adresses. Sinon, laissez vide.</p>
-              </div>
-              <div className={styles.grid2}>
+              <div className="field-rail">
                 <div className="field">
-                  <label htmlFor="addr">Adresse</label>
-                  <input id="addr" className="input" value={form.addressLine1}
-                    onChange={(e) => setForm({ ...form, addressLine1: e.target.value })} />
+                  <label htmlFor="org">Nom du commerce</label>
+                  <input id="org" className={`input ${styles.input}`} autoFocus value={form.organizationName}
+                    placeholder="Barber House" autoComplete="organization"
+                    onChange={(e) => setForm({ ...form, organizationName: e.target.value })} />
                 </div>
                 <div className="field">
-                  <label htmlFor="cp">Code postal</label>
-                  <input id="cp" className="input" value={form.postalCode}
-                    onChange={(e) => setForm({ ...form, postalCode: e.target.value })} />
+                  <label htmlFor="activity">Activité</label>
+                  <select id="activity" className={`select ${styles.input}`} value={form.activity}
+                    onChange={(e) => setForm({ ...form, activity: e.target.value })}>
+                    {ACTIVITY_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="field">
-                  <label htmlFor="ville">Ville</label>
-                  <input id="ville" className="input" value={form.city}
-                    onChange={(e) => setForm({ ...form, city: e.target.value })} />
+                  <label htmlFor="place">Nom de l&apos;établissement</label>
+                  <input id="place" className={`input ${styles.input}`} value={form.locationName}
+                    placeholder="Barber House — Paris 11" aria-describedby="place-aide"
+                    onChange={(e) => setForm({ ...form, locationName: e.target.value })} />
+                  <p className="hint" id="place-aide">Utile si vous avez plusieurs adresses. Sinon, laissez vide.</p>
                 </div>
-                <div className="field">
-                  <label htmlFor="tel">Téléphone</label>
-                  <input id="tel" className="input" type="tel" value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+                <div className={`field ${styles.addressField}`}>
+                  <span className={styles.groupLabel} aria-hidden="true">Coordonnées · facultatif</span>
+                  <div className={styles.grid2}>
+                    <div className="field">
+                      <label htmlFor="addr">Adresse</label>
+                      <input id="addr" className={`input ${styles.input}`} value={form.addressLine1}
+                        autoComplete="address-line1"
+                        onChange={(e) => setForm({ ...form, addressLine1: e.target.value })} />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="cp">Code postal</label>
+                      <input id="cp" className={`input ${styles.input}`} value={form.postalCode}
+                        autoComplete="postal-code" inputMode="numeric"
+                        onChange={(e) => setForm({ ...form, postalCode: e.target.value })} />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="ville">Ville</label>
+                      <input id="ville" className={`input ${styles.input}`} value={form.city}
+                        autoComplete="address-level2"
+                        onChange={(e) => setForm({ ...form, city: e.target.value })} />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="tel">Téléphone</label>
+                      <input id="tel" className={`input ${styles.input}`} type="tel" value={form.phone}
+                        autoComplete="tel"
+                        onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
           {step === 'team' && (
-            <div className="stack g4">
-              <div>
-                <h1 className="t-title">Qui travaille ici ?</h1>
-                <p className="t-small t-muted">
+            <div className={styles.stepBody}>
+              <div className={styles.stepHead}>
+                {kicker}
+                {title('Qui travaille ici ?')}
+                <p className={styles.lead}>
                   Un prénom suffit. Vous pourrez en ajouter à tout moment — et ils
                   n&apos;ont pas besoin de compte pour apparaître dans la file.
                 </p>
               </div>
-              <div className="stack g2">
+              <div className="field-rail">
                 {staffNames.map((name, i) => (
-                  <div key={i} className={styles.staffRow}>
-                    <input
-                      className="input"
-                      placeholder={i === 0 ? 'Vous' : `Professionnel ${i + 1}`}
-                      value={name}
-                      onChange={(e) => {
-                        const next = [...staffNames];
-                        next[i] = e.target.value;
-                        setStaffNames(next);
-                      }}
-                    />
-                    {staffNames.length > 1 && (
-                      <button type="button" className="btn btn--quiet btn--sm"
-                        onClick={() => setStaffNames(staffNames.filter((_, j) => j !== i))}>
-                        Retirer
-                      </button>
-                    )}
+                  <div key={i} className={`field ${styles.staffField}`}>
+                    <div className={styles.staffRow}>
+                      <input
+                        className={`input ${styles.input}`}
+                        aria-label={`Professionnel ${i + 1}`}
+                        placeholder={i === 0 ? 'Vous' : `Professionnel ${i + 1}`}
+                        value={name}
+                        onChange={(e) => {
+                          const next = [...staffNames];
+                          next[i] = e.target.value;
+                          setStaffNames(next);
+                        }}
+                      />
+                      {staffNames.length > 1 && (
+                        <button type="button" className="btn btn--quiet btn--sm"
+                          aria-label={`Retirer le professionnel ${i + 1}`}
+                          onClick={() => setStaffNames(staffNames.filter((_, j) => j !== i))}>
+                          Retirer
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
-              <button type="button" className="btn btn--ghost btn--sm"
+              <button type="button" className={`btn btn--ghost btn--sm ${styles.addStaff}`}
                 onClick={() => setStaffNames([...staffNames, ''])}>
-                + Ajouter un professionnel
+                <span aria-hidden="true" className={styles.plus}>+</span> Ajouter un professionnel
               </button>
             </div>
           )}
 
           {step === 'queue' && (
-            <div className="stack g4">
-              <div>
-                <h1 className="t-title">Comment travaillez-vous ?</h1>
-                <p className="t-small t-muted">
+            <div className={styles.stepBody}>
+              <div className={styles.stepHead}>
+                {kicker}
+                {title('Comment travaillez-vous ?')}
+                <p className={styles.lead}>
                   C&apos;est le seul choix qui change vraiment le fonctionnement. Il reste
                   modifiable ensuite.
                 </p>
               </div>
-              <div className="stack g2">
+              <div className={styles.modes}>
                 <ModeCard
                   active={form.queueMode === 'shared'}
                   title="Une file commune"
@@ -242,24 +308,27 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
           )}
 
           {step === 'review' && (
-            <div className="stack g4">
-              <div>
-                <h1 className="t-title">Votre lien d&apos;avis Google</h1>
-                <p className="t-small t-muted">
+            <div className={styles.stepBody}>
+              <div className={styles.stepHead}>
+                {kicker}
+                {title('Votre lien d’avis Google')}
+                <p className={styles.lead}>
                   À la fin de chaque passage, le client reçoit un remerciement avec un bouton
                   qui ouvre directement ce lien. C&apos;est proposé à tout le monde, sans
                   filtrage.
                 </p>
               </div>
-              <div className="field">
-                <label htmlFor="review">Lien « Rédiger un avis »</label>
-                <input id="review" className="input" type="url" inputMode="url"
-                  placeholder="https://g.page/r/..."
-                  value={form.googleReviewUrl}
-                  onChange={(e) => setForm({ ...form, googleReviewUrl: e.target.value })} />
+              <div className="field-rail">
+                <div className="field">
+                  <label htmlFor="review">Lien « Rédiger un avis »</label>
+                  <input id="review" className={`input ${styles.input}`} type="url" inputMode="url"
+                    placeholder="https://g.page/r/..."
+                    value={form.googleReviewUrl}
+                    onChange={(e) => setForm({ ...form, googleReviewUrl: e.target.value })} />
+                </div>
               </div>
               <details className={styles.help}>
-                <summary>Où trouver ce lien ?</summary>
+                <summary>Où trouver ce lien&nbsp;?</summary>
                 <ol>
                   <li>Ouvrez votre fiche d&apos;établissement Google (Google Business Profile).</li>
                   <li>Cliquez sur <strong>Demander des avis</strong> — Google affiche un lien court.</li>
@@ -274,72 +343,90 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
           )}
 
           {step === 'hours' && (
-            <div className="stack g4">
-              <div>
-                <h1 className="t-title">Vos horaires</h1>
-                <p className="t-small t-muted">
-                  Indicatif : la file s&apos;ouvre et se ferme d&apos;un geste depuis le
+            <div className={styles.stepBody}>
+              <div className={styles.stepHead}>
+                {kicker}
+                {title('Vos horaires')}
+                <p className={styles.lead}>
+                  Indicatif&nbsp;: la file s&apos;ouvre et se ferme d&apos;un geste depuis le
                   tableau de bord.
                 </p>
               </div>
-              <div className="stack g2">
-                {hours.map((day, i) => (
-                  <div key={day.weekday} className={styles.hoursRow}>
-                    <span className={styles.dayName}>{WEEKDAYS[day.weekday]}</span>
-                    <label className={styles.closedToggle}>
-                      <input type="checkbox" checked={!day.isClosed}
-                        onChange={(e) => {
-                          const next = [...hours];
-                          next[i] = { ...day, isClosed: !e.target.checked };
-                          setHours(next);
-                        }} />
-                      <span>{day.isClosed ? 'Fermé' : 'Ouvert'}</span>
-                    </label>
-                    {!day.isClosed && (
-                      <>
-                        <input type="time" className="input" value={day.opensAt}
+              <ul className={styles.hours}>
+                {hours.map((day, i) => {
+                  const dayName = WEEKDAYS[day.weekday] ?? '';
+                  const lower = dayName.toLowerCase();
+                  return (
+                    <li key={day.weekday} className={styles.hoursRow} data-closed={day.isClosed ? '1' : undefined}>
+                      <span className={styles.dayName}>{dayName}</span>
+                      <label className={styles.openToggle}>
+                        <input type="checkbox" className={styles.switch} checked={!day.isClosed}
+                          aria-label={`Ouvert le ${lower}`}
                           onChange={(e) => {
                             const next = [...hours];
-                            next[i] = { ...day, opensAt: e.target.value };
+                            next[i] = { ...day, isClosed: !e.target.checked };
                             setHours(next);
                           }} />
-                        <input type="time" className="input" value={day.closesAt}
-                          onChange={(e) => {
-                            const next = [...hours];
-                            next[i] = { ...day, closesAt: e.target.value };
-                            setHours(next);
-                          }} />
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
+                        <span aria-hidden="true">{day.isClosed ? 'Fermé' : 'Ouvert'}</span>
+                      </label>
+                      {!day.isClosed ? (
+                        <span className={styles.times}>
+                          <TimeField
+                            value={day.opensAt}
+                            aria-label={`Ouverture du ${lower}`}
+                            onChange={(value) => {
+                              const next = [...hours];
+                              next[i] = { ...day, opensAt: value };
+                              setHours(next);
+                            }}
+                          />
+                          <span className={styles.timeSep} aria-hidden="true">à</span>
+                          <TimeField
+                            value={day.closesAt}
+                            aria-label={`Fermeture du ${lower}`}
+                            onChange={(value) => {
+                              const next = [...hours];
+                              next[i] = { ...day, closesAt: value };
+                              setHours(next);
+                            }}
+                          />
+                        </span>
+                      ) : (
+                        <span className={styles.closedNote}>Fermé toute la journée</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           )}
         </div>
 
-        <div className={styles.nav}>
-          {index > 0 && (
-            <button type="button" className="btn btn--ghost"
-              onClick={() => setStep(STEPS[index - 1]!.id)}>
-              Retour
-            </button>
-          )}
-          {index < STEPS.length - 1 ? (
-            <button
-              type="button"
-              className="btn btn--signal btn--lg grow"
-              disabled={step === 'place' && form.organizationName.trim().length < 2}
-              onClick={() => setStep(STEPS[index + 1]!.id)}
-            >
-              Continuer
-            </button>
-          ) : (
-            <button type="button" className="btn btn--signal btn--lg grow"
-              disabled={pending} onClick={submit}>
-              {pending ? 'Création…' : 'Créer ma file'}
-            </button>
-          )}
+        <div className={styles.navWrap}>
+          {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
+          <div className={styles.nav}>
+            {index > 0 && (
+              <button type="button" className={`btn btn--quiet btn--lg ${styles.back}`}
+                onClick={() => goTo(STEPS[index - 1]!.id, -1)}>
+                Retour
+              </button>
+            )}
+            {index < STEPS.length - 1 ? (
+              <button
+                type="button"
+                className="btn btn--signal btn--lg grow"
+                disabled={step === 'place' && form.organizationName.trim().length < 2}
+                onClick={() => goTo(STEPS[index + 1]!.id, 1)}
+              >
+                Continuer
+              </button>
+            ) : (
+              <button type="button" className="btn btn--signal btn--lg grow"
+                disabled={pending} onClick={submit}>
+                {pending ? 'Création…' : 'Créer ma file'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </main>
@@ -377,88 +464,9 @@ function ModeCard({
       </span>
       <span className={styles.modeText}>
         <span className="t-section">{title}</span>
-        <span className="t-small t-muted">{description}</span>
+        <span className={styles.modeDesc}>{description}</span>
       </span>
+      <span className={styles.modeCheck} aria-hidden="true" />
     </button>
-  );
-}
-
-/* ==================================================================
-   Écran final : « Votre file est prête »
-   ================================================================== */
-
-function ReadyScreen({ result }: { result: OnboardingResult }) {
-  const [opened, setOpened] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [pending, startTransition] = useTransition();
-
-  return (
-    <main className={styles.screen}>
-      <span className={styles.rails} aria-hidden="true" />
-      <div className={`${styles.panel} fade-in`}>
-        <header className={styles.head}><Wordmark /></header>
-
-        <div className={styles.readyCard}>
-          <p className="t-label">C&apos;est prêt</p>
-          <h1 className="t-display">Votre file est prête</h1>
-          <p className="t-body t-muted">
-            {result.locationName} peut recevoir ses premiers clients. Posez ce QR au
-            comptoir, ou écrivez ce lien sur une plaque NFC.
-          </p>
-
-          <div className={styles.qrRow}>
-            <div className={styles.qrFrame}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`/api/p/${result.plateCode}?format=svg`} alt="QR code de votre file" />
-            </div>
-            <div className="stack g3 grow">
-              <code className={styles.url}>{result.plateUrl}</code>
-              <div className="row g2 wrap">
-                <button type="button" className="btn btn--ghost btn--sm"
-                  onClick={async () => {
-                    await navigator.clipboard.writeText(result.plateUrl);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1800);
-                  }}>
-                  {copied ? 'Copié' : 'Copier le lien'}
-                </button>
-                <a className="btn btn--ghost btn--sm" download
-                  href={`/api/p/${result.plateCode}?format=png&size=1200`}>
-                  QR en PNG
-                </a>
-                <a className="btn btn--ghost btn--sm" target="_blank" rel="noreferrer"
-                  href={`/api/p/${result.plateCode}?format=affiche`}>
-                  Affiche à imprimer
-                </a>
-              </div>
-            </div>
-          </div>
-
-          <div className="stack g3">
-            {!opened ? (
-              <button type="button" className="btn btn--signal btn--hero" disabled={pending}
-                onClick={() => startTransition(async () => {
-                  const response = await openQueueNow(result.queueId);
-                  if (response.ok) setOpened(true);
-                })}>
-                {pending ? 'Ouverture…' : 'Ouvrir la file maintenant'}
-              </button>
-            ) : (
-              <div className="banner">
-                <span className="pip pip--live" />
-                <span>La file est ouverte. Vos clients peuvent scanner.</span>
-              </div>
-            )}
-
-            <a className="btn btn--ghost btn--lg" href={result.plateUrl} target="_blank" rel="noreferrer">
-              Tester comme un client
-            </a>
-            <Link className="btn btn--quiet" href={`/app/${result.organizationSlug}/file`}>
-              Aller au tableau de bord
-            </Link>
-          </div>
-        </div>
-      </div>
-    </main>
   );
 }

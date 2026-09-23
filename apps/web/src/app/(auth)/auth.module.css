@@ -1,56 +1,413 @@
-.screen {
+/* ======================================================================
+   ÉCRANS D'ACCÈS — connexion, inscription, invitation (WP3)
+   Gabarit à écran partagé : le formulaire posé sur la page, le sol en
+   relief à droite. Plus aucune carte centrée.
+   ====================================================================== */
+
+.frame {
+  --gutter: 20px;
   min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  padding: var(--sp-6) var(--sp-5);
-  position: relative;
-  overflow: hidden;
   background: var(--surface);
 }
-
-.rails {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image: repeating-linear-gradient(
-    to bottom, var(--line) 0 1px, transparent 1px var(--step)
-  );
-  mask-image: radial-gradient(120% 70% at 50% 0%, #000 0%, transparent 70%);
-  opacity: 0.8;
+@media (max-width: 379px) {
+  .frame { --gutter: 16px; }
 }
 
-.panel {
-  position: relative;
+.side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Barre de 56 px : marque à gauche, bascule à droite. */
+.bar {
+  height: 56px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding-inline: var(--gutter);
+}
+.brand { display: inline-flex; border-radius: 6px; }
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-inline: 4px;
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: 0.9375rem;
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--accent) 70%, transparent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 5px;
+}
+.switch:hover { text-decoration-color: var(--accent); }
+
+/* Bandeau : la file en relief, pleine largeur, 140 px. */
+.band {
+  flex: none;
+  border-block: 1px solid var(--line);
+}
+
+.content {
   width: 100%;
-  max-width: 420px;
+  max-width: 480px;
+  padding: 28px var(--gutter) calc(48px + var(--safe-bottom));
   display: flex;
   flex-direction: column;
-  gap: var(--sp-6);
+  gap: 28px;
 }
 
-.brand { align-self: flex-start; }
+.panel { display: none; }
 
-.card {
-  background: var(--surface-raised);
-  border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  padding: var(--sp-6);
+@media (min-width: 1024px) {
+  .frame {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+  .side {
+    min-height: 100dvh;
+    padding-inline: clamp(40px, 6.8vw, 104px) 48px;
+  }
+  .bar { height: 96px; padding-inline: 0; }
+  .switch { display: none; }
+  .band { display: none; }
+  .content {
+    max-width: 400px;
+    padding: max(24px, calc(18svh - 96px)) 0 72px;
+    gap: 32px;
+  }
+  .panel {
+    display: block;
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    min-height: 560px;
+    background: var(--floor);
+    border-left: 1px solid var(--line);
+    overflow: clip;
+  }
+}
+
+/* ----------------------------------------------------------------------
+   Titre et texte
+   ---------------------------------------------------------------------- */
+.head {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-5);
-  box-shadow: var(--shadow-2);
+}
+.head > :global(.t-label) { margin-bottom: 14px; }
+.lead { margin-top: var(--gap-title); }
+@media (max-width: 1023px) {
+  .head :global(.t-display) { font-size: clamp(2.25rem, 1.6rem + 3vw, 2.75rem); }
+}
+@media (min-width: 1024px) {
+  /* Deux lignes franches dans la colonne de 400 px. */
+  .head :global(.t-display) { font-size: clamp(2.75rem, 1.2rem + 2.6vw, 3.5rem); }
 }
 
-.head { display: flex; flex-direction: column; gap: var(--sp-2); }
+.trialInline { color: var(--accent); }
+@media (min-width: 1024px) {
+  .trialInline { display: none; }
+}
 
-.form { display: flex; flex-direction: column; gap: var(--sp-4); }
+.notice { align-items: flex-start; }
+.notice :global(.pip) { margin-top: 7px; }
 
 .footer {
-  text-align: center;
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   color: var(--text-muted);
 }
-.footer a { color: var(--text); font-variation-settings: 'wght' 640; text-decoration: underline; text-underline-offset: 3px; }
+.footer a {
+  color: var(--text);
+  font-variation-settings: 'wght' 650;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--accent) 70%, transparent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+.footer a:hover { text-decoration-color: var(--accent); }
 
-.legal { font-size: 0.75rem; color: var(--text-faint); line-height: 1.5; text-align: center; }
-.legal a { text-decoration: underline; text-underline-offset: 2px; }
+.legal {
+  color: var(--text-muted);
+  margin-top: -8px;
+}
+.legal a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ----------------------------------------------------------------------
+   Formulaire accroché au rail
+   ---------------------------------------------------------------------- */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.input { min-height: 52px; }
+
+/* L'erreur se lit juste au-dessus du bouton, là où l'œil revient. */
+.submit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Mot de passe : bouton « Afficher / Masquer » dans le champ. */
+.secret { position: relative; }
+.secretInput { padding-right: 104px; }
+.secretInput::-ms-reveal { display: none; }
+.reveal {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  bottom: 6px;
+  min-width: 88px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: 0.875rem;
+  transition: color var(--dur-1) var(--ease-out);
+}
+.reveal:hover { color: var(--text); }
+.reveal:focus-visible { outline-offset: 0; border-radius: 8px; }
+.reveal::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: var(--line-strong);
+}
+
+/* 8 encoches, 10 × 3 px : chacune porte un calque vermillon dont seule
+   l'opacité change. */
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 20px;
+}
+.notches { display: inline-flex; gap: 4px; flex: none; }
+.notch {
+  position: relative;
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.notch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  opacity: 0;
+}
+.notch[data-on='1']::after { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .notch::after { transition: opacity var(--dur-2) var(--ease-out); }
+}
+.rule {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.meter[data-full='1'] .rule { color: var(--text); }
+
+/* ----------------------------------------------------------------------
+   Panneau : le sol en relief
+   ---------------------------------------------------------------------- */
+.floorPanel {
+  position: relative;
+  height: 100%;
+}
+/* La file occupe le haut et le centre ; la nature morte tient le bas. */
+.floorScene.floorScene { position: absolute; inset: 0; --world-top: 36%; }
+/* Avec une légende en bas, la file remonte pour lui laisser le sol. */
+.floorPanel[data-legend='1'] .floorScene.floorScene { --world-top: 30%; }
+/* La file est le sujet du panneau : on l'agrandit d'un bloc (seuil
+   compris), sans toucher à sa géométrie. */
+.floorScene.floorScene :global(.world3d) { scale: 1.32; }
+
+.legend {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 40px;
+  padding: 120px clamp(40px, 4.5vw, 72px) clamp(40px, 6svh, 64px);
+  /* Fondu fonctionnel : le marquage au sol ne passe jamais sous la
+     légende. Calque statique. */
+  background: linear-gradient(to top, var(--floor) 58%, transparent);
+  pointer-events: none;
+}
+.still { flex: none; }
+.caption {
+  max-width: 13ch;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+
+/* ----------------------------------------------------------------------
+   Panneau : le parcours d'inscription
+   ---------------------------------------------------------------------- */
+.journey {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: clamp(48px, 18svh, 168px) clamp(40px, 5.5vw, 88px) clamp(40px, 6svh, 64px);
+}
+.journeyBody {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 600px;
+}
+.steps.steps { padding-left: 40px; }
+.steps > li.step {
+  border-top: 0;
+  padding: 0;
+}
+.steps > li.step + li.step { margin-top: 18px; }
+/* Encoche au milieu de la latte. */
+.steps.steps > li.step::before { top: calc(50% - 1px); }
+.steps.steps > li.step.step:global(.is-self)::before { top: calc(50% - 2px); }
+
+.stepSlat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 84px;
+  padding: 0 26px;
+  border-radius: 14px;
+  background: var(--slat);
+  color: var(--slat-text);
+  box-shadow: var(--edge-light), 0 3px 0 var(--slat-edge);
+}
+.step:global(.is-self) .stepSlat {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 3px 0 var(--slat-edge-self), 0 18px 40px -18px color-mix(in oklab, var(--accent) 80%, transparent);
+}
+.stepText {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  font-variation-settings: 'wdth' 112, 'wght' 740;
+  font-size: clamp(1.25rem, 0.5rem + 1.3vw, 1.75rem);
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+  color: var(--text);
+}
+.step:global(.is-self) .stepText { color: var(--accent-ink); }
+.stepNum {
+  font-variation-settings: 'wdth' 125, 'wght' 820;
+  font-variant-numeric: tabular-nums;
+}
+.stepDot { opacity: 0.55; }
+.stepHint {
+  flex: none;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.step:global(.is-self) .stepHint { color: color-mix(in oklab, var(--accent-ink) 78%, transparent); }
+
+/* La plaque à venir : silhouette en pointillés, posée de trois quarts,
+   reliée à la dernière latte par un trait pointillé. */
+/* Le rail se prolonge en pointillés jusqu'à la plaque, qui attend
+   au bout de la file, reliée par son encoche. */
+.ghostWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-top: -20px;   /* colle au bas du rail de la liste */
+  padding: 40px 0 0 18px;
+}
+.ghostRail {
+  position: absolute;
+  left: 18px;
+  top: 0;
+  height: calc(20px + 50%);
+  border-left: 2px dashed color-mix(in oklab, var(--accent) 55%, transparent);
+}
+.ghostLink {
+  flex: none;
+  width: 72px;
+  height: 0;
+  margin-top: 40px;
+  border-top: 2px dashed color-mix(in oklab, var(--accent) 55%, transparent);
+}
+.ghostPlaque {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 176px;
+  height: 220px;
+  padding: 18px;
+  border-radius: 16px;
+  border: 2px dashed color-mix(in oklab, var(--accent) 60%, transparent);
+  color: color-mix(in oklab, var(--accent) 75%, transparent);
+  transform: perspective(900px) rotateX(12deg) rotateY(-14deg) rotateZ(-3deg);
+}
+.ghostNfc { width: 46px; height: 46px; }
+.ghostLabel {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.trial {
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.trial::before {
+  content: '';
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--jade-500);
+}
+
+/* ----------------------------------------------------------------------
+   Invitation
+   ---------------------------------------------------------------------- */
+.accepted {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--jade-500);
+}
+.accepted::before {
+  content: '';
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--jade-500);
+}
+.problem {
+  margin-top: var(--gap-title);
+  color: var(--danger-text);
+  font-size: 1.0625rem;
+  line-height: 1.5;
+  max-width: 40ch;
+}
