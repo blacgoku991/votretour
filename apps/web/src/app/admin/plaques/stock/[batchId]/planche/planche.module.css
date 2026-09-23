@@ -1,0 +1,73 @@
+/* =====================================================================
+   Planche QR imprimable.
+
+   À l'écran : un aperçu sur fond clair, comme la feuille. À
+   l'impression : seule la feuille sort — la coque du super-admin est
+   masquée — en grille A4 de 3 × 4, sans coupure au milieu d'un QR.
+   ===================================================================== */
+
+.wrap { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.toolbarActions { display: flex; gap: var(--sp-2); }
+
+.sheet {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+  padding: 18px;
+  border-radius: 14px;
+  background: #FFFFFF;
+  color: #0B0E13;
+}
+
+.cell {
+  margin: 0;
+  padding: 12px 10px 10px;
+  border: 1px dashed #C9C4B8;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  break-inside: avoid;
+}
+.cellVoid { opacity: .35; }
+
+.qr { width: 100%; max-width: 132px; aspect-ratio: 1; }
+.qr svg { width: 100%; height: 100%; display: block; }
+
+.cell figcaption { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+.serial { font-size: 9.5px; letter-spacing: .08em; color: #46505E; }
+
+@media print {
+  @page { size: A4; margin: 12mm; }
+
+  /* Masquer la coque du super-admin se fait dans planche-print.css :
+     un module CSS n'accepte pas de sélecteur sans classe locale. */
+  .sheet {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6mm;
+    padding: 0;
+    border-radius: 0;
+  }
+  .cell { border-color: #9C968A; padding: 5mm 3mm 3mm; }
+  .qr { max-width: 42mm; }
+  .code { font-size: 10pt; }
+  .serial { font-size: 8pt; }
+}

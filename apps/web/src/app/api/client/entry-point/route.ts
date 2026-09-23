@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { jsonOk, jsonError, parseQuery, slugSchema } from '@/lib/api';
 import { AppError } from '@/lib/errors';
 import { resolveEntryPoint } from '@/server/queue';
+import { findUnassignedStockPlate } from '@/server/plate-stock';
 import { requestFingerprint } from '@/server/client-session';
 import { enforceRateLimit, LIMITS } from '@/server/ratelimit';
 import { supabaseAdmin } from '@/lib/supabase/admin';
@@ -34,6 +35,19 @@ export async function GET(request: Request) {
 
     const entryPoint = await resolveEntryPoint(query.slug);
     if (!entryPoint) {
+      // Même statut 404 qu'avant — l'App Clip ne change pas de parcours —
+      // mais le message dit la vérité : la plaque existe, elle attend
+      // simplement d'être reliée à un commerce.
+      const stockPlate = await findUnassignedStockPlate(query.slug);
+      if (stockPlate) {
+        throw new AppError(
+          'plate_not_activated',
+          stockPlate.status === 'void'
+            ? "Cette plaque n'est plus en service. Présentez-vous au comptoir."
+            : "Cette plaque n'est pas encore activée. Présentez-vous au comptoir.",
+          404,
+        );
+      }
       throw new AppError('not_found', "Cette plaque ne correspond à aucun établissement.", 404);
     }
     if (entryPoint.status !== 'ok') {

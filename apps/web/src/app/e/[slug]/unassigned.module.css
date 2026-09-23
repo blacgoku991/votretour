@@ -1,0 +1,48 @@
+/* Plaque livrée mais pas encore attribuée : le rail est là, vide. */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding-block: var(--sp-9) var(--sp-7);
+}
+
+.rang {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--slat-gap);
+  padding-left: calc(var(--notch) + 14px);
+  margin-bottom: var(--sp-4);
+  max-width: 280px;
+}
+.rail {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: var(--rail-w);
+  border-radius: 2px;
+  background: var(--rail);
+}
+.slat {
+  height: var(--slat-h);
+  border-radius: var(--r-slat);
+  border: 1.5px dashed var(--line-strong);
+}
+.slat:nth-child(3) { width: 82%; opacity: .7; }
+.slat:nth-child(4) { width: 64%; opacity: .45; }
+
+.title {
+  font-size: clamp(1.75rem, 7vw, 2.4rem);
+  line-height: 1.05;
+  font-variation-settings: 'wdth' 112, 'wght' 780;
+  letter-spacing: -.02em;
+  text-wrap: balance;
+}
+
+.code {
+  margin: var(--sp-2) 0 var(--sp-3);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: .875rem;
+  letter-spacing: .08em;
+  color: var(--text);
+}
+.code span { color: var(--text-faint); }

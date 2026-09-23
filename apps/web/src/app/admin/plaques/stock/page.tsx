@@ -1,0 +1,161 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { supabaseAdmin } from '@/lib/supabase/admin';
+import { PageHeader } from '@/components/Page';
+import { formatDate, formatNumber } from '@/lib/format';
+import { normalizeStockCode } from '@/lib/plate-stock';
+import { StockConsole, type AssignTargets } from './StockConsole';
+import adminStyles from '../../admin.module.css';
+import styles from './stock.module.css';
+
+export const metadata: Metadata = { title: 'Stock fournisseur', robots: { index: false } };
+export const dynamic = 'force-dynamic';
+
+/**
+ * STOCK FOURNISSEUR.
+ *
+ * 1. On génère un lot de liens (100 par exemple) et on l'exporte pour le
+ *    fabricant, qui grave les puces NFC et imprime les QR.
+ * 2. Les plaques livrées portent chacune un code RV-XXXXX-XXXXX et un
+ *    numéro. On en retrouve une par son code, son numéro, ou en
+ *    scannant la plaque elle-même, et on l'attribue à une société.
+ * 3. Plus tard, une plaque peut changer de société : le lien gravé ne
+ *    change jamais.
+ *
+ * L'accès est protégé par la coque /admin (requirePlatformAdmin) et
+ * revérifié dans chaque action serveur.
+ */
+export default async function PlateStockPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ code?: string }>;
+}) {
+  const { code } = await searchParams;
+  const initialQuery = code ? (normalizeStockCode(code) ?? code) : '';
+  const db = supabaseAdmin();
+
+  const [
+    { data: batches },
+    { data: stockRows },
+    { data: organizations },
+    { data: locations },
+    { data: queues },
+    { data: staff },
+  ] = await Promise.all([
+    db.from('plate_batches')
+      .select('id, label, quantity, kind, supplier_note, created_at')
+      .order('created_at', { ascending: false })
+      .limit(200),
+    db.from('plate_stock').select('batch_id, status').limit(50000),
+    db.from('organizations').select('id, name, status').order('name').limit(1000),
+    db.from('locations').select('id, name, city, organization_id, is_active').order('name').limit(2000),
+    db.from('queues').select('id, name, location_id, is_default').order('name').limit(4000),
+    db.from('staff').select('id, display_name, location_id').eq('is_active', true).order('display_name').limit(4000),
+  ]);
+
+  const counts = { available: 0, assigned: 0, void: 0 };
+  const perBatch = new Map<string, { available: number; assigned: number; void: number }>();
+  for (const row of (stockRows ?? []) as { batch_id: string; status: keyof typeof counts }[]) {
+    counts[row.status] += 1;
+    const entry = perBatch.get(row.batch_id) ?? { available: 0, assigned: 0, void: 0 };
+    entry[row.status] += 1;
+    perBatch.set(row.batch_id, entry);
+  }
+  const total = counts.available + counts.assigned + counts.void;
+
+  const targets: AssignTargets = {
+    organizations: ((organizations ?? []) as { id: string; name: string; status: string }[])
+      .map((o) => ({ id: o.id, name: o.name, suspended: o.status !== 'active' })),
+    locations: ((locations ?? []) as { id: string; name: string; city: string | null; organization_id: string; is_active: boolean }[])
+      .map((l) => ({ id: l.id, name: l.name, city: l.city, organizationId: l.organization_id, active: l.is_active })),
+    queues: ((queues ?? []) as { id: string; name: string; location_id: string; is_default: boolean }[])
+      .map((q) => ({ id: q.id, name: q.name, locationId: q.location_id, isDefault: q.is_default })),
+    staff: ((staff ?? []) as { id: string; display_name: string; location_id: string }[])
+      .map((s) => ({ id: s.id, name: s.display_name, locationId: s.location_id })),
+  };
+
+  return (
+    <div className={`shell ${adminStyles.page}`}>
+      <PageHeader
+        title="Stock fournisseur"
+        description="Générez les liens à graver, envoyez-les au fabricant, puis attribuez chaque plaque livrée à une société."
+        actions={<Link href="/admin/plaques" className="btn btn--ghost btn--sm">Plaques en service</Link>}
+      />
+
+      <div className={styles.tiles}>
+        <Tile label="En stock" value={total} hint="liens générés" />
+        <Tile label="Disponibles" value={counts.available} hint="prêtes à attribuer" tone="jade" />
+        <Tile label="Attribuées" value={counts.assigned} hint="en service chez une société" tone="signal" />
+        <Tile label="Au rebut" value={counts.void} hint="perdues ou défectueuses" tone="muted" />
+      </div>
+
+      <StockConsole targets={targets} initialQuery={initialQuery} />
+
+      <section className={adminStyles.adminCard}>
+        <div className={adminStyles.adminCardHead}>
+          <div>
+            <span className={adminStyles.cardKicker}>LOTS</span>
+            <h2>Lots commandés</h2>
+          </div>
+        </div>
+
+        {(batches ?? []).length === 0 ? (
+          <p className="t-small t-muted">
+            Aucun lot pour l&apos;instant. Générez-en un ci-dessus : ses liens seront prêts à envoyer au fabricant.
+          </p>
+        ) : (
+          <div className={adminStyles.tableWrap}>
+            <table className={adminStyles.table}>
+              <thead>
+                <tr>
+                  <th scope="col">Lot</th>
+                  <th scope="col">Créé le</th>
+                  <th scope="col">Plaques</th>
+                  <th scope="col">Disponibles</th>
+                  <th scope="col">Attribuées</th>
+                  <th scope="col"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {(batches ?? []).map((batch) => {
+                  const c = perBatch.get(batch.id) ?? { available: 0, assigned: 0, void: 0 };
+                  return (
+                    <tr key={batch.id}>
+                      <th scope="row">
+                        <Link href={`/admin/plaques/stock/${batch.id}`} className={styles.batchLink}>
+                          {batch.label}
+                        </Link>
+                        {batch.supplier_note && <span className="t-micro t-faint"> · {batch.supplier_note}</span>}
+                      </th>
+                      <td>{formatDate(batch.created_at)}</td>
+                      <td className="t-num">{formatNumber(batch.quantity)}</td>
+                      <td className="t-num">{formatNumber(c.available)}</td>
+                      <td className="t-num">{formatNumber(c.assigned)}</td>
+                      <td>
+                        <div className={styles.rowActions}>
+                          <a className="btn btn--ghost btn--sm" href={`/api/admin/plate-stock/${batch.id}/export?format=csv`}>CSV</a>
+                          <a className="btn btn--ghost btn--sm" href={`/api/admin/plate-stock/${batch.id}/export?format=txt`}>URL</a>
+                          <Link className="btn btn--ghost btn--sm" href={`/admin/plaques/stock/${batch.id}/planche`}>Planche QR</Link>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function Tile({ label, value, hint, tone }: { label: string; value: number; hint: string; tone?: 'jade' | 'signal' | 'muted' }) {
+  return (
+    <div className={`${styles.tile} ${tone ? styles[`tile_${tone}`] : ''}`}>
+      <span className={styles.tileLabel}>{label}</span>
+      <strong className={styles.tileValue}>{formatNumber(value)}</strong>
+      <span className="t-micro t-faint">{hint}</span>
+    </div>
+  );
+}

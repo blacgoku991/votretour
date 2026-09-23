@@ -6,6 +6,9 @@ import { getClientSession } from '@/server/client-session';
 import { vapidPublicKey } from '@/server/notifications/webpush';
 import { ACTIVITY_LABEL } from '@/lib/copy';
 import { ClientExperience } from './ClientExperience';
+import { UnassignedPlate } from './UnassignedPlate';
+import { findUnassignedStockPlate } from '@/server/plate-stock';
+import { getSessionUser } from '@/server/auth';
 import styles from './client.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -18,6 +21,9 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const entryPoint = await resolveEntryPoint(slug);
+  if (!entryPoint && await findUnassignedStockPlate(slug)) {
+    return { title: 'Plaque à activer', robots: { index: false, follow: false } };
+  }
   if (!entryPoint || entryPoint.status !== 'ok') {
     return { title: 'Établissement introuvable', robots: { index: false } };
   }
@@ -49,7 +55,18 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
   const query = await searchParams;
 
   const entryPoint = await resolveEntryPoint(slug);
-  if (!entryPoint) notFound();
+  if (!entryPoint) {
+    // Une plaque du stock fournisseur, livrée mais pas encore attribuée :
+    // un message utile plutôt qu'une page introuvable. La session n'est
+    // lue que dans ce cas rare, pour proposer l'attribution au
+    // super-admin qui scanne la plaque en l'installant.
+    const stockPlate = await findUnassignedStockPlate(slug);
+    if (stockPlate) {
+      const viewer = await getSessionUser().catch(() => null);
+      return <UnassignedPlate plate={stockPlate} isPlatformAdmin={viewer?.isPlatformAdmin === true} />;
+    }
+    notFound();
+  }
 
   let effectiveEntryPoint = entryPoint;
   let eventId: string | null = null;

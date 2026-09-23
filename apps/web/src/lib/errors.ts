@@ -16,6 +16,8 @@ export const QUEUE_ERROR_CODES = {
   VT010: 'staff_busy',
   VT011: 'plate_not_found',
   VT012: 'plate_locked',
+  VT013: 'plate_unavailable',
+  VT014: 'invalid_quantity',
 } as const;
 
 export type QueueErrorCode = (typeof QUEUE_ERROR_CODES)[keyof typeof QUEUE_ERROR_CODES];
@@ -33,6 +35,8 @@ const MESSAGES: Record<QueueErrorCode, string> = {
   staff_busy: "Ce professionnel a déjà une prestation en cours.",
   plate_not_found: "Cette plaque est introuvable dans cet établissement.",
   plate_locked: "Ce tag a été verrouillé : il ne peut plus être réécrit.",
+  plate_unavailable: "Cette plaque n'est pas disponible : elle est déjà attribuée ou mise au rebut.",
+  invalid_quantity: 'Un lot compte entre 1 et 1000 plaques.',
 };
 
 const HTTP_STATUS: Record<QueueErrorCode, number> = {
@@ -48,6 +52,8 @@ const HTTP_STATUS: Record<QueueErrorCode, number> = {
   staff_busy: 409,
   plate_not_found: 404,
   plate_locked: 409,
+  plate_unavailable: 409,
+  invalid_quantity: 422,
 };
 
 export class AppError extends Error {

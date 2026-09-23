@@ -1,0 +1,12 @@
+/*
+ * Impression de la planche QR : seule la feuille sort.
+ *
+ * Feuille globale, chargée par cette seule page. La règle ne vise que
+ * le média print et la classe rv-print-sheet : elle ne touche rien à
+ * l'écran, ni ailleurs dans le site.
+ */
+@media print {
+  body * { visibility: hidden; }
+  .rv-print-sheet,
+  .rv-print-sheet * { visibility: visible; }
+}

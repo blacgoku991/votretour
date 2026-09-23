@@ -15,6 +15,7 @@ const GROUPS = [
       { href: '/admin/evenements', label: 'Événements', icon: '◫' },
       { href: '/admin/ecrans', label: 'Écrans TV', icon: '▣' },
       { href: '/admin/plaques', label: 'Plaques & NFC', icon: '⌁' },
+      { href: '/admin/plaques/stock', label: 'Stock fournisseur', icon: '⧉' },
     ],
   },
   {
@@ -43,9 +44,16 @@ export function AdminShell({
 }) {
   const pathname = usePathname();
 
-  const active = (href: string) => href === '/admin'
+  // Une seule entrée allumée : la plus précise. Sans cela, sur
+  // /admin/plaques/stock, « Plaques & NFC » s'allumerait aussi.
+  const matches = (href: string) => href === '/admin'
     ? pathname === '/admin'
     : pathname === href || pathname.startsWith(`${href}/`);
+  const best = GROUPS.flatMap((group) => group.items)
+    .map((item) => item.href)
+    .filter(matches)
+    .sort((a, b) => b.length - a.length)[0];
+  const active = (href: string) => href === best;
 
   return (
     <div className={styles.adminShell}>
