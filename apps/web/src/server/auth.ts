@@ -101,6 +101,7 @@ export function roleCan(role: MemberRole, permission: Permission): boolean {
 export async function requireOrgAccess(
   orgSlug: string,
   permission?: Permission,
+  options: { allowSuspended?: boolean } = {},
 ): Promise<OrgAccess> {
   const user = await requireUser();
   const organizations = await getMyOrganizations();
@@ -111,7 +112,9 @@ export async function requireOrgAccess(
     redirect('/bienvenue');
   }
 
-  if (organization.status === 'suspended') {
+  // allowSuspended sert au seul layout /app/[org] : la page Suspendu vit
+  // sous ce layout, qui ne doit donc pas la rediriger vers elle-même.
+  if (organization.status === 'suspended' && !options.allowSuspended) {
     redirect(`/app/${organization.slug}/suspendu`);
   }
 
