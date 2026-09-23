@@ -1,0 +1,233 @@
+/* Téléphone App Clip : un objet CSS de 240 × 492 (200 × 410 en mobile). */
+
+.stage {
+  --w: 200px;
+  --h: 410px;
+  --frame: 9px;
+  position: relative;
+  width: var(--w);
+  height: var(--h);
+  perspective: 1200px;
+  perspective-origin: 50% 40%;
+}
+@media (min-width: 720px) {
+  .stage { --w: 240px; --h: 492px; --frame: 10px; }
+}
+
+/* Ombre de contact : statique, hors de l'arbre 3D. */
+.shadow {
+  position: absolute;
+  left: 6%;
+  right: -10%;
+  bottom: -26px;
+  height: 44px;
+  background: radial-gradient(closest-side, rgb(0 0 0 / 0.55), transparent);
+}
+
+.phone {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  /* Repli : pose fixe. */
+  transform: rotateY(-10deg);
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .phone {
+      animation: phone-turn linear both;
+      animation-timeline: view();
+      animation-range: entry 10% cover 50%;
+    }
+  }
+}
+@keyframes phone-turn {
+  from { transform: rotateY(-18deg) rotateX(6deg); }
+  to   { transform: rotateY(-4deg) rotateX(0deg); }
+}
+
+/* Tranche droite de 10 px. */
+.edge {
+  position: absolute;
+  left: 100%;
+  top: 34px;
+  bottom: 34px;
+  width: 10px;
+  border-radius: 0 6px 6px 0;
+  background: var(--ink-600);
+  transform-origin: 0 50%;
+  transform: rotateY(90deg);
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 40px;
+  border: var(--frame) solid var(--ink-700);
+  background: var(--ink-900);
+  container-type: inline-size;
+}
+/* Liserés du cadre : l'arête extérieure accroche la lumière. */
+.screen::after {
+  content: '';
+  position: absolute;
+  inset: calc(var(--frame) * -1);
+  border-radius: 40px;
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--bone-100) 22%, transparent);
+  pointer-events: none;
+}
+
+.island {
+  position: absolute;
+  top: 9px;
+  left: 50%;
+  width: 34%;
+  height: 20px;
+  translate: -50% 0;
+  border-radius: 12px;
+  background: var(--ink-1000);
+}
+
+/* L'écran client, atténué derrière la fiche. */
+.behind {
+  position: absolute;
+  inset: 0;
+  padding: 44px 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  opacity: 0.4;
+}
+.head { display: flex; align-items: center; gap: 10px; }
+.logo {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--ink-700);
+  font-variation-settings: 'wdth' 110, 'wght' 760;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+.headText { display: flex; flex-direction: column; min-width: 0; }
+.place { font-variation-settings: 'wdth' 104, 'wght' 720; font-size: 0.875rem; line-height: 1.2; }
+.city { font-size: 0.6875rem; line-height: 1.3; color: var(--text-muted); }
+.count {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+.countLabel { font-size: 0.625rem; }
+.rang {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 14px;
+}
+.rang::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.slat {
+  height: 22px;
+  border-radius: 7px;
+  background: var(--slat);
+}
+.slat[data-k='serving'] { background: color-mix(in oklab, var(--text) 12%, var(--slat)); }
+.ghost {
+  background: transparent;
+  border: 2px dashed color-mix(in oklab, var(--accent) 60%, transparent);
+}
+
+/* La fiche App Clip, posée en bas de l'écran. */
+.sheet {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+}
+.sheetCard {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 22px;
+  background: var(--ink-700);
+  box-shadow: var(--edge-light), 0 -1px 0 color-mix(in oklab, var(--bone-100) 10%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* La fiche monte d'en bas de l'écran, une seule fois (620 ms). */
+  .sheet[data-reveal='armed'] { opacity: 1; transform: none; }
+  .sheet[data-reveal='armed'] > .sheetCard { transform: translateY(115%); }
+  .sheet[data-reveal='in'] > .sheetCard {
+    transition: transform var(--dur-4) var(--ease-slat) 120ms;
+  }
+}
+.sheetBand {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 30cqi;
+  background: var(--ink-600);
+}
+.sheetIcon {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--accent);
+}
+/* Glyphe : un rail et une latte, en encre. */
+.sheetIcon > span {
+  position: absolute;
+  left: 13px;
+  top: 11px;
+  bottom: 11px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--ink-1000);
+}
+.sheetIcon > span::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 8px;
+  width: 16px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--ink-1000);
+}
+.sheetBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px 14px;
+}
+.sheetText { display: flex; flex-direction: column; gap: 3px; }
+.sheetTitle {
+  font-variation-settings: 'wdth' 104, 'wght' 720;
+  font-size: 1rem;
+  line-height: 1.2;
+  color: var(--text);
+}
+.sheetSub { font-size: 0.75rem; line-height: 1.3; color: var(--text-muted); }
+.open {
+  display: grid;
+  place-items: center;
+  min-height: 38px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-variation-settings: 'wdth' 100, 'wght' 700;
+  font-size: 0.9375rem;
+}

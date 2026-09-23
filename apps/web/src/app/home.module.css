@@ -1,0 +1,244 @@
+/* =====================================================================
+   ACCUEIL — les sections qui suivent l'histoire (WP1)
+   ---------------------------------------------------------------------
+   Aucune carte : des lignes, des rails, des sols. L'histoire (héros,
+   scène, étapes) a son propre module : components/home/story.
+   ===================================================================== */
+
+/* Redressement de la Plaque au défilement : les angles doivent être des
+   propriétés typées pour s'interpoler. Valeurs initiales = pose « rest ». */
+@property --plaque-rx {
+  syntax: '<angle>';
+  inherits: true;
+  initial-value: 12deg;
+}
+@property --plaque-rz {
+  syntax: '<angle>';
+  inherits: true;
+  initial-value: -3deg;
+}
+
+.page {
+  background: var(--surface);
+}
+
+.h2 { margin-top: 14px; }
+.nowrap { white-space: nowrap; }
+.body { margin-top: var(--gap-title); max-width: 52ch; }
+.sectionHead { max-width: 52rem; }
+.leadAfter { margin-top: var(--gap-title); }
+
+.clip,
+.counter,
+.drops,
+.offers {
+  padding-block: clamp(72px, 9vw, 136px);
+  border-top: 1px solid var(--line);
+}
+
+/* ---------------------------------------------------------- App Clip */
+.clip { scroll-margin-top: var(--site-header-h); }
+.clip:focus { outline: none; }
+.clipInner {
+  display: grid;
+  gap: 56px;
+}
+.points { margin-top: 32px; }
+.points > li { font-size: 0.9375rem; line-height: 1.5; color: var(--text); }
+.clipVisual {
+  display: grid;
+  place-items: center;
+  padding-bottom: 28px;
+}
+@media (min-width: 1024px) {
+  .clipInner {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    align-items: center;
+    column-gap: 48px;
+  }
+}
+
+/* ---------------------------------------------- Tableau des départs */
+.board { margin-top: 48px; }
+.board > li:last-child { border-bottom: 1px solid var(--line); }
+.boardKey { color: var(--text); }
+@media (min-width: 720px) {
+  .board > li { grid-template-columns: minmax(0, 19rem) minmax(0, 1fr); }
+}
+@media (min-width: 1024px) {
+  .board > li { grid-template-columns: minmax(0, 26rem) minmax(0, 1fr); }
+}
+
+/* ------------------------------------------------------ Event / Drop */
+.dropsInner {
+  display: grid;
+  grid-template-areas: 'text' 'waves' 'pass';
+  gap: 48px;
+}
+.dropsText { grid-area: text; }
+.dropsWaves { grid-area: waves; min-width: 0; }
+.dropsPass {
+  grid-area: pass;
+  display: grid;
+  justify-items: center;
+  padding-block: 8px 16px;
+}
+@media (min-width: 720px) {
+  .dropsInner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'text pass' 'waves waves';
+    column-gap: 48px;
+    row-gap: 56px;
+    align-items: center;
+  }
+  .dropsPass { padding: 0 24px 0 0; }
+}
+@media (min-width: 1024px) {
+  /* La file des vagues finit à l'entrée, sous le pass : ce qu'on y reçoit. */
+  .dropsWaves { display: flex; justify-content: flex-end; padding-right: 24px; }
+  .dropsInner { row-gap: 8px; }
+}
+
+/* ------------------------------------------------------------ Offres */
+.plans { margin-top: 48px; }
+.plans > li { align-items: center; }
+.plans > li:last-child { border-bottom: 1px solid var(--line); }
+.plans > li:global(.is-self) { padding-block: 30px; }
+.planHead { min-width: 0; }
+.planName {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.planChip { flex: none; }
+.planPrice {
+  margin-top: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.planAmount {
+  font-variation-settings: 'wdth' 112, 'wght' 800;
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.planVolumes { color: var(--text-muted); }
+.planBtn { min-width: 132px; }
+@media (max-width: 719px) {
+  .planBtn { width: 100%; margin-top: 8px; }
+}
+.plansFoot {
+  margin-top: 28px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 32px;
+}
+.more {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  color: var(--text);
+}
+.moreSlat {
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform-origin: 0 50%;
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .moreSlat { transition: transform var(--dur-2) var(--ease-slat); }
+  .more:hover .moreSlat { transform: scaleX(1.6); }
+}
+
+/* ------------------------------------------------------- Appel final */
+.cta {
+  position: relative;
+  overflow: clip;
+  background: var(--floor);
+  border-top: 1px solid var(--line);
+  padding-block: 0 clamp(72px, 9vw, 120px);
+}
+.ctaInner {
+  display: grid;
+  gap: 8px;
+}
+.ctaText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.ctaLead { margin-top: var(--gap-title); }
+.ctaBtn { margin-top: 32px; margin-bottom: 14px; }
+.ctaVisual {
+  position: relative;
+  order: -1;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  padding-block: 56px 64px;
+}
+/* Le marquage au sol reste sous la plaque, jamais sous le texte. */
+.ctaFloor {
+  inset: 0 calc(-1 * var(--sp-5));
+}
+.ctaPlaque {
+  position: relative;
+  --plaque-rx: 12deg;
+  --plaque-ry: -14deg;
+  --plaque-rz: -3deg;
+}
+.ctaPlaqueObj { --plaque-w: 220px !important; }
+.ctaScan { display: none; }
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .ctaPlaque {
+      animation: plaque-redress linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 45%;
+    }
+  }
+}
+@keyframes plaque-redress {
+  from { --plaque-rx: 35deg; --plaque-rz: -6deg; }
+  to { --plaque-rx: 12deg; --plaque-rz: -3deg; }
+}
+
+@media (min-width: 1024px) {
+  .cta { padding-block: 0; }
+  .ctaInner {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    align-items: center;
+    gap: 48px;
+    min-height: 640px;
+  }
+  .ctaText { padding-block: 120px; }
+  .ctaVisual {
+    order: 0;
+    align-self: stretch;
+    padding-block: 80px;
+  }
+  /* Le marquage s'arrête au-dessus de la légende : jamais sous un texte. */
+  .ctaFloor { inset: 0 -100vw 96px 0; }
+  .ctaPlaqueObj { --plaque-w: 260px !important; }
+  .ctaScan {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 40px;
+    display: block;
+    text-align: center;
+    font-variation-settings: 'wdth' 88, 'wght' 700;
+    font-size: 0.6875rem;
+    line-height: 1;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+}

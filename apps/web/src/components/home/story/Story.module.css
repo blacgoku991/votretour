@@ -1,0 +1,830 @@
+/* =====================================================================
+   LE RANG EN RELIEF — la séquence de l'accueil (WP1)
+   ---------------------------------------------------------------------
+   Primitives 3D partagées dans globals.css (§3.9) : .scene3d, .world3d,
+   .slot3d… Ici : la mise en page de l'histoire, la géométrie de la
+   scène par taille d'écran, et les états du HUD pilotés par attributs.
+
+   Règles : on n'anime que transform et opacity ; tout mouvement est dans
+   @media (prefers-reduced-motion: no-preference) ; le style par défaut
+   est le rendu statique. Aucun transform inline au rendu serveur :
+   l'identité correspond à t = 0.
+   ===================================================================== */
+
+/* ------------------------------------------------------------ Section */
+.story {
+  --gutter: 20px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding-inline: var(--gutter);
+}
+@media (max-width: 379px) {
+  .story { --gutter: 16px; }
+}
+
+/* --------------------------------------------------------------- Héros */
+.hero {
+  position: relative;
+  padding: 28px 0 28px;
+}
+.heroInner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  container-type: inline-size;
+}
+.title {
+  margin-top: 14px;
+  /* Le mot le plus long (« n'attendent ») tient toujours dans la colonne. */
+  font-size: min(clamp(2.625rem, 1.2rem + 6.2vw, 5.75rem), 14.5cqi);
+}
+.lead { margin-top: var(--gap-title); }
+.actions {
+  margin-top: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+.micro { margin-top: 14px; }
+.micro > span { white-space: nowrap; }
+/* Lien d'évitement : invisible tant qu'il n'a pas le focus clavier. */
+.skip:not(:focus-visible) { opacity: 0; pointer-events: none; }
+.scrollHint { display: none; }
+
+@media (max-width: 719px) {
+  /* Deux boutons côte à côte dès 375 px : le produit reste dans le premier écran. */
+  .actions > :global(.btn) {
+    flex: 1 1 auto;
+    min-height: 54px;
+    padding-inline: 16px;
+    font-size: 0.9375rem;
+  }
+}
+
+/* ------------------------------------------------------------- La scène */
+.stage {
+  /* Géométrie mobile (§5.4) */
+  --pitch: 48px;
+  --slat-base: 38px;
+  --self-h: 42px;
+  --slat-h3d: var(--slat-base);
+  --world-w: 220px;
+  --world-top: 40px;
+  --world-right: 20px;
+  --persp: 820px;
+  --persp-origin: 60% 18%;
+  --volet-size: 5.5rem;
+  --hud-x: 16px;
+  --hud-y: 36px;
+  --poster-tx: calc(130px - 50vw);
+
+  position: sticky;
+  top: var(--site-header-h);
+  z-index: 2;
+  height: clamp(320px, 52svh, 480px);
+  margin-inline: calc(-1 * var(--gutter));
+  background: var(--floor);
+  border-block: 1px solid var(--line);
+  pointer-events: none;
+  user-select: none;
+}
+@media (max-width: 1023px) and (max-height: 700px) {
+  .stage { height: 44svh; }
+}
+/* Fondu fonctionnel : le texte des étapes disparaît proprement sous la scène. */
+.stage::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 40px;
+  background: linear-gradient(to bottom, var(--surface), transparent);
+  pointer-events: none;
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .stage {
+    --pitch: 56px;
+    --slat-base: 44px;
+    --self-h: 48px;
+    --world-w: 280px;
+    --world-top: 48px;
+    --world-right: 40px;
+    --persp: 1100px;
+    --persp-origin: 58% 22%;
+    --volet-size: 6.5rem;
+    --hud-x: 24px;
+    --hud-y: 40px;
+    --poster-tx: calc(180px - 50vw);
+  }
+}
+
+/* Le cadre est aussi la scène 3D (perspective) : un seul nœud. */
+.stage > .frame {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+}
+.world {
+  width: var(--world-w);
+  height: calc(6 * var(--pitch));
+  top: var(--world-top);
+  right: var(--world-right);
+}
+.stage[data-live='1'] .world { will-change: transform; }
+
+/* Le rail mesure la file (4 rangées à t = 0) ; il s'allonge ou se
+   raccourcit d'un cran avec elle. */
+.rail {
+  transform-origin: 50% 0;
+  transform: translateZ(0.5px) scaleY(calc(4 / 6));
+}
+
+/* Sol et numéros : invisibles à plat (c'est l'écran client), ils
+   apparaissent avec l'inclinaison. Calque plan, donc l'opacité ne
+   déforme rien. */
+/* Le sol s'étend vers la caméra : des lignes de place jusqu'au bord. */
+.stage .floor {
+  opacity: 0;
+  left: -90px;
+  right: -90px;
+  bottom: calc(var(--pitch) * -5);
+}
+/* Les numéros sont posés dans le sol, dont la boîte déborde du monde. */
+.floor :global(.floorNum) {
+  margin-left: 90px;
+  margin-top: calc(var(--pitch) * 0.5);
+}
+.seuil { opacity: 0; }
+/* La flaque est posée au sol DERRIÈRE le seuil (côté fond), pas sous
+   la tête de file : on la voit entre les poteaux. */
+.stage .spill {
+  opacity: 0;
+  top: calc(var(--pitch) * -2.7);
+  height: calc(var(--pitch) * 2.6);
+  left: -35%;
+  right: -35%;
+}
+.stage[data-lite='1'] .spill { display: none; }
+
+/* Latte « Vous » : un peu plus haute, centrée sur sa rangée. */
+.slot[data-slot='vous'] {
+  --slat-h3d: var(--self-h);
+  margin-top: calc((var(--slat-base) - var(--self-h)) / 2);
+}
+
+/* Faces : libellés courts, décoratifs. */
+.face { justify-content: flex-start; }
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.name {
+  font-variation-settings: 'wdth' 104, 'wght' 720;
+  font-size: 14px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+.hint {
+  font-variation-settings: 'wdth' 88, 'wght' 650;
+  font-size: 10px;
+  line-height: 1.1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.78;
+}
+/* L'indice suit l'état de la latte (textes décoratifs, en CSS). */
+.slot[data-state='self'] .hint::after { content: 'Votre place'; }
+.slot[data-state='kept'] .hint::after { content: 'Place gardée'; }
+.slot[data-state='back'] .hint::after { content: 'De retour'; }
+.slot:is([data-state='turn'], [data-state='passed']) .hint::after { content: 'À vous'; }
+.slot[data-state='ghost'] .text { display: none; }
+/* Fantômes : « Votre place » (vous), « Prochain client » (la boucle). */
+.slot[data-state='ghost'] .face::after,
+.slot[data-slot='next'] .face::after {
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: 13px;
+  line-height: 1;
+}
+.slot[data-slot='vous'][data-state='ghost'] .face::after { content: 'Votre place'; }
+.slot[data-slot='next'] .face::after { content: 'Prochain client'; }
+/* Lattes anonymes : une simple coche, comme sur l'écran client. */
+.anon::before {
+  content: '';
+  flex: none;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.35;
+}
+.slot[data-state='serving'] .anon::before { background: var(--accent); opacity: 0.9; }
+
+/* Le point du client : il quitte la latte quand il sort, revient après. */
+.dot {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--bone-100);
+  box-shadow: 0 0 0 2px var(--ink-1000);
+  transform: translateZ(9px);
+}
+.slot:is([data-state='ghost'], [data-state='passed'], [data-state='hidden']) .dot,
+.stage[data-dot='out'] .dot { opacity: 0; }
+.stage[data-dot='out'] .dot { transform: translateZ(9px) translateX(220px); }
+
+/* Impulsion du rail : un segment vermillon qui remonte de la queue vers la tête. */
+.pulse {
+  position: absolute;
+  left: 0;
+  top: calc(6 * var(--pitch) - 80px);
+  width: 3px;
+  height: 80px;
+  border-radius: 3px;
+  background: var(--accent);
+  opacity: 0;
+  transform: translateZ(0.8px);
+}
+
+/* ----------------------------------------------- Plaque 2D et téléphone */
+.plaque {
+  position: absolute;
+  left: var(--hud-x);
+  /* Mobile : sous le volet, pour tenir dans le premier écran. */
+  top: calc(var(--hud-y) + var(--volet-size) + 64px);
+  z-index: 2;
+  line-height: 0;
+}
+.plaqueObj { --plaque-w: 84px !important; }
+@media (min-width: 768px) and (max-width: 1023px) {
+  .plaqueObj { --plaque-w: 100px !important; }
+}
+.phone {
+  position: absolute;
+  right: -2px;
+  top: -4px;
+  width: 52px;
+  height: 100px;
+  transform-origin: 100% 0;
+  opacity: 0;
+}
+/* Silhouette sans texte : corps encre 800, bord os à 20 %, écran encre
+   1000 avec une barre qui passe au vermillon au contact NFC. */
+.phoneBody {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  background: var(--ink-800);
+  border: 2px solid color-mix(in oklab, var(--bone-100) 20%, transparent);
+}
+.phoneBody::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 10px;
+  background:
+    linear-gradient(var(--ink-600), var(--ink-600)) 50% 44% / 64% 5px no-repeat,
+    var(--ink-1000);
+}
+.phoneBody::after {
+  content: '';
+  position: absolute;
+  left: 21%;
+  right: 21%;
+  top: calc(44% - 1px);
+  height: 5px;
+  border-radius: 3px;
+  background: var(--accent);
+  opacity: 0;
+}
+.stage[data-nfc='on'] .phoneBody::after { opacity: 1; }
+.stage[data-phone='gone'] .phoneBody { opacity: 0; transform: translateY(24px); }
+
+/* ------------------------------------------------------------------ HUD */
+.volet {
+  position: absolute;
+  left: var(--hud-x);
+  top: var(--hud-y);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  transform-origin: 0 0;
+}
+.voletLabel {
+  max-width: 112px;
+  line-height: 1.35;
+  letter-spacing: 0.12em;
+  overflow-wrap: normal;
+}
+.stage:is([data-turn='1'], [data-merci='1']) .volet,
+.volet[data-hidden='1'] { opacity: 0; }
+
+.turn {
+  position: absolute;
+  left: var(--hud-x);
+  top: var(--hud-y);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  opacity: 0;
+}
+.stage[data-turn='1'] .turn { opacity: 1; }
+.turnKicker { font-size: 1rem; line-height: 1; color: var(--text-muted); }
+.turnTitle {
+  margin-bottom: 8px;
+  font-variation-settings: 'wdth' 122, 'wght' 820;
+  font-size: 2.25rem;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  color: var(--accent);
+}
+
+/* Mobile : l'écran de fin, en bas de la scène (là où la file a laissé
+   de la place), sur un fond plein : le marquage au sol ne passe jamais
+   sous un texte. */
+.merci {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  padding: 14px 14px 14px 16px;
+  border-radius: 16px;
+  background: var(--ink-800);
+  box-shadow: var(--edge-light);
+  opacity: 0;
+}
+.merci > :first-child { grid-column: 1; }
+.merci > :nth-child(2) { grid-column: 1; }
+.merci > :nth-child(3) { grid-column: 2; grid-row: 1 / span 2; }
+.stage[data-merci='1'] .merci { opacity: 1; }
+.merciTitle { font-size: 1.375rem; }
+.merciPlace { margin-top: 6px; font-size: 0.875rem; color: var(--text-muted); }
+.merciBtn { white-space: nowrap; }
+
+/* Notification : entre depuis le bas (mobile). */
+.notifWrap {
+  position: absolute;
+  inset-inline: 16px;
+  bottom: 16px;
+  z-index: 3;
+  perspective: 600px;
+}
+.notif {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--ink-800);
+  box-shadow: var(--edge-light);
+  transform-origin: 50% 100%;
+  transform: translateY(110%) rotateX(40deg);
+  opacity: 0;
+}
+.stage[data-notif='1'] .notif { transform: none; opacity: 1; }
+.notifIcon {
+  flex: none;
+  position: relative;
+  width: 30px;
+  height: 30px;
+  margin-top: 2px;
+  border-radius: 8px;
+  background: var(--accent);
+}
+/* Le glyphe de l'icône : un rail et une latte, en encre. */
+.notifIcon::before,
+.notifIcon::after {
+  content: '';
+  position: absolute;
+  border-radius: 2px;
+  background: var(--ink-1000);
+}
+.notifIcon::before { left: 8px; top: 7px; bottom: 7px; width: 2px; }
+.notifIcon::after { left: 12px; top: 13px; width: 11px; height: 4px; }
+.notifText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.notifApp {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.notifTitle {
+  font-variation-settings: 'wdth' 100, 'wght' 700;
+  font-size: 0.9375rem;
+  line-height: 1.25;
+  color: var(--text);
+}
+.notifBody { font-size: 0.875rem; line-height: 1.35; color: var(--text); }
+
+/* Panneau pro : la touche TERMINER. */
+.pro {
+  position: absolute;
+  inset-inline: 16px;
+  bottom: 16px;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 148px);
+  align-items: center;
+  gap: 14px;
+  padding: 14px 14px 14px 16px;
+  border-radius: 18px;
+  background: var(--ink-800);
+  box-shadow: var(--edge-light);
+  opacity: 0;
+  transform: translateY(16px);
+}
+.stage:is([data-pro='on'], [data-pro='pressed']) .pro { opacity: 1; transform: none; }
+.proInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.proName {
+  font-variation-settings: 'wdth' 110, 'wght' 760;
+  font-size: 1.5rem;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.proTime { font-size: 0.875rem; color: var(--text-muted); }
+.stage:is([data-pro='pressed'], [data-turn='1']) .proTime { opacity: 0; }
+/* Deux textes superposés (avant, après), en fondu. */
+.swap { display: grid; justify-items: start; }
+.swap::before,
+.swap::after { grid-area: 1 / 1; white-space: nowrap; }
+.swap::after { opacity: 0; }
+.proLabel::before { content: 'En cours · avec Karim'; }
+.proLabel::after { content: 'Suivant'; }
+.proName::before { content: 'Léa'; }
+.proName::after { content: 'Camille'; }
+.stage:is([data-pro='pressed'], [data-turn='1']) .swap::before { opacity: 0; }
+.stage:is([data-pro='pressed'], [data-turn='1']) .swap::after { opacity: 1; }
+.proKey { margin-bottom: 4px; }
+/* L'anneau de l'appui. */
+.proKey::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--accent);
+  border-radius: calc(var(--r-key) + 2px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Progression (mobile) : 6 segments de 2 px. La piste est un fond
+   répété ; seuls les remplissages bougent (scaleX). */
+.progress {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  right: 16px;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  height: 2px;
+  background-image: linear-gradient(to right, var(--rail) calc(100% - 4px), transparent 0);
+  background-size: calc((100% + 4px) / 6) 100%;
+}
+.segFill {
+  display: block;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+
+/* ------------------------------------------------------------- Étapes */
+.steps {
+  position: relative;
+  z-index: 1;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.step {
+  min-height: 58svh;
+  padding-top: 28px;
+  background: var(--surface);
+  scroll-margin-top: calc(var(--site-header-h) + clamp(320px, 52svh, 480px) + 12px);
+}
+.stepInner { position: relative; }
+.kicker { position: relative; }
+.stepTitle { margin-top: 14px; }
+.stepBody { margin-top: var(--gap-title); max-width: 38ch; }
+.benefit {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  color: var(--text);
+}
+.benefitSlat {
+  flex: none;
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+/* Vignette d'état : visible seulement dans l'affiche (POSTER_CSS). */
+.stepState {
+  display: none;
+  margin-top: 18px;
+  align-items: center;
+  gap: 12px;
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--text);
+}
+.stateSlat {
+  flex: none;
+  width: 40px;
+  height: 14px;
+  border-radius: 5px;
+  background: var(--accent);
+  box-shadow: 0 2px 0 var(--slat-edge-self);
+}
+.stepState[data-outline='1'] .stateSlat {
+  background: transparent;
+  border: 2px solid var(--accent);
+  box-shadow: none;
+}
+
+/* ======================================================= Ordinateur */
+@media (min-width: 1024px) {
+  .story {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    column-gap: 48px;
+    padding-left: max(40px, calc((100% - 1320px) / 2 + 40px));
+    padding-right: 0;
+  }
+
+  .hero {
+    grid-column: 1;
+    grid-row: 1;
+    min-height: calc(100svh - var(--site-header-h));
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 48px 0 calc(8svh + 48px);
+  }
+  .title { margin-top: 20px; }
+  .actions { margin-top: 32px; gap: 12px; }
+  .micro { margin-top: 18px; }
+  .scrollHint {
+    position: absolute;
+    left: 0;
+    bottom: 40px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+  .scrollRail {
+    position: relative;
+    flex: none;
+    width: 2px;
+    height: 32px;
+    border-radius: 2px;
+    background: var(--rail);
+  }
+  .scrollRail::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 15px;
+    width: 10px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--rail);
+  }
+
+  .stage {
+    --pitch: 70px;
+    --slat-base: 54px;
+    --self-h: 58px;
+    --world-w: 430px;
+    --world-top: 19%;
+    --persp: 1150px;
+    --persp-origin: 58% 26%;
+    --volet-size: 8rem;
+    --hud-x: 48px;
+    --hud-y: 48px;
+    --poster-tx: 0px;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: start;
+    height: calc(100svh - var(--site-header-h));
+    margin-inline: 0;
+    border-block: 0;
+    border-left: 1px solid var(--line);
+  }
+  .stage::after { display: none; }
+  .world {
+    left: calc(50% - 150px);
+    right: auto;
+  }
+  .plaque { top: auto; bottom: 48px; }
+  .plaqueObj { --plaque-w: 120px !important; }
+  .phone { width: 72px; height: 140px; right: -3px; top: -6px; }
+  .phoneBody { border-radius: 16px; }
+  .phoneBody::before { inset: 4px; border-radius: 11px; }
+
+  .turnTitle { font-size: 3.5rem; }
+  .merci {
+    right: auto;
+    bottom: auto;
+    top: var(--hud-y);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 240px;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+  .merciBtn { margin-top: 18px; }
+  .merciTitle { font-size: 2rem; }
+
+  .notifWrap {
+    inset-inline: auto;
+    left: auto;
+    right: 32px;
+    top: 32px;
+    bottom: auto;
+    width: 340px;
+  }
+  .notif {
+    transform-origin: 50% 0;
+    transform: translateY(-110%) rotateX(-40deg);
+  }
+
+  .pro {
+    inset-inline: auto;
+    left: 48px;
+    bottom: 48px;
+    width: 360px;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 20px 20px 18px;
+  }
+  .proInfo {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: baseline;
+    row-gap: 10px;
+  }
+  .proInfo > :first-child { grid-column: 1 / -1; }
+  .proName { font-size: 1.5rem; }
+
+  .progress { display: none; }
+
+  /* Rail de lecture : la colonne des étapes s'accroche à une ligne. */
+  /* Le rail de lecture continue sous la dernière étape : la scène reste
+     collée le temps que la file revienne à plat (t = 6). */
+  .steps {
+    grid-column: 1;
+    grid-row: 2;
+    padding-left: 44px;
+    padding-bottom: 45svh;
+  }
+  .steps::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--rail);
+  }
+  .step {
+    min-height: 80svh;
+    display: flex;
+    align-items: center;
+    padding: 48px 0;
+    background: none;
+    scroll-margin-top: calc(var(--site-header-h) + 10svh);
+  }
+  .stepInner { max-width: 30rem; }
+  /* Encoche au niveau du kicker ; l'étape active reçoit la latte vermillon. */
+  .kicker::before,
+  .kicker::after {
+    content: '';
+    position: absolute;
+    left: -44px;
+    top: 50%;
+    width: 20px;
+    height: 2px;
+    margin-top: -1px;
+    border-radius: 2px;
+    background: var(--rail);
+  }
+  .kicker::after {
+    height: 4px;
+    margin-top: -2px;
+    background: var(--accent);
+    opacity: 0;
+    transform-origin: 0 50%;
+    transform: scaleX(0.4);
+  }
+  .step[data-active='1'] .kicker::after { opacity: 1; transform: none; }
+}
+
+
+
+/* ============================================================ Mouvement */
+@media (prefers-reduced-motion: no-preference) {
+  .volet, .turn, .merci { transition: opacity var(--dur-2) var(--ease-out); }
+  .phoneBody { transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out); }
+  .phoneBody::after { transition: opacity var(--dur-2) var(--ease-out); }
+  .rail { transition: transform var(--dur-4) var(--ease-slat); }
+  .dot { transition: transform var(--dur-4) var(--ease-slat), opacity var(--dur-4) var(--ease-out); }
+  .notif {
+    transition: transform var(--dur-3) var(--ease-slat), opacity var(--dur-2) var(--ease-out);
+  }
+  .pro { transition: transform var(--dur-3) var(--ease-slat), opacity var(--dur-2) var(--ease-out); }
+  .swap::before, .swap::after, .proTime { transition: opacity var(--dur-2) var(--ease-out); }
+  .kicker::after { transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-3) var(--ease-slat); }
+
+  /* TERMINER : appui (140 ms) puis retour (240 ms), et un anneau. */
+  .stage[data-pro='pressed'] .proKey { animation: key-press 380ms var(--ease-out) 1; }
+  .stage[data-pro='pressed'] .proKey::after { animation: key-edge 380ms var(--ease-out) 1; }
+  .stage[data-pro='pressed'] .proKey::before { animation: key-ring 450ms var(--ease-out) 1; }
+
+  /* Impulsion du rail : deux animations identiques, alternées. */
+  .world[data-pulse='a'] .pulse { animation: pulse-a var(--dur-4) linear 1; }
+  .world[data-pulse='b'] .pulse { animation: pulse-b var(--dur-4) linear 1; }
+
+  /* Au chargement : les lattes visibles se déplient une fois (CSS pur,
+     propriété `scale`, qui n'écrase pas `transform`). */
+  .slot:is([data-slot='s0'], [data-slot='s1'], [data-slot='s2'], [data-slot='vous']) :is(:global(.slot3d__face), :global(.slot3d__edge)) {
+    animation: slat-unfold var(--dur-4) var(--ease-slat) calc(var(--i, 0) * 60ms + 200ms) backwards;
+  }
+  .slot :global(.slot3d__face) { transform-origin: 0 50%; }
+  .slot :global(.slot3d__edge) { transform-origin: 0 0; }
+}
+
+@keyframes key-press {
+  0% { transform: none; }
+  37% { transform: translateY(3px); }
+  100% { transform: none; }
+}
+@keyframes key-edge {
+  0% { transform: none; }
+  37% { transform: scaleY(0.25); }
+  100% { transform: none; }
+}
+@keyframes key-ring {
+  from { transform: scale(1); opacity: 0.8; }
+  to { transform: scale(1.8); opacity: 0; }
+}
+@keyframes pulse-a {
+  0% { transform: translateZ(0.8px) translateY(0); opacity: 0; }
+  15% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateZ(0.8px) translateY(calc(-6 * var(--pitch))); opacity: 0; }
+}
+@keyframes pulse-b {
+  0% { transform: translateZ(0.8px) translateY(0); opacity: 0; }
+  15% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateZ(0.8px) translateY(calc(-6 * var(--pitch))); opacity: 0; }
+}
+@keyframes slat-unfold {
+  from { scale: 0 1; }
+  to { scale: 1 1; }
+}

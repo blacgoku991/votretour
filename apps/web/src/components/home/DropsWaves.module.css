@@ -1,0 +1,167 @@
+/* Les vagues du mode Event / Drop : un rail, trois groupes, trois barrières. */
+
+.waves {
+  position: relative;
+}
+
+/* ---------------------------------------------------- Vertical (< 720) */
+.track {
+  position: relative;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  gap: 18px;
+  padding-left: 22px;
+}
+.track::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+
+.group {
+  position: relative;
+  flex: none;
+}
+/* Chaque personne : une mini-latte debout de 8 × 22, dans les deux
+   orientations (seule la grille change). */
+.slats {
+  display: flex;
+  gap: 4px;
+}
+.slats > i {
+  display: block;
+  width: 8px;
+  height: 22px;
+  border-radius: 3px;
+  background: var(--slat);
+  box-shadow: 2px 0 0 var(--slat-edge);
+}
+/* Vertical : chaque groupe s'accroche au rail par une encoche. */
+.group::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 50%;
+  width: 14px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.group[data-wave='1']::before { background: var(--accent); height: 4px; margin-top: -2px; }
+.outline,
+.outlineOn {
+  position: absolute;
+  inset: -7px;
+  border-radius: 9px;
+  border: 1.5px solid var(--line-strong);
+  pointer-events: none;
+}
+.outlineOn {
+  border-color: var(--accent);
+  opacity: 0;
+}
+.label {
+  position: absolute;
+  left: calc(100% + 18px);
+  top: 50%;
+  translate: 0 -50%;
+  display: grid;
+  white-space: nowrap;
+}
+.label > span { grid-area: 1 / 1; }
+.label > [data-l='go'] { color: var(--accent); opacity: 0; }
+
+.barrier {
+  display: block;
+  flex: none;
+  width: 106px;
+  height: auto;
+  margin-left: -25px;
+  overflow: visible;
+}
+.post { fill: var(--bone-500); }
+.pivot { fill: var(--bone-100); }
+.arm {
+  transform-box: view-box;
+  transform-origin: 3px 7px;
+}
+
+.entry {
+  position: relative;
+  margin-left: -22px;
+  margin-bottom: 64px;
+  padding-left: 18px;
+  color: var(--accent);
+}
+.entry::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 10px;
+  height: 3px;
+  margin-top: -1.5px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* État ouvert : bras levé, vague 1 qui avance vers l'entrée. */
+.waves[data-open='1'] .barrier[data-n='1'] .arm { transform: rotate(-78deg); }
+.waves[data-open='1'] .group[data-wave='1'] { transform: translateY(-24px); }
+.waves[data-open='1'] .outlineOn { opacity: 1; }
+.waves[data-open='1'] [data-wave='1'] .outline { opacity: 0; }
+.waves[data-open='1'] [data-wave='1'] [data-l='wait'] { opacity: 0; }
+.waves[data-open='1'] [data-wave='1'] [data-l='go'] { opacity: 1; }
+
+/* ------------------------------------------------ Horizontal (≥ 720) */
+@media (min-width: 720px) {
+  /* Place au-dessus pour les bras levés, au-dessous pour les étiquettes. */
+  .waves { padding: 76px 0 34px; }
+  .track {
+    width: fit-content;
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 10px;
+    padding-left: 0;
+    padding-bottom: 4px;
+  }
+  .track::before {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: 2px;
+  }
+  .group::before { display: none; }
+  /* Étiquettes sous le rail : les bras levés montent, ils ne les croisent jamais. */
+  .label {
+    left: -7px;
+    top: calc(100% + 22px);
+    translate: none;
+  }
+  .barrier {
+    width: clamp(72px, 8vw, 106px);
+    margin-left: -4px;
+  }
+  .entry {
+    margin-left: 0;
+    margin-bottom: 0;
+    padding-left: 0;
+    padding-bottom: 6px;
+  }
+  .entry::before { display: none; }
+  .waves[data-open='1'] .group[data-wave='1'] { transform: translateX(24px); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .arm { transition: transform var(--dur-4) var(--ease-slat); }
+  .group[data-wave='1'] { transition: transform var(--dur-4) var(--ease-slat) 200ms; }
+  .outline, .outlineOn, .label > span { transition: opacity var(--dur-2) var(--ease-out) 320ms; }
+}
