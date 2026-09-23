@@ -16,10 +16,10 @@ export default async function StandaloneTVPage({
   searchParams,
 }: {
   params: Promise<{ org: string }>;
-  searchParams: Promise<{ file?: string }>;
+  searchParams: Promise<{ file?: string; event?: string }>;
 }) {
   const { org } = await params;
-  const { file } = await searchParams;
+  const { file, event } = await searchParams;
   const access = await requireOrgAccess(org);
   const db = supabaseAdmin();
 
@@ -39,14 +39,25 @@ export default async function StandaloneTVPage({
   const selected = list.find((queue) => queue.id === file) ?? list[0] ?? null;
   const snapshot = selected ? await getQueueSnapshot(selected.id) : null;
 
+  const eventSelect = 'id, name, status, hero_title, logo_url, cover_url, accent_hex, rules_text, qr_label';
+  const explicitEventId = event && /^[0-9a-f-]{36}$/i.test(event) ? event : null;
+
   const { data: liveEvent } = selected
-    ? await db.from('event_campaigns')
-        .select('id, name, status, hero_title, logo_url, cover_url, accent_hex, rules_text, qr_label')
-        .eq('queue_id', selected.id)
-        .in('status', ['live', 'paused'])
-        .order('started_at', { ascending: false, nullsFirst: false })
-        .limit(1)
-        .maybeSingle()
+    ? explicitEventId
+      ? await db.from('event_campaigns')
+          .select(eventSelect)
+          .eq('id', explicitEventId)
+          .eq('organization_id', access.organization.organization_id)
+          .eq('queue_id', selected.id)
+          .maybeSingle()
+      : await db.from('event_campaigns')
+          .select(eventSelect)
+          .eq('organization_id', access.organization.organization_id)
+          .eq('queue_id', selected.id)
+          .in('status', ['live', 'paused'])
+          .order('started_at', { ascending: false, nullsFirst: false })
+          .limit(1)
+          .maybeSingle()
     : { data: null };
 
   const eventTheme = liveEvent ? {
