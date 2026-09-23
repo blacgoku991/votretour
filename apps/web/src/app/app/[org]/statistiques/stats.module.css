@@ -1,39 +1,79 @@
-.page { display: flex; flex-direction: column; gap: var(--sp-6); padding-top: var(--sp-5); }
+.page {
+  container: stats / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 44px;
+  padding-top: 24px;
+}
+@media (min-width: 900px) { .page { padding-top: 0; gap: 52px; } }
 
-/* Les filtres tiennent sur une seule ligne, au-dessus des graphiques. */
-.filters { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
-
-.rangeGroup {
-  display: inline-flex;
-  padding: 3px;
-  border-radius: var(--r-pill);
-  background: var(--surface-sunken);
-  border: 1px solid var(--line);
+/* Filtres : sélecteurs segmentés de liens. */
+.filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+@media (max-width: 599px) {
+  .filters { width: 100%; }
+  .seg { width: 100%; }
 }
 
-.rangeBtn {
-  padding: 6px 14px;
-  border-radius: var(--r-pill);
-  font-size: 0.8125rem;
-  font-variation-settings: 'wght' 620;
+/* ---------------------------------------------------------------------
+   Bande KPI : 5 cellules, l'attente médiane en tête.
+   2 colonnes (téléphone) → 4 colonnes (la tête en 2 × 2) → 6 colonnes
+   (une seule rangée). Jamais de case vide dans la bande.
+   --------------------------------------------------------------------- */
+.band { min-width: 0; }
+.kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.kpis > :first-child { grid-column: span 2; }
+@container stats (min-width: 560px) {
+  .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .kpis > :first-child { grid-column: span 2; grid-row: span 2; justify-content: flex-end; }
+}
+@container stats (min-width: 1000px) {
+  .kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .kpis > :first-child { grid-row: auto; }
+}
+
+.impact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.impact > :first-child { grid-column: span 2; }
+@container stats (min-width: 560px) {
+  .impact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .impact > :first-child { grid-column: auto; }
+}
+
+/* La phrase de synthèse, dans le flux, sous la bande. */
+.impactLine {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 0.9375rem;
+  line-height: 1.5;
   color: var(--text-muted);
-  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+  text-wrap: pretty;
 }
-.rangeBtnActive { background: var(--surface-raised); color: var(--text); box-shadow: var(--shadow-1); }
-
-.statGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: var(--sp-3);
+.impactLine strong { color: var(--text); font-variation-settings: 'wdth' 104, 'wght' 720; }
+.impactNotch {
+  flex: none;
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: translateY(-4px);
 }
-
-.chartCard { padding: var(--sp-5); }
+.arrow { color: var(--accent); font-variation-settings: 'wght' 700; }
+.impactRate { color: var(--text-muted); }
 
 .twoUp {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--sp-6);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 44px;
 }
-@media (min-width: 900px) {
-  .twoUp { grid-template-columns: 1fr 1fr; }
+@container stats (min-width: 820px) {
+  .twoUp { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 56px; }
+}
+
+.note {
+  max-width: 72ch;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-muted);
 }

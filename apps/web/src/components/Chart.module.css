@@ -1,29 +1,34 @@
-.figure { display: flex; flex-direction: column; gap: var(--sp-3); margin: 0; }
+.figure { display: flex; flex-direction: column; gap: 14px; margin: 0; min-width: 0; }
 
-.empty { padding: var(--sp-7) 0; text-align: center; }
+.empty {
+  padding: 28px 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
 
 /* ---------------------------------------------------------------------
    Légende — présente dès deux séries, absente pour une seule
    --------------------------------------------------------------------- */
-.legend { display: flex; gap: var(--sp-4); flex-wrap: wrap; }
-
+.legend { display: flex; gap: 18px; flex-wrap: wrap; }
 .legendItem {
-  display: inline-flex; align-items: center; gap: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 0.8125rem;
   /* Le texte porte un jeton de texte, jamais la couleur de la série. */
   color: var(--text-muted);
 }
-
 .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 
 /* ---------------------------------------------------------------------
    Aire de tracé
    --------------------------------------------------------------------- */
-.plot { position: relative; padding-left: 34px; }
+.plot { position: relative; padding-left: 36px; margin-top: 16px; }
 
 .gridline {
   position: absolute;
-  left: 34px; right: 0;
+  left: 36px;
+  right: 0;
   height: 1px;
   background: var(--chart-grid);
   pointer-events: none;
@@ -31,14 +36,18 @@
 
 .axis {
   position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 30px;
-  display: flex; flex-direction: column; justify-content: space-between;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   pointer-events: none;
 }
 .tick {
-  font-size: 0.625rem;
-  color: var(--text-faint);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
   line-height: 1;
   transform: translateY(-50%);
   text-align: right;
@@ -51,8 +60,6 @@
   height: 100%;
   display: flex;
   align-items: flex-end;
-  /* L'écart de 2 px entre colonnes voisines est fait par le fond,
-     jamais par un contour dessiné autour des barres. */
   gap: 2px;
 }
 
@@ -64,13 +71,26 @@
   align-items: flex-end;
   justify-content: center;
   border-radius: 6px 6px 0 0;
-  transition: background var(--dur-1) var(--ease-out);
   cursor: default;
   min-width: 0;
 }
-.slotHover { background: var(--chart-track); }
+/* Survol : un calque dont seule l'opacité change. */
+.slot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--chart-track);
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-out);
+  pointer-events: none;
+}
+.slot[data-hover='1']::before { opacity: 1; }
+/* Heure courante : une colonne de fond plus marquée. */
+.slot[data-now='1']::before { opacity: 1; background: color-mix(in oklab, var(--accent) 7%, transparent); }
 
 .bars {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 2px;
@@ -84,15 +104,24 @@
   min-height: 2px;
   /* Extrémité arrondie côté donnée, carrée sur la ligne de base. */
   border-radius: 4px 4px 0 0;
-  transition: height var(--dur-3) var(--ease-slat);
+  transform-origin: 50% 100%;
+}
+
+/* Les barres montent depuis la base, une fois, à l'entrée dans la vue. */
+@media (prefers-reduced-motion: no-preference) {
+  .plot:not([data-in]) .bar { transform: scaleY(0); }
+  .plot[data-in] .bar {
+    transition: transform var(--dur-3) var(--ease-slat) calc(var(--i, 0) * 20ms);
+  }
 }
 
 /* Étiquette directe : uniquement sur l'extrême. */
 .peakLabel {
   position: absolute;
-  top: -16px;
-  font-size: 0.6875rem;
-  font-variation-settings: 'wght' 700;
+  margin-bottom: 6px;
+  line-height: 1;
+  font-size: 0.75rem;
+  font-variation-settings: 'wght' 720;
   color: var(--text-muted);
   pointer-events: none;
 }
@@ -103,78 +132,97 @@
   left: 50%;
   translate: -50% 0;
   z-index: 10;
-  min-width: 132px;
-  padding: var(--sp-2) var(--sp-3);
+  min-width: 140px;
+  padding: 8px 12px;
   border-radius: 10px;
   background: var(--surface-inverse);
   color: var(--text-inverse);
   box-shadow: var(--shadow-lift);
   pointer-events: none;
-  animation: fade-in var(--dur-1) var(--ease-out);
 }
+.slot:first-child .tooltip, .slot:nth-child(2) .tooltip { left: 0; translate: 0 0; }
+.slot:last-child .tooltip, .slot:nth-last-child(2) .tooltip { left: auto; right: 0; translate: 0 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .tooltip { animation: tip-in var(--dur-1) var(--ease-out) backwards; }
+}
+@keyframes tip-in { from { opacity: 0; } }
 .tooltipTitle {
   font-size: 0.6875rem;
   font-variation-settings: 'wght' 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  opacity: 0.7;
+  opacity: 0.72;
   margin-bottom: 4px;
   white-space: nowrap;
 }
-.tooltipRow {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 0.8125rem;
-  white-space: nowrap;
-}
-.tooltipRow strong { margin-left: auto; font-variation-settings: 'wght' 700; }
+.tooltipRow { display: flex; align-items: center; gap: 6px; font-size: 0.8125rem; white-space: nowrap; }
+.tooltipRow strong { margin-left: auto; padding-left: 10px; font-variation-settings: 'wght' 700; }
 
 /* ---------------------------------------------------------------------
    Axe des abscisses
    --------------------------------------------------------------------- */
-.xAxis {
-  display: flex;
-  gap: 2px;
-  padding-left: 34px;
-}
+.xAxis { display: flex; gap: 2px; padding-left: 36px; }
 .xLabel {
+  position: relative;
   flex: 1;
   min-width: 0;
+  padding-top: 8px;
   text-align: center;
-  font-size: 0.625rem;
-  color: var(--text-faint);
-  overflow: hidden;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  overflow: visible;
   white-space: nowrap;
 }
+/* L'encoche vermillon de l'heure courante (posée après montage). */
+.xLabel[data-now='1'] { color: var(--text); font-variation-settings: 'wght' 760; }
+.xLabel[data-now='1']::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 12px;
+  height: 3px;
+  margin-left: -6px;
+  border-radius: 0 0 2px 2px;
+  background: var(--accent);
+}
+
+.foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.nowKey {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.nowNotch { width: 12px; height: 3px; border-radius: 2px; background: var(--accent); }
 
 /* ---------------------------------------------------------------------
    Vue tableau — toujours accessible
    --------------------------------------------------------------------- */
 .tableToggle {
-  align-self: flex-start;
-  font-size: 0.75rem;
+  min-height: 32px;
+  font-size: 0.8125rem;
   color: var(--text-muted);
   text-decoration: underline;
-  text-underline-offset: 3px;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 4px;
 }
-.tableToggle:hover { color: var(--text); }
+.tableToggle:hover { color: var(--text); text-decoration-color: currentColor; }
 
 .tableWrap { overflow-x: auto; }
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8125rem;
-}
+.table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
 .table th, .table td {
-  padding: 7px 10px;
+  padding: 8px 10px;
   text-align: left;
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
 .table thead th {
-  font-variation-settings: 'wdth' 92, 'wght' 700;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
   font-size: 0.6875rem;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -182,44 +230,79 @@
 .table tbody th { font-variation-settings: 'wght' 620; }
 
 /* ---------------------------------------------------------------------
-   Barres horizontales
+   Lattes horizontales sur rail
    --------------------------------------------------------------------- */
-.barList { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
-
-.barRow {
-  display: grid;
-  grid-template-columns: minmax(80px, 140px) 1fr auto;
-  gap: var(--sp-3);
-  align-items: center;
+.barList {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
-
+.barList::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.barRow { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+/* Encoche au niveau de la latte. */
+.barRow::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  bottom: 5px;
+  width: 16px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.barHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
 .barLabel {
-  font-size: 0.875rem;
-  font-variation-settings: 'wght' 620;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0;
+  font-size: 0.9375rem;
+  font-variation-settings: 'wght' 640;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.barValue { flex: none; font-size: 0.8125rem; color: var(--text-muted); white-space: nowrap; }
+.barValue strong {
+  font-size: 0.9375rem;
+  color: var(--text);
+  font-variation-settings: 'wdth' 110, 'wght' 760;
+}
+.barShare { color: var(--text-muted); }
 
 .barTrack {
-  height: 14px;
-  border-radius: 7px;
+  display: block;
+  height: 12px;
+  border-radius: 4px;
   background: var(--chart-track);
   overflow: hidden;
 }
-
 .barFill {
   display: block;
   height: 100%;
   border-radius: 0 4px 4px 0;
-  transition: width var(--dur-3) var(--ease-slat);
+  transform-origin: 0 50%;
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--bone-100) 18%, transparent);
 }
-
-.barValue {
-  font-size: 0.8125rem;
-  font-variation-settings: 'wght' 680;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-@media (max-width: 520px) {
-  .barRow { grid-template-columns: minmax(64px, 96px) 1fr auto; gap: var(--sp-2); }
+@media (prefers-reduced-motion: no-preference) {
+  .barList:not([data-in]) .barFill { transform: scaleX(0); }
+  .barList[data-in] .barFill {
+    transition: transform var(--dur-4) var(--ease-slat) calc(var(--i, 0) * 60ms);
+  }
 }

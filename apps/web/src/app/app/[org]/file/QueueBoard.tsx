@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
+import Link from 'next/link';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/browser';
 import {
@@ -8,8 +9,10 @@ import {
 } from '@/server/actions/queue';
 import type { StaffAction } from '@/server/queue';
 import { STAFF_STATUS_LABEL, SOURCE_LABEL } from '@/lib/copy';
-import { formatTime, elapsedSeconds, formatDuration, initials, relativeTime } from '@/lib/format';
-import { useMounted } from '@/hooks/useMounted';
+import { formatTime, elapsedSeconds, formatDurationBounded, relativeTime } from '@/lib/format';
+import { FlapNumber } from '@/components/FlapNumber';
+import { Icon } from '@/components/AppShell';
+import { useReducedMotion } from '@/components/motion/useMotionPreference';
 import type { QueueSnapshot, StaffEntry, QueueStatus } from '@/lib/types';
 import styles from './board.module.css';
 
@@ -17,12 +20,15 @@ import styles from './board.module.css';
  * L'ÉCRAN DE TRAVAIL DU PROFESSIONNEL.
  *
  * Règle de conception : faire avancer la file doit tenir en UN geste.
- * TERMINER est donc un bouton plein, large, toujours au même endroit, et
- * il déclenche à lui seul la cascade complète — transition, recalcul des
- * positions, diffusion temps réel, notifications, historique.
+ * TERMINER est la seule « touche » de l'écran — une vraie touche, dont la
+ * tranche s'écrase à l'appui — et elle déclenche à elle seule la cascade
+ * complète : transition, recalcul des positions, diffusion temps réel,
+ * notifications, historique.
  *
- * Tout le reste (absent, décaler, retirer, appeler) est accessible mais
- * ne dispute jamais l'attention à cette action-là.
+ * L'écran EST la file : un rail vertical part du comptoir (en cours),
+ * passe par le prochain, puis descend le long des personnes en attente.
+ * Aucune animation liée au défilement ; seulement des micro-mouvements
+ * utiles (le Passage de la latte servie, les volets des compteurs).
  */
 
 interface QueueRef { id: string; name: string; locationName: string; status: string }
@@ -35,15 +41,31 @@ interface Props {
   canConfigure: boolean;
 }
 
+type Act = (id: string, action: StaffAction, options?: Record<string, unknown>) => void;
+
+/** Copie fantôme d'une prestation terminée, le temps de son Passage. */
+interface Ghost {
+  key: string;
+  entry: StaffEntry;
+  staffName: string | null;
+  top: number;
+  height: number;
+}
+
+const PASS_MS = 420;
+const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+
 export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canConfigure }: Props) {
   const router = useRouter();
   const [snapshot, setSnapshot] = useState<QueueSnapshot | null>(initialSnapshot);
   const [busyEntry, setBusyEntry] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [statusPending, startStatus] = useTransition();
   const [, startTransition] = useTransition();
   const queueId = snapshot?.queue.id ?? null;
-  const mounted = useMounted();
+  const now = useNow(30_000);
+  const reduced = useReducedMotion();
 
   /* ---------------------------------------------------------------
      Temps réel : Postgres Changes sous RLS.
@@ -117,8 +139,8 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
   /* ---------------------------------------------------------------
      Actions
      --------------------------------------------------------------- */
-  const act = useCallback(
-    (entryId: string, action: StaffAction, options?: Record<string, unknown>) => {
+  const act = useCallback<Act>(
+    (entryId, action, options) => {
       if (!canOperate) return;
       setError(null);
       setBusyEntry(entryId);
@@ -150,7 +172,7 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
   const setStatus = useCallback((status: QueueStatus, reason?: string) => {
     if (!queueId) return;
     setError(null);
-    startTransition(async () => {
+    startStatus(async () => {
       const result = await changeQueueStatus({ queueId, status, reason: reason ?? null });
       if (!result.ok) { setError(result.error); return; }
       setSnapshot(result.data.snapshot);
@@ -158,10 +180,67 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
     });
   }, [queueId, router]);
 
+  /* ---------------------------------------------------------------
+     LE PASSAGE : quand une prestation disparaît de l'instantané, on
+     garde 420 ms une copie fantôme de sa latte, posée exactement où
+     elle était, qui se relève comme un volet (.slat--leaving). La
+     suivante arrive en dessous en se dépliant (slat-enter).
+     --------------------------------------------------------------- */
+  const servingRef = useRef<HTMLDivElement | null>(null);
+  const geometry = useRef(new Map<string, { top: number; height: number }>());
+  const previous = useRef(new Map<string, { entry: StaffEntry; staffName: string | null }>());
+  const [ghosts, setGhosts] = useState<Ghost[]>([]);
+
+  const serving = snapshot?.serving;
+  const staffList = snapshot?.staff;
+  useIsoLayoutEffect(() => {
+    const current = new Map<string, { entry: StaffEntry; staffName: string | null }>();
+    for (const entry of serving ?? []) {
+      current.set(entry.id, {
+        entry,
+        staffName: staffList?.find((s) => s.id === entry.staffId)?.name ?? null,
+      });
+    }
+
+    const gone: Ghost[] = [];
+    if (!reduced) {
+      previous.current.forEach((value, id) => {
+        const box = geometry.current.get(id);
+        if (!current.has(id) && box) {
+          gone.push({ key: `${id}:${Date.now()}`, ...value, ...box });
+        }
+      });
+    }
+    previous.current = current;
+
+    // Géométrie des lattes présentes : une lecture par changement
+    // d'instantané, jamais dans une boucle d'images.
+    const root = servingRef.current;
+    geometry.current = new Map();
+    root?.querySelectorAll<HTMLElement>('[data-serving-id]').forEach((el) => {
+      geometry.current.set(el.dataset.servingId!, { top: el.offsetTop, height: el.offsetHeight });
+    });
+
+    if (gone.length > 0) {
+      setGhosts((list) => [...list, ...gone]);
+      // Retrait à la fin de l'animation (animationend) ; filet de
+      // sécurité si l'événement ne vient jamais (onglet en arrière-plan).
+      const keys = new Set(gone.map((g) => g.key));
+      window.setTimeout(() => {
+        setGhosts((list) => list.filter((g) => !keys.has(g.key)));
+      }, PASS_MS * 4);
+    }
+  }, [serving, staffList, reduced]);
+
+  const dropGhost = useCallback((key: string) => {
+    setGhosts((list) => list.filter((g) => g.key !== key));
+  }, []);
+
   if (!snapshot) {
     return (
       <div className="shell">
-        <div className={styles.empty}>
+        <div className={styles.unavailable}>
+          <p className="t-label">File</p>
           <h1 className="t-title">File indisponible</h1>
           <p className="t-body t-muted">Rechargez la page ou choisissez une autre file.</p>
         </div>
@@ -169,202 +248,277 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
     );
   }
 
-  const { queue, counts, serving, called, waiting, parked, staff } = snapshot;
+  const { queue, called, waiting, parked, staff } = snapshot;
+  const servingList = snapshot.serving;
   const nextUp = called[0] ?? waiting[0] ?? null;
   const rest = called.length > 0 ? waiting : waiting.slice(1);
+  const staffName = (id: string | null) => staff.find((s) => s.id === id)?.name ?? null;
+  const empty = servingList.length === 0 && !nextUp;
 
   return (
     <div className={`shell ${styles.board}`}>
-      <StatusBar
+      <StatusHeader
         snapshot={snapshot}
         queues={queues}
         orgSlug={orgSlug}
         canOperate={canOperate}
+        pending={statusPending}
         onStatus={setStatus}
       />
 
-      {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
-      {flash && <div className={styles.flash} role="status">{flash}</div>}
-
-      {queue.status !== 'open' && (
-        <div className="banner banner--warn">
-          <span>
-            {queue.status === 'paused'
-              ? `File en pause${queue.pauseReason ? ` — ${queue.pauseReason}` : ''}. Personne ne peut la rejoindre.`
-              : 'File fermée. Ouvrez-la pour que vos clients puissent scanner la plaque.'}
-          </span>
+      {(error || flash || queue.status !== 'open') && (
+        <div className={styles.notices}>
+          {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
+          {flash && (
+            <div className={styles.flash} role="status">
+              <span className={styles.flashMark} aria-hidden="true" />
+              {flash}
+            </div>
+          )}
+          {queue.status !== 'open' && (
+            <div className="banner banner--warn">
+              <span>
+                {queue.status === 'paused'
+                  ? `File en pause${queue.pauseReason ? ` — ${queue.pauseReason}` : ''}. Personne ne peut la rejoindre.`
+                  : 'File fermée. Ouvrez-la pour que vos clients puissent approcher leur téléphone de la plaque.'}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ---------------- EN COURS ---------------- */}
-      <section className={styles.section}>
-        <div className={styles.sectionHead}>
-          <h2 className="t-label">En cours</h2>
-          {counts.serving > 0 && <span className="chip chip--signal">{counts.serving}</span>}
-        </div>
+      <div className={styles.columns}>
+        {/* ======================= LA FILE ======================= */}
+        <div className={styles.lane}>
+          {empty ? (
+            <EmptyLane orgSlug={orgSlug} paused={queue.status !== 'open'} />
+          ) : (
+            <>
+              {/* ---------------- EN COURS ---------------- */}
+              <section className={styles.stop} aria-labelledby="stop-serving">
+                <h2 id="stop-serving" className={`t-label ${styles.stopLabel}`}>
+                  En cours
+                  {servingList.length > 1 && <span className={styles.stopCount}>{servingList.length}</span>}
+                </h2>
 
-        {serving.length === 0 ? (
-          <div className={styles.idle}>
-            <p className="t-section">Personne en prestation</p>
-            <p className="t-small t-muted">
-              {nextUp
-                ? `Démarrez ${nextUp.name ?? 'le suivant'} quand vous êtes prêt.`
-                : 'La file est vide.'}
-            </p>
-          </div>
-        ) : (
-          <div className={styles.servingGrid}>
-            {serving.map((entry) => (
-              <ServingCard
-                key={entry.id}
-                entry={entry}
-                staffName={staff.find((s) => s.id === entry.staffId)?.name ?? null}
-                busy={busyEntry === entry.id}
-                disabled={!canOperate}
-                absentPolicy={queue.absentPolicy}
-                moveBackBy={queue.absentMoveBackBy}
-                onAct={act}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+                <div ref={servingRef} className={styles.servingStack}>
+                  {servingList.length === 0 ? (
+                    <div className={styles.idle} data-notch="idle">
+                      <p className={styles.idleTitle}>Personne au comptoir</p>
+                      <p className={styles.idleText}>
+                        {nextUp
+                          ? `Démarrez ${nextUp.name ?? 'le client suivant'} quand vous êtes prêt.`
+                          : 'La file est vide.'}
+                      </p>
+                    </div>
+                  ) : (
+                    servingList.map((entry) => (
+                      <ServingSlat
+                        key={entry.id}
+                        entry={entry}
+                        staffName={staffName(entry.staffId)}
+                        busy={busyEntry === entry.id}
+                        disabled={!canOperate}
+                        absentPolicy={queue.absentPolicy}
+                        moveBackBy={queue.absentMoveBackBy}
+                        onAct={act}
+                      />
+                    ))
+                  )}
 
-      {/* ---------------- PROCHAIN ---------------- */}
-      {nextUp && (
-        <section className={styles.section}>
-          <div className={styles.sectionHead}>
-            <h2 className="t-label">Prochain</h2>
-          </div>
-          <NextCard
-            entry={nextUp}
-            staffName={staff.find((s) => s.id === nextUp.staffId)?.name ?? null}
-            busy={busyEntry === nextUp.id}
-            disabled={!canOperate}
-            advanceMode={queue.advanceMode}
-            onAct={act}
-          />
-        </section>
-      )}
+                  {ghosts.map((ghost) => (
+                    <ServingSlat
+                      key={ghost.key}
+                      ghost
+                      entry={ghost.entry}
+                      staffName={ghost.staffName}
+                      style={{ top: ghost.top, height: ghost.height }}
+                      onPassed={() => dropGhost(ghost.key)}
+                      busy={false}
+                      disabled
+                      absentPolicy={queue.absentPolicy}
+                      moveBackBy={queue.absentMoveBackBy}
+                      onAct={act}
+                    />
+                  ))}
+                </div>
+              </section>
 
-      {/* ---------------- EN ATTENTE ---------------- */}
-      <section className={styles.section}>
-        <div className={styles.sectionHead}>
-          <h2 className="t-label">En attente</h2>
-          <span className="chip">{rest.length}</span>
-        </div>
+              {/* ---------------- PROCHAIN ---------------- */}
+              {nextUp && (
+                <section className={styles.stop} aria-labelledby="stop-next">
+                  <h2 id="stop-next" className={`t-label ${styles.stopLabel}`}>Prochain</h2>
+                  <NextSlat
+                    key={nextUp.id}
+                    entry={nextUp}
+                    staffName={staffName(nextUp.staffId)}
+                    busy={busyEntry === nextUp.id}
+                    disabled={!canOperate}
+                    advanceMode={queue.advanceMode}
+                    now={now}
+                    onAct={act}
+                  />
+                </section>
+              )}
 
-        {rest.length === 0 ? (
-          <p className={`t-small t-muted ${styles.hint}`}>
-            Personne d&apos;autre n&apos;attend pour le moment.
-          </p>
-        ) : (
-          <div className={`rang ${styles.waitingRang}`}>
-            {rest.map((entry, index) => (
-              <WaitingRow
-                key={entry.id}
-                entry={entry}
-                index={index}
-                staffName={staff.find((s) => s.id === entry.staffId)?.name ?? null}
-                busy={busyEntry === entry.id}
-                disabled={!canOperate}
-                moveBackBy={queue.absentMoveBackBy}
-                onAct={act}
-              />
-            ))}
-          </div>
-        )}
+              {/* ---------------- EN ATTENTE ---------------- */}
+              <section className={styles.stop} aria-labelledby="stop-waiting">
+                <h2 id="stop-waiting" className={`t-label ${styles.stopLabel}`}>
+                  En attente
+                  <span className={styles.stopCount}>{rest.length}</span>
+                </h2>
 
-        {canOperate && <AddWalkin queueId={queue.id} staff={staff} onAdded={setSnapshot} />}
-      </section>
-
-      {/* ---------------- ABSENTS / RETIRÉS ---------------- */}
-      {parked.length > 0 && (
-        <section className={styles.section}>
-          <div className={styles.sectionHead}>
-            <h2 className="t-label">Absents et retirés</h2>
-            <span className="chip">{parked.length}</span>
-          </div>
-          <div className={styles.parked}>
-            {parked.map((entry) => (
-              <div key={entry.id} className={styles.parkedRow}>
-                <span className={styles.parkedName}>{entry.name ?? 'Sans prénom'}</span>
-                <span className="chip chip--brique">{STAFF_STATUS_LABEL[entry.status]}</span>
-                <span className="t-micro t-faint">
-                  {mounted ? relativeTime(entry.absentAt ?? entry.joinedAt) : ''}
-                </span>
-                {canOperate && (
-                  <button
-                    type="button"
-                    className="btn btn--ghost btn--sm"
-                    disabled={busyEntry === entry.id}
-                    onClick={() => act(entry.id, 'restore')}
-                  >
-                    Remettre en file
-                  </button>
+                {rest.length === 0 ? (
+                  <p className={styles.nobody}>Personne d&apos;autre n&apos;attend pour le moment.</p>
+                ) : (
+                  <ol className={styles.waitList}>
+                    {rest.map((entry, index) => (
+                      <WaitingRow
+                        key={entry.id}
+                        entry={entry}
+                        position={index + 2}
+                        staffName={staffName(entry.staffId)}
+                        busy={busyEntry === entry.id}
+                        disabled={!canOperate}
+                        moveBackBy={queue.absentMoveBackBy}
+                        now={now}
+                        onAct={act}
+                      />
+                    ))}
+                  </ol>
                 )}
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+              </section>
+            </>
+          )}
+        </div>
 
-      {/* ---------------- ÉQUIPE ---------------- */}
-      {staff.length > 0 && (
-        <section className={styles.section}>
-          <div className={styles.sectionHead}>
-            <h2 className="t-label">Équipe</h2>
-          </div>
-          <div className={styles.staffRow}>
-            {staff.map((member) => (
-              <StaffChip
-                key={member.id}
-                member={member}
-                disabled={!canConfigure}
-                onToggle={(onBreak) =>
-                  startTransition(async () => {
-                    await toggleStaffBreak({ staffId: member.id, onBreak });
-                    await refresh();
-                  })
-                }
-              />
-            ))}
-          </div>
-        </section>
-      )}
+        {/* ======================= OUTILS ======================= */}
+        <aside className={styles.side} aria-label="Outils du comptoir">
+          {canOperate && (
+            <section className={styles.tool}>
+              <h2 className={`t-label ${styles.toolLabel}`}>Ajouter au comptoir</h2>
+              <AddWalkin queueId={queue.id} staff={staff} onAdded={setSnapshot} />
+            </section>
+          )}
+
+          {parked.length > 0 && (
+            <section className={styles.tool}>
+              <h2 className={`t-label ${styles.toolLabel}`}>
+                Absents et retirés
+                <span className={styles.stopCount}>{parked.length}</span>
+              </h2>
+              <ul className={styles.parked}>
+                {parked.map((entry) => (
+                  <li key={entry.id} className={styles.parkedRow}>
+                    <span className={styles.parkedWho}>
+                      <span className={styles.parkedName}>{entry.name ?? 'Client sans prénom'}</span>
+                      <span className={styles.parkedMeta}>
+                        {STAFF_STATUS_LABEL[entry.status]}
+                        {now != null && ` · ${relativeTime(entry.absentAt ?? entry.joinedAt)}`}
+                      </span>
+                    </span>
+                    {canOperate && (
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--sm"
+                        disabled={busyEntry === entry.id}
+                        onClick={() => act(entry.id, 'restore')}
+                      >
+                        Remettre en file
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {staff.length > 0 && (
+            <section className={styles.tool}>
+              <h2 className={`t-label ${styles.toolLabel}`}>Équipe</h2>
+              <ul className={styles.team}>
+                {staff.map((member) => (
+                  <li key={member.id}>
+                    <StaffPill
+                      member={member}
+                      disabled={!canConfigure}
+                      onToggle={(onBreak) =>
+                        startTransition(async () => {
+                          await toggleStaffBreak({ staffId: member.id, onBreak });
+                          await refresh();
+                        })
+                      }
+                    />
+                  </li>
+                ))}
+              </ul>
+              {canConfigure && (
+                <p className={styles.toolHint}>Touchez un prénom pour le mettre en pause ou le remettre en service.</p>
+              )}
+            </section>
+          )}
+
+          {!empty && (
+            <Link href={`/ecran/${orgSlug}`} className={styles.tvLink}>
+              <Icon name="screen" />
+              <span>Afficher l&apos;écran TV</span>
+              <span aria-hidden="true" className={styles.tvArrow}>→</span>
+            </Link>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }
 
 /* ==================================================================
-   Barre d'état : ouvrir / mettre en pause / fermer
+   En-tête : état de la file, sélecteur segmenté, compteurs
    ================================================================== */
 
-function StatusBar({
-  snapshot, queues, orgSlug, canOperate, onStatus,
+const STATUS_OPTIONS: ReadonlyArray<{ value: QueueStatus; label: string }> = [
+  { value: 'open', label: 'Ouverte' },
+  { value: 'paused', label: 'En pause' },
+  { value: 'closed', label: 'Fermée' },
+];
+
+function StatusHeader({
+  snapshot, queues, orgSlug, canOperate, pending, onStatus,
 }: {
   snapshot: QueueSnapshot;
   queues: QueueRef[];
   orgSlug: string;
   canOperate: boolean;
+  pending: boolean;
   onStatus: (status: QueueStatus, reason?: string) => void;
 }) {
   const { queue, counts, location } = snapshot;
-  const open = queue.status === 'open';
-  const [pausing, setPausing] = useState(false);
+  const status = queue.status;
+  const [mode, setMode] = useState<'pause' | 'close' | null>(null);
   const [reason, setReason] = useState('');
 
+  const choose = (value: QueueStatus) => {
+    if (value === status) { setMode(null); return; }
+    if (value === 'open') { setMode(null); onStatus('open'); return; }
+    // La pause garde son formulaire de motif ; la fermeture demande
+    // une confirmation en ligne.
+    setMode(value === 'paused' ? 'pause' : 'close');
+  };
+
+  const title = status === 'open' ? 'File ouverte' : status === 'paused' ? 'File en pause' : 'File fermée';
+  const pip = status === 'open' ? 'pip pip--live' : status === 'paused' ? 'pip pip--warn' : 'pip pip--off';
+
   return (
-    <header className={styles.status}>
-      <div className={styles.statusMain}>
-        <div className={styles.statusTitle}>
-          <span className={open ? 'pip pip--live' : queue.status === 'paused' ? 'pip pip--warn' : 'pip pip--off'} />
-          <h1 className={styles.statusLabel}>
-            {open ? 'File ouverte' : queue.status === 'paused' ? 'File en pause' : 'File fermée'}
-          </h1>
+    <header className={styles.head}>
+      <div className={styles.headTop}>
+        <div className={styles.headTitle}>
+          <p className={styles.headWhere}>
+            <span className={pip} aria-hidden="true" />
+            <span className="truncate">{location.name}</span>
+          </p>
+          <h1 className={styles.statusLabel}>{title}</h1>
           {queues.length > 1 && (
             <select
-              className={styles.queuePicker}
+              className={`select ${styles.queuePicker}`}
               value={queue.id}
               onChange={(e) => { window.location.href = `/app/${orgSlug}/file?file=${e.target.value}`; }}
               aria-label="Changer de file"
@@ -376,105 +530,171 @@ function StatusBar({
           )}
         </div>
 
-        <p className={`t-small t-muted ${styles.statusCounts}`}>
-          <strong className="t-num">{counts.waiting}</strong> en attente
-          <span className={styles.dot} />
-          <strong className="t-num">{counts.serving}</strong> en cours
-          <span className={styles.dot} />
-          <strong className="t-num">{counts.completedToday}</strong> aujourd&apos;hui
-          <span className={styles.dot} />
-          <span className="truncate">{location.name}</span>
-        </p>
+        {canOperate && (
+          <div className={`seg ${styles.statusSeg}`} role="group" aria-label="État de la file" data-pending={pending ? '1' : undefined}>
+            {STATUS_OPTIONS.map((option) => {
+              const pressed = option.value === status;
+              const armed = (option.value === 'paused' && mode === 'pause') || (option.value === 'closed' && mode === 'close');
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={pressed}
+                  data-armed={armed ? '1' : undefined}
+                  data-status={option.value}
+                  onClick={() => choose(option.value)}
+                >
+                  <span className={styles.segDot} aria-hidden="true" />
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {canOperate && (
-        <div className={styles.statusActions}>
-          {open ? (
-            pausing ? (
-              // Le motif s'affiche sur l'écran du client : « File en
-              // pause : retour dans 10 min » vaut mieux qu'un écran muet.
-              <form
-                className={styles.pauseForm}
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  onStatus('paused', reason.trim() || undefined);
-                  setPausing(false);
-                  setReason('');
-                }}
-              >
-                <input
-                  className="input"
-                  autoFocus
-                  maxLength={120}
-                  placeholder="Motif — visible par vos clients"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  aria-label="Motif de la pause"
-                />
-                <button type="submit" className="btn btn--signal btn--sm">Mettre en pause</button>
-                <button type="button" className="btn btn--quiet btn--sm" onClick={() => setPausing(false)}>
-                  Annuler
-                </button>
-              </form>
-            ) : (
-              <>
-                <button type="button" className="btn btn--ghost btn--sm" onClick={() => setPausing(true)}>
-                  Pause
-                </button>
-                <button type="button" className="btn btn--ghost btn--sm" onClick={() => onStatus('closed')}>
-                  Fermer
-                </button>
-              </>
-            )
-          ) : (
-            <button type="button" className="btn btn--signal btn--sm" onClick={() => onStatus('open')}>
-              Ouvrir la file
+      {mode === 'pause' && (
+        // Le motif s'affiche sur l'écran du client : « File en pause :
+        // retour dans 10 min » vaut mieux qu'un écran muet.
+        <form
+          className={styles.inlinePanel}
+          data-tone="pause"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onStatus('paused', reason.trim() || undefined);
+            setMode(null);
+            setReason('');
+          }}
+        >
+          <label className={styles.inlineText} htmlFor="pause-reason">
+            <strong>Mettre la file en pause ?</strong> Personne ne pourra la rejoindre ; le motif est affiché à vos clients.
+          </label>
+          <div className={styles.inlineActions}>
+            <input
+              id="pause-reason"
+              className={`input ${styles.pauseInput}`}
+              autoFocus
+              maxLength={120}
+              placeholder="Motif (facultatif) — ex. retour dans 10 min"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+            <button type="submit" className="btn btn--solid btn--sm">Mettre en pause</button>
+            <button type="button" className="btn btn--quiet btn--sm" onClick={() => setMode(null)}>Annuler</button>
+          </div>
+        </form>
+      )}
+
+      {mode === 'close' && (
+        <div className={styles.inlinePanel} data-tone="close" role="alertdialog" aria-labelledby="close-question">
+          <p id="close-question" className={styles.inlineText}>
+            <strong>Fermer la file ?</strong> Les personnes en attente seront prévenues.
+          </p>
+          <div className={styles.inlineActions}>
+            <button
+              type="button"
+              className="btn btn--danger btn--sm"
+              autoFocus
+              onClick={() => { setMode(null); onStatus('closed'); }}
+            >
+              Fermer
             </button>
-          )}
+            <button type="button" className="btn btn--quiet btn--sm" onClick={() => setMode(null)}>Annuler</button>
+          </div>
         </div>
       )}
+
+      <dl className={styles.counters}>
+        <div className={styles.counter}>
+          <dt className="t-label">en attente</dt>
+          <dd><FlapNumber static value={counts.waiting} size="2rem" label={`${counts.waiting} en attente`} /></dd>
+        </div>
+        <div className={styles.counter}>
+          <dt className="t-label">en cours</dt>
+          <dd><FlapNumber static value={counts.serving} size="2rem" label={`${counts.serving} en cours`} /></dd>
+        </div>
+        <div className={styles.counter}>
+          <dt className="t-label">aujourd&apos;hui</dt>
+          <dd><FlapNumber static value={counts.completedToday} size="2rem" label={`${counts.completedToday} aujourd'hui`} /></dd>
+        </div>
+      </dl>
     </header>
   );
 }
 
 /* ==================================================================
-   Carte « en cours » — TERMINER y est l'action dominante
+   La latte de prestation — TERMINER y est la seule touche
    ================================================================== */
 
-function ServingCard({
-  entry, staffName, busy, disabled, absentPolicy, moveBackBy, onAct,
+function ServingSlat({
+  entry, staffName, busy, disabled, absentPolicy, moveBackBy, onAct, ghost = false, style, onPassed,
 }: {
+  /** Fantôme : appelé quand le Passage est joué. */
+  onPassed?: () => void;
   entry: StaffEntry;
   staffName: string | null;
   busy: boolean;
   disabled: boolean;
   absentPolicy: string;
   moveBackBy: number;
-  onAct: (id: string, action: StaffAction, options?: Record<string, unknown>) => void;
+  onAct: Act;
+  /** Copie fantôme pendant le Passage : inerte, positionnée par-dessus. */
+  ghost?: boolean;
+  style?: React.CSSProperties;
 }) {
-  const elapsed = useLiveElapsed(entry.serviceStartedAt);
+  const live = useLiveElapsed(ghost ? null : entry.serviceStartedAt);
+  // Le fantôme n'existe qu'après une action dans le navigateur : il peut
+  // lire l'heure pendant le rendu sans risque d'écart d'hydratation.
+  const elapsed = ghost ? elapsedSeconds(entry.serviceStartedAt) : live;
+  const name = entry.name ?? 'Client sans prénom';
+
+  const who = (
+    <div className={styles.servingTop}>
+      <div className={styles.servingWho}>
+        <p className={styles.servingMeta}>
+          {staffName ? <>avec <strong>{staffName}</strong> · </> : null}
+          depuis {formatTime(entry.serviceStartedAt)}
+        </p>
+        <h3 className={styles.servingName}>{name}</h3>
+      </div>
+      <p className={styles.timer} aria-label="Durée de la prestation">
+        <span className="t-num">{elapsed == null ? '—' : formatDurationBounded(elapsed)}</span>
+        <span className={styles.timerLabel}>en prestation</span>
+      </p>
+    </div>
+  );
+
+  if (ghost) {
+    return (
+      <article className={`${styles.serving} ${styles.ghost} slat--leaving`} style={style}
+        aria-hidden="true"
+        inert
+        onAnimationEnd={(event) => {
+          if (event.target === event.currentTarget && event.animationName === 'slat-pass') onPassed?.();
+        }}
+      >
+        {who}
+        <span className={`btn btn--signal btn--key btn--block ${styles.key}`}>Terminer</span>
+        <div className={styles.miniActions}>
+          <span className="btn btn--ghost btn--sm">Absent</span>
+          <span className="btn btn--ghost btn--sm">Décaler</span>
+          <span className="btn btn--danger btn--sm">Retirer</span>
+        </div>
+      </article>
+    );
+  }
 
   return (
-    <article className={styles.servingCard}>
-      <div className={styles.servingHead}>
-        <span className={styles.servingAvatar}>{initials(entry.name)}</span>
-        <div className={styles.servingWho}>
-          <h3 className={styles.servingName}>{entry.name ?? 'Sans prénom'}</h3>
-          <p className="t-micro t-faint">
-            {staffName ? `avec ${staffName} · ` : ''}
-            démarré à {formatTime(entry.serviceStartedAt)}
-          </p>
-        </div>
-        <span className={styles.timer} title="Durée de la prestation">
-          {formatDuration(elapsed)}
-        </span>
-      </div>
+    <article className={`${styles.serving} slat--entering`} data-serving-id={entry.id}>
+      {who}
 
       <button
         type="button"
-        className="btn btn--signal btn--hero"
-        disabled={busy || disabled}
-        onClick={() => onAct(entry.id, 'complete')}
+        className={`btn btn--signal btn--key btn--block ${styles.key}`}
+        disabled={disabled}
+        aria-busy={busy || undefined}
+        data-busy={busy ? '1' : undefined}
+        onClick={() => { if (!busy) onAct(entry.id, 'complete'); }}
       >
         {busy ? 'Un instant…' : 'Terminer'}
       </button>
@@ -493,9 +713,9 @@ function ServingCard({
           Retirer
         </button>
       </div>
-      <p className="t-micro t-faint">
+      <p className={styles.policy}>
         « Absent » applique le réglage de la file : {absentPolicy === 'move_back'
-          ? `recul de ${moveBackBy} places`
+          ? `recul de ${moveBackBy} place${moveBackBy > 1 ? 's' : ''}`
           : absentPolicy === 'hold' ? 'mise de côté' : 'sortie de la file'}.
       </p>
     </article>
@@ -503,41 +723,47 @@ function ServingCard({
 }
 
 /* ==================================================================
-   Carte « prochain »
+   Le prochain
    ================================================================== */
 
-function NextCard({
-  entry, staffName, busy, disabled, advanceMode, onAct,
+function NextSlat({
+  entry, staffName, busy, disabled, advanceMode, now, onAct,
 }: {
   entry: StaffEntry;
   staffName: string | null;
   busy: boolean;
   disabled: boolean;
   advanceMode: string;
-  onAct: (id: string, action: StaffAction, options?: Record<string, unknown>) => void;
+  now: number | null;
+  onAct: Act;
 }) {
   return (
-    <article className={styles.nextCard}>
+    <article className={`${styles.next} slat--entering`}>
+      <span className={styles.pos} aria-hidden="true">01</span>
       <div className={styles.nextWho}>
-        <span className={styles.nextAvatar}>{initials(entry.name)}</span>
-        <div>
-          <h3 className={styles.nextName}>{entry.name ?? 'Sans prénom'}</h3>
-          <p className={`t-micro ${styles.nextMeta}`}>
-            {entry.status !== 'waiting' && <StatusChip entry={entry} />}
-            {staffName && <span className="t-faint">· {staffName}</span>}
-            <span className="t-faint">· arrivé à {formatTime(entry.joinedAt)}</span>
-          </p>
-        </div>
+        <p className={styles.nextName}>
+          <span className="truncate">{entry.name ?? 'Client sans prénom'}</span>
+          {entry.status !== 'waiting' && <StatusChip entry={entry} />}
+        </p>
+        <p className={styles.rowMeta}>
+          {[
+            SOURCE_LABEL[entry.source] ?? entry.source,
+            staffName ? `pour ${staffName}` : null,
+            `arrivé à ${formatTime(entry.joinedAt)}`,
+          ].filter(Boolean).join(' · ')}
+          {now != null && <> · <span className="t-num">{waitText(entry.joinedAt)}</span> d&apos;attente</>}
+        </p>
       </div>
 
       <div className={styles.nextActions}>
         <button
           type="button"
           className="btn btn--solid"
-          disabled={busy || disabled}
-          onClick={() => onAct(entry.id, 'start_serving')}
+          disabled={disabled}
+          aria-busy={busy || undefined}
+          onClick={() => { if (!busy) onAct(entry.id, 'start_serving'); }}
         >
-          {busy ? '…' : 'Démarrer'}
+          {busy ? 'Un instant…' : 'Démarrer'}
         </button>
         {entry.status !== 'next' && advanceMode === 'call_next' && (
           <button type="button" className="btn btn--ghost" disabled={busy || disabled}
@@ -555,56 +781,71 @@ function NextCard({
 }
 
 /* ==================================================================
-   Ligne d'attente — une latte sur le rail, comme côté client
+   Ligne d'attente : position, prénom, source, attente, actions
    ================================================================== */
 
 function WaitingRow({
-  entry, index, staffName, busy, disabled, moveBackBy, onAct,
+  entry, position, staffName, busy, disabled, moveBackBy, now, onAct,
 }: {
   entry: StaffEntry;
-  index: number;
+  position: number;
   staffName: string | null;
   busy: boolean;
   disabled: boolean;
   moveBackBy: number;
-  onAct: (id: string, action: StaffAction, options?: Record<string, unknown>) => void;
+  now: number | null;
+  onAct: Act;
 }) {
   const [open, setOpen] = useState(false);
+  const name = entry.name ?? 'Client sans prénom';
+  const menuId = `menu-${entry.id}`;
 
   return (
-    <div className={`slat ${styles.waitingSlat}`} style={{ animationDelay: `${Math.min(index, 8) * 26}ms` }}>
-      <div className={styles.waitingMain}>
-        <span className={`t-num ${styles.position}`}>{entry.peopleAhead}</span>
-        <span className={styles.waitingName}>{entry.name ?? 'Sans prénom'}</span>
-        {/* On n'affiche une pastille que lorsqu'elle apprend quelque
-            chose : « en attente » sur chaque ligne n'est que du bruit. */}
-        {entry.status !== 'waiting' && <StatusChip entry={entry} />}
-        <span className={`t-micro t-faint ${styles.waitingMeta}`}>
-          {staffName ? `${staffName} · ` : ''}{formatTime(entry.joinedAt)}
-          {entry.source !== 'staff' && ` · ${SOURCE_LABEL[entry.source] ?? entry.source}`}
-        </span>
+    <li
+      className={`${styles.waitRow} slat--entering`}
+      data-open={open ? '1' : undefined}
+      style={{ animationDelay: `${Math.min(position - 2, 8) * 34}ms` }}
+    >
+      <span className={styles.pos} aria-label={`Position ${position}`}>
+        {String(position).padStart(2, '0')}
+      </span>
 
-        {!disabled && (
-          <div className={styles.rowActions}>
-            <button type="button" className={`btn btn--ghost btn--sm ${styles.startBtn}`} disabled={busy}
-              onClick={() => onAct(entry.id, 'start_serving')}>
-              Démarrer
-            </button>
-            <button
-              type="button"
-              className={styles.moreBtn}
-              onClick={() => setOpen((v) => !v)}
-              aria-expanded={open}
-              aria-label={`Plus d'actions pour ${entry.name ?? 'ce client'}`}
-            >
-              ⋯
-            </button>
-          </div>
-        )}
+      <div className={styles.waitWho}>
+        <p className={styles.waitName}>
+          <span className={`truncate ${entry.name ? '' : styles.anon}`}>{name}</span>
+          {entry.status !== 'waiting' && <StatusChip entry={entry} />}
+        </p>
+        <p className={styles.rowMeta}>
+          {[SOURCE_LABEL[entry.source] ?? entry.source, staffName ? `pour ${staffName}` : null, formatTime(entry.joinedAt)]
+            .filter(Boolean).join(' · ')}
+        </p>
       </div>
 
+      <p className={styles.wait} aria-label="Attente">
+        {now != null ? waitText(entry.joinedAt) : ''}
+      </p>
+
+      {!disabled && (
+        <div className={styles.rowActions}>
+          <button type="button" className={`btn btn--ghost btn--sm ${styles.startBtn}`} disabled={busy}
+            onClick={() => onAct(entry.id, 'start_serving')}>
+            Démarrer
+          </button>
+          <button
+            type="button"
+            className={styles.moreBtn}
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-controls={menuId}
+            aria-label={`Plus d'actions pour ${name}`}
+          >
+            <Icon name="more" />
+          </button>
+        </div>
+      )}
+
       {open && !disabled && (
-        <div className={styles.rowMenu}>
+        <div className={styles.rowMenu} id={menuId}>
           <button type="button" className={styles.startInMenu}
             onClick={() => { onAct(entry.id, 'start_serving'); setOpen(false); }}>
             Démarrer
@@ -621,7 +862,7 @@ function WaitingRow({
           </button>
         </div>
       )}
-    </div>
+    </li>
   );
 }
 
@@ -633,6 +874,34 @@ function StatusChip({ entry }: { entry: StaffEntry }) {
     : entry.status === 'serving' ? 'chip chip--signal'
     : 'chip';
   return <span className={className}>{STAFF_STATUS_LABEL[entry.status]}</span>;
+}
+
+/* ==================================================================
+   File vide : un rail et une latte fantôme
+   ================================================================== */
+
+function EmptyLane({ orgSlug, paused }: { orgSlug: string; paused: boolean }) {
+  return (
+    <section className={styles.stop} aria-labelledby="stop-empty">
+      <h2 id="stop-empty" className={`t-label ${styles.stopLabel}`}>Au comptoir</h2>
+      <div className={styles.emptyGhost} aria-hidden="true">
+        <span className={styles.emptyGhostTick} />
+        <span>Prochain client</span>
+      </div>
+      <div className={styles.emptyGhostFaint} aria-hidden="true" />
+      <div className={styles.emptyText}>
+        <p className={styles.emptyTitle}>La file est vide.</p>
+        <p className={styles.emptyBody}>
+          {paused
+            ? 'Ouvrez-la : elle se remplira dès qu’un client approchera son téléphone de la plaque.'
+            : 'Elle se remplit dès qu’un client approche son téléphone de la plaque.'}
+        </p>
+        <Link href={`/ecran/${orgSlug}`} className={styles.emptyLink}>
+          Afficher l&apos;écran TV <span aria-hidden="true">→</span>
+        </Link>
+      </div>
+    </section>
+  );
 }
 
 /* ==================================================================
@@ -666,58 +935,88 @@ function AddWalkin({
   };
 
   return (
-    <form onSubmit={submit} className={styles.addRow}>
+    <form onSubmit={submit} className={styles.addForm}>
       <input
         className="input"
-        placeholder="Ajouter une personne au comptoir"
+        placeholder="Prénom de la personne"
         value={name}
         maxLength={40}
         onChange={(e) => setName(e.target.value)}
         aria-label="Prénom de la personne à ajouter"
+        autoComplete="off"
       />
       {staff.length > 1 && (
         <select className="select" value={staffId} onChange={(e) => setStaffId(e.target.value)}
           aria-label="Attribuer à un professionnel">
-          <option value="">Au suivant</option>
+          <option value="">Au premier disponible</option>
           {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       )}
       <button type="submit" className="btn btn--solid" disabled={pending || !name.trim()}>
-        {pending ? '…' : 'Ajouter'}
+        {pending ? 'Ajout…' : 'Ajouter'}
       </button>
       {error && <p className="error-text">{error}</p>}
     </form>
   );
 }
 
-function StaffChip({
+/* ==================================================================
+   Équipe : pastilles « prénom + point »
+   ================================================================== */
+
+function StaffPill({
   member, disabled, onToggle,
 }: {
   member: QueueSnapshot['staff'][number];
   disabled: boolean;
   onToggle: (onBreak: boolean) => void;
 }) {
+  const state = member.isOnBreak ? 'break' : member.servingEntryId ? 'serving' : 'free';
+  const label = member.isOnBreak ? 'En pause'
+    : member.servingEntryId ? 'En prestation'
+    : member.waitingCount > 0 ? `${member.waitingCount} en attente`
+    : 'Disponible';
   return (
     <button
       type="button"
-      className={`${styles.staffChip} ${member.isOnBreak ? styles.staffChipOff : ''}`}
-      data-accent={member.accent}
+      className={styles.pill}
+      data-state={state}
       disabled={disabled}
       onClick={() => onToggle(!member.isOnBreak)}
-      title={member.isOnBreak ? 'Remettre en service' : 'Mettre en pause'}
+      title={disabled ? undefined : member.isOnBreak ? 'Remettre en service' : 'Mettre en pause'}
+      aria-label={`${member.name} — ${label}${disabled ? '' : member.isOnBreak ? ', remettre en service' : ', mettre en pause'}`}
     >
-      <span className={styles.staffAvatar}>{initials(member.name)}</span>
-      <span className={styles.staffText}>
-        <span className={styles.staffName}>{member.name}</span>
-        <span className="t-micro t-faint">
-          {member.isOnBreak ? 'En pause'
-            : member.servingEntryId ? 'En prestation'
-            : member.waitingCount > 0 ? `${member.waitingCount} en attente`
-            : 'Disponible'}
-        </span>
-      </span>
+      <span className={styles.pillDot} aria-hidden="true" />
+      <span className={styles.pillName}>{member.name}</span>
+      <span className={styles.pillState}>{label}</span>
     </button>
   );
+}
+
+/* ==================================================================
+   Le temps, toujours après montage
+   ================================================================== */
+
+/** « 12 min » d'attente depuis l'arrivée, borné (« + de 24 h »). */
+function waitText(joinedAt: string): string {
+  const seconds = elapsedSeconds(joinedAt);
+  if (seconds == null) return '—';
+  if (seconds < 60) return '< 1 min';
+  return formatDurationBounded(seconds);
+}
+
+/**
+ * Horloge partagée : `null` au rendu serveur et à l'hydratation, puis
+ * l'heure courante, rafraîchie à intervalle régulier.
+ */
+function useNow(interval: number): number | null {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), interval);
+    return () => clearInterval(timer);
+  }, [interval]);
+  return now;
 }
 
 /**
@@ -738,4 +1037,3 @@ function useLiveElapsed(from: string | null): number | null {
   }, [from]);
   return value;
 }
-

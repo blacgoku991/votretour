@@ -1,29 +1,98 @@
+/* Chargement : la géométrie de la File (file/board.module.css). */
 .wrap {
+  --rx: 0px;
+  --lane-pad: 24px;
+  container: loading / inline-size;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-6);
-  padding-top: var(--sp-5);
-  max-width: 960px;
+  gap: 28px;
+  padding-top: 24px;
+}
+@media (min-width: 600px) { .wrap { --rx: 14px; --lane-pad: 44px; gap: 32px; } }
+@media (min-width: 900px) { .wrap { padding-top: 0; } }
+
+/* Sur l'encre 900, le squelette doit se lire : encre 800, filet discret. */
+.wrap :global(.skeleton) { background: var(--surface-raised); }
+
+.head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px 24px;
+  flex-wrap: wrap;
+}
+.headText { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.where { width: 180px; height: 14px; border-radius: 6px; }
+.title { width: min(300px, 70vw); height: 40px; border-radius: 10px; }
+.seg { width: 320px; height: 48px; border-radius: 12px; }
+@media (max-width: 599px) { .seg { width: 100%; } }
+
+.counters {
+  display: flex;
+  gap: 32px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.counter { display: flex; flex-direction: column; gap: 12px; }
+.num { width: 44px; height: 32px; border-radius: 6px; }
+.label { width: 84px; height: 10px; border-radius: 4px; }
+
+.columns { display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; }
+@container loading (min-width: 940px) {
+  .columns { grid-template-columns: minmax(0, 1fr) 316px; gap: 56px; }
 }
 
-.head { display: flex; flex-direction: column; gap: var(--sp-2); }
-.title { height: 30px; width: 220px; border-radius: 8px; }
-.sub { height: 14px; width: 320px; max-width: 80%; border-radius: 6px; }
-
-.card { height: 190px; border-radius: var(--r-card); }
-
-.rang {
+.lane {
   position: relative;
-  padding-left: var(--sp-5);
   display: flex;
   flex-direction: column;
-  gap: var(--slat-gap);
+  gap: 16px;
+  padding-left: var(--lane-pad);
 }
-.rail {
+.lane::before {
+  content: '';
   position: absolute;
-  left: 0; top: 2px; bottom: 2px;
-  width: var(--rail-w);
-  border-radius: var(--rail-w);
+  left: var(--rx);
+  top: 4px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 2px;
   background: var(--rail);
 }
-.slat { height: 52px; border-radius: var(--r-slat); }
+.stopLabel { width: 96px; height: 10px; border-radius: 4px; }
+.wrap .serving {
+  position: relative;
+  height: 180px;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  background: var(--ink-700);
+  border: 1px solid var(--line);
+}
+/* Le repère de la latte en cours, et la place de la touche. */
+.serving::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 20px;
+  bottom: 20px;
+  width: 4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--rail);
+}
+.serving::after {
+  content: '';
+  position: absolute;
+  left: 24px;
+  right: 20px;
+  bottom: 24px;
+  height: 64px;
+  border-radius: var(--r-key);
+  border: 1px dashed var(--line-strong);
+}
+/* Les lattes du chargement partagent le rail de la page. */
+.lane :global(.loading-slats) { padding-left: 0; }
+.lane :global(.loading-slats)::before { display: none; }
+
+.side { display: flex; flex-direction: column; gap: 12px; }
+.field { height: 50px; border-radius: var(--r-field); }
+@container loading (max-width: 939px) { .side { display: none; } }

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Wordmark } from './Wordmark';
 import { initials } from '@/lib/format';
 import type { OrganizationSummary } from '@/lib/types';
@@ -12,34 +12,57 @@ import styles from './AppShell.module.css';
  * Coque du tableau de bord.
  *
  * Pensée pour quelqu'un qui travaille : la navigation ne mange pas
- * l'écran. Sur téléphone elle passe en barre basse à portée de pouce,
- * sur tablette et ordinateur en rail latéral étroit. Huit destinations
- * au total, pas cinquante onglets.
+ * l'écran. Sur téléphone, elle passe en barre basse à portée de pouce
+ * (quatre destinations et « Plus ») ; à partir de 900 px, en rail latéral
+ * où les liens sont accrochés à une ligne, comme les lattes de la file.
+ *
+ * L'entrée active est UNE latte vermillon qui glisse d'un lien à l'autre
+ * (translateY, 420 ms). Sa position est mesurée après montage ; au rendu
+ * serveur, un repli CSS dessine la même latte sur le lien courant.
  */
+
+/** Groupes de navigation, dans l'ordre du rail. `aide` vit dans le pied. */
+export type NavGroup = 'comptoir' | 'suivi' | 'etablissement' | 'aide';
+
+export const NAV_GROUPS: ReadonlyArray<{ id: Exclude<NavGroup, 'aide'>; label: string }> = [
+  { id: 'comptoir', label: 'Au comptoir' },
+  { id: 'suivi', label: 'Suivi' },
+  { id: 'etablissement', label: 'Établissement' },
+];
 
 export interface NavItem {
   href: string;
   label: string;
   short: string;
   icon: keyof typeof ICONS;
+  /** Présent dans la barre basse du téléphone. */
   primary?: boolean;
+  /** Groupe du rail latéral. */
+  group?: NavGroup;
 }
 
+/**
+ * Destinations du tableau de bord. « Plaques » n'y figure volontairement
+ * pas : la gestion des plaques est réservée au super-admin plateforme.
+ */
 export function buildNav(orgSlug: string): NavItem[] {
   const base = `/app/${orgSlug}`;
   return [
-    { href: `${base}/file`,          label: 'File',          short: 'File',    icon: 'rang', primary: true },
-    { href: `${base}/equipe`,        label: 'Équipe',        short: 'Équipe',  icon: 'team', primary: true },
-    { href: `${base}/statistiques`,  label: 'Statistiques',  short: 'Stats',   icon: 'chart', primary: true },
-    { href: `/ecran/${orgSlug}`,      label: 'Écran TV',      short: 'TV',      icon: 'screen', primary: true },
-    { href: `${base}/evenements`,    label: 'Événements',    short: 'Events',  icon: 'ticket' },
-    { href: `${base}/historique`,    label: 'Historique',    short: 'Historique', icon: 'history' },
-    { href: `${base}/notifications`, label: 'Notifications', short: 'Notifs',  icon: 'bell' },
-    { href: `${base}/reglages`,      label: 'Réglages',      short: 'Réglages', icon: 'settings' },
-    { href: `${base}/abonnement`,    label: 'Abonnement',    short: 'Abonnement', icon: 'card' },
-    { href: `${base}/support`,       label: 'Support',       short: 'Support', icon: 'help' },
+    { href: `${base}/file`,          label: 'File',          short: 'File',       icon: 'rang',     primary: true, group: 'comptoir' },
+    { href: `/ecran/${orgSlug}`,      label: 'Écran TV',      short: 'Écran TV',   icon: 'screen',   primary: true, group: 'comptoir' },
+    { href: `${base}/evenements`,    label: 'Événements',    short: 'Événements', icon: 'ticket',   group: 'comptoir' },
+    { href: `${base}/statistiques`,  label: 'Statistiques',  short: 'Stats',      icon: 'chart',    primary: true, group: 'suivi' },
+    { href: `${base}/historique`,    label: 'Historique',    short: 'Historique', icon: 'history',  group: 'suivi' },
+    { href: `${base}/notifications`, label: 'Notifications', short: 'Notifs',     icon: 'bell',     group: 'suivi' },
+    { href: `${base}/equipe`,        label: 'Équipe',        short: 'Équipe',     icon: 'team',     primary: true, group: 'etablissement' },
+    { href: `${base}/reglages`,      label: 'Réglages',      short: 'Réglages',   icon: 'settings', group: 'etablissement' },
+    { href: `${base}/abonnement`,    label: 'Abonnement',    short: 'Abonnement', icon: 'card',     group: 'etablissement' },
+    { href: `${base}/support`,       label: 'Support',       short: 'Support',    icon: 'help',     group: 'aide' },
   ];
 }
+
+/** Ordre de la barre basse : le travail d'abord, puis le suivi. */
+const TAB_ORDER: ReadonlyArray<NavItem['icon']> = ['rang', 'chart', 'screen', 'team'];
 
 interface Props {
   organization: OrganizationSummary;
@@ -48,143 +71,311 @@ interface Props {
   children: React.ReactNode;
 }
 
+const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+
 export function AppShell({ organization, organizations, user, children }: Props) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const nav = buildNav(organization.slug);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  const isActive = useCallback(
+    (href: string) => pathname === href || pathname.startsWith(`${href}/`),
+    [pathname],
+  );
+
+  const tabs = TAB_ORDER
+    .map((icon) => nav.find((item) => item.icon === icon))
+    .filter((item): item is NavItem => Boolean(item));
+  const onTab = tabs.some((item) => isActive(item.href));
+  const support = nav.find((item) => item.group === 'aide');
+
+  // La feuille se referme à chaque navigation.
+  useEffect(() => { setMenuOpen(false); }, [pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setMenuOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
 
   return (
     <div className={styles.shell}>
-      {/* ---------- Rail latéral (tablette / ordinateur) ---------- */}
+      <a href="#contenu" className="skip-link">Aller au contenu</a>
+
+      {/* ---------- Rail latéral (≥ 900 px) ---------- */}
       <aside className={styles.rail}>
-        <Link href={`/app/${organization.slug}/file`} className={styles.railBrand}>
-          <Wordmark />
-        </Link>
-
-        <OrgSwitcher current={organization} organizations={organizations} />
-
-        <nav className={styles.railNav} aria-label="Navigation principale">
-          {nav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`${styles.railLink} ${isActive(item.href) ? styles.railLinkActive : ''}`}
-              aria-current={isActive(item.href) ? 'page' : undefined}
-            >
-              <Icon name={item.icon} />
-              <span>{item.label}</span>
-            </Link>
-          ))}
-        </nav>
-
-        <div className={styles.railFoot}>
-          {user.isPlatformAdmin && (
-            <Link href="/admin" className={styles.railLink}>
-              <Icon name="shield" />
-              <span>Plateforme</span>
-            </Link>
-          )}
-          <Link href={`/app/${organization.slug}/compte`} className={styles.account}>
-            <span className={styles.avatar}>{initials(user.fullName ?? user.email)}</span>
-            <span className={styles.accountText}>
-              <span className={styles.accountName}>{user.fullName ?? 'Mon compte'}</span>
-              <span className="t-micro t-faint">{user.email}</span>
-            </span>
+        <div className={styles.railInner}>
+          <Link href={`/app/${organization.slug}/file`} className={styles.railBrand} aria-label="Rangvia — file en cours">
+            <Wordmark />
           </Link>
-        </div>
-      </aside>
 
-      {/* ---------- En-tête mobile ---------- */}
-      <header className={styles.topbar}>
-        <Link href={`/app/${organization.slug}/file`} className={styles.topbarBrand}>
-          <Wordmark compact />
-        </Link>
-        <span className={styles.topbarTitle}>{organization.name}</span>
-        <button
-          type="button"
-          className={styles.topbarMore}
-          onClick={() => setMenuOpen((v) => !v)}
-          aria-expanded={menuOpen}
-          aria-label="Plus d'options"
-        >
-          <Icon name="more" />
-        </button>
-      </header>
+          <OrgSwitcher current={organization} organizations={organizations} />
 
-      {menuOpen && (
-        <div className={styles.sheet} role="dialog" aria-label="Menu">
-          <button type="button" className={styles.sheetBackdrop} onClick={() => setMenuOpen(false)} aria-label="Fermer" />
-          <div className={styles.sheetPanel}>
-            <OrgSwitcher current={organization} organizations={organizations} />
-            {nav.map((item) => (
+          <SlidingNav nav={nav} isActive={isActive} pathname={pathname} />
+
+          <div className={styles.railFoot}>
+            {support && (
               <Link
-                key={item.href}
-                href={item.href}
-                className={`${styles.sheetLink} ${isActive(item.href) ? styles.sheetLinkActive : ''}`}
-                onClick={() => setMenuOpen(false)}
+                href={support.href}
+                className={styles.footLink}
+                aria-current={isActive(support.href) ? 'page' : undefined}
               >
-                <Icon name={item.icon} />
-                <span>{item.label}</span>
+                <Icon name="help" />
+                <span>{support.label}</span>
               </Link>
-            ))}
+            )}
             {user.isPlatformAdmin && (
-              <Link href="/admin" className={styles.sheetLink} onClick={() => setMenuOpen(false)}>
+              <Link href="/admin" className={styles.footLink}>
                 <Icon name="shield" />
                 <span>Plateforme</span>
               </Link>
             )}
-            <Link href={`/app/${organization.slug}/compte`} className={styles.sheetLink} onClick={() => setMenuOpen(false)}>
-              <Icon name="user" />
-              <span>Mon compte</span>
+            <Link
+              href={`/app/${organization.slug}/compte`}
+              className={styles.account}
+              aria-current={isActive(`/app/${organization.slug}/compte`) ? 'page' : undefined}
+            >
+              <span className={styles.avatar}>{initials(user.fullName ?? user.email)}</span>
+              <span className={styles.accountText}>
+                <span className={styles.accountName}>{user.fullName ?? 'Mon compte'}</span>
+                <span className={styles.accountMail}>{user.email}</span>
+              </span>
             </Link>
           </div>
         </div>
-      )}
+      </aside>
 
-      <main className={styles.main}>{children}</main>
+      {/* ---------- En-tête mobile : la marque et l'établissement ---------- */}
+      <header className={styles.topbar}>
+        <Link href={`/app/${organization.slug}/file`} className={styles.topbarBrand} aria-label="Rangvia — file en cours">
+          <Wordmark compact />
+        </Link>
+        <span className={styles.topbarRule} aria-hidden="true" />
+        <span className={styles.topbarTitle}>{organization.name}</span>
+      </header>
+
+      <main id="contenu" className={styles.main}>{children}</main>
 
       {/* ---------- Barre basse (téléphone) ---------- */}
       <nav className={styles.tabbar} aria-label="Navigation">
-        {nav.filter((i) => i.primary).map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`${styles.tab} ${isActive(item.href) ? styles.tabActive : ''}`}
-            aria-current={isActive(item.href) ? 'page' : undefined}
-          >
-            <Icon name={item.icon} />
-            <span>{item.short}</span>
-          </Link>
-        ))}
+        {tabs.map((item) => {
+          const active = isActive(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={styles.tab}
+              aria-current={active ? 'page' : undefined}
+            >
+              <Icon name={item.icon} />
+              <span>{item.short}</span>
+            </Link>
+          );
+        })}
+        <button
+          type="button"
+          className={styles.tab}
+          onClick={() => setMenuOpen(true)}
+          aria-expanded={menuOpen}
+          aria-haspopup="dialog"
+          data-current={!onTab ? 'true' : undefined}
+        >
+          <Icon name="more" />
+          <span>Plus</span>
+        </button>
       </nav>
+
+      {/* ---------- Feuille « Plus » ---------- */}
+      {menuOpen && (
+        <div className={styles.sheet} role="dialog" aria-modal="true" aria-label="Toutes les rubriques">
+          <button
+            type="button"
+            className={styles.sheetBackdrop}
+            onClick={() => setMenuOpen(false)}
+            aria-label="Fermer le menu"
+            tabIndex={-1}
+          />
+          <div className={styles.sheetPanel}>
+            <span className={styles.sheetGrip} aria-hidden="true" />
+            <div className={styles.sheetHead}>
+              <OrgSwitcher current={organization} organizations={organizations} />
+              <button
+                type="button"
+                className="btn btn--quiet btn--sm"
+                onClick={() => setMenuOpen(false)}
+                autoFocus
+              >
+                Fermer
+              </button>
+            </div>
+
+            <div className={styles.sheetGroups}>
+              {NAV_GROUPS.map((group) => (
+                <div key={group.id} className={styles.sheetGroup}>
+                  <p className={`t-label ${styles.groupLabel}`}>{group.label}</p>
+                  <ul className={styles.sheetList}>
+                    {nav.filter((item) => item.group === group.id).map((item) => (
+                      <li key={item.href}>
+                        <Link
+                          href={item.href}
+                          className={styles.navLink}
+                          aria-current={isActive(item.href) ? 'page' : undefined}
+                          onClick={() => setMenuOpen(false)}
+                        >
+                          <Icon name={item.icon} />
+                          <span>{item.label}</span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+
+            <div className={styles.sheetFoot}>
+              {support && (
+                <Link href={support.href} className={styles.footLink} onClick={() => setMenuOpen(false)}
+                  aria-current={isActive(support.href) ? 'page' : undefined}>
+                  <Icon name="help" />
+                  <span>{support.label}</span>
+                </Link>
+              )}
+              {user.isPlatformAdmin && (
+                <Link href="/admin" className={styles.footLink} onClick={() => setMenuOpen(false)}>
+                  <Icon name="shield" />
+                  <span>Plateforme</span>
+                </Link>
+              )}
+              <Link href={`/app/${organization.slug}/compte`} className={styles.footLink} onClick={() => setMenuOpen(false)}
+                aria-current={isActive(`/app/${organization.slug}/compte`) ? 'page' : undefined}>
+                <Icon name="user" />
+                <span>Mon compte</span>
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
+/* ==================================================================
+   Navigation du rail : groupes, encoches et latte active qui glisse
+   ================================================================== */
+
+function SlidingNav({
+  nav, isActive, pathname,
+}: {
+  nav: NavItem[];
+  isActive: (href: string) => boolean;
+  pathname: string;
+}) {
+  const navRef = useRef<HTMLElement | null>(null);
+  const latteRef = useRef<HTMLSpanElement | null>(null);
+
+  // Mesure après montage, à chaque changement de page et au
+  // redimensionnement. Aucune mesure dans une boucle d'images : une
+  // lecture de mise en page par événement, puis une écriture de style.
+  useIsoLayoutEffect(() => {
+    const root = navRef.current;
+    const latte = latteRef.current;
+    if (!root || !latte) return;
+
+    const place = () => {
+      const link = root.querySelector<HTMLElement>('a[aria-current="page"]');
+      if (!link) {
+        root.dataset.indicator = 'off';
+        return;
+      }
+      // Coordonnées relatives au <nav> (les listes sont positionnées :
+      // offsetTop ne suffit pas).
+      const box = link.getBoundingClientRect();
+      const y = box.top - root.getBoundingClientRect().top + (box.height - 20) / 2;
+      latte.style.transform = `translateY(${Math.round(y)}px)`;
+      if (root.dataset.indicator !== 'on') {
+        // Première pose : sans transition (lecture forcée avant d'armer).
+        void latte.offsetWidth;
+        root.dataset.indicator = 'on';
+      }
+    };
+
+    place();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => place()) : null;
+    ro?.observe(root);
+    return () => ro?.disconnect();
+  }, [pathname]);
+
+  return (
+    <nav ref={navRef} className={styles.railNav} aria-label="Navigation principale">
+      <span ref={latteRef} className={styles.latte} aria-hidden="true" />
+      {NAV_GROUPS.map((group) => (
+        <Fragment key={group.id}>
+          <p className={`t-label ${styles.groupLabel}`}>{group.label}</p>
+          <ul className={styles.navList}>
+            {nav.filter((item) => item.group === group.id).map((item) => (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  className={styles.navLink}
+                  aria-current={isActive(item.href) ? 'page' : undefined}
+                >
+                  <Icon name={item.icon} />
+                  <span>{item.label}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Fragment>
+      ))}
+    </nav>
+  );
+}
+
+/* ==================================================================
+   Sélecteur d'établissement : une mini-plaque os, initiales gravées
+   ================================================================== */
+
+const ROLE_LABEL: Record<string, string> = {
+  owner: 'Propriétaire',
+  admin: 'Administrateur',
+  manager: 'Responsable',
+  member: 'Membre de l’équipe',
+};
+
 function OrgSwitcher({
   current, organizations,
 }: { current: OrganizationSummary; organizations: OrganizationSummary[] }) {
+  const mark = (
+    <span className={styles.orgMark} aria-hidden="true">
+      {current.logo_url
+        ? <img src={current.logo_url} alt="" className={styles.orgLogo} />
+        : initials(current.name)}
+    </span>
+  );
+
   if (organizations.length <= 1) {
     return (
       <div className={styles.org}>
-        <span className={styles.orgMark}>
-          {current.logo_url
-            ? <img src={current.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-            : initials(current.name)}
+        {mark}
+        <span className={styles.orgText}>
+          <span className={styles.orgName}>{current.name}</span>
+          <span className={styles.orgMeta}>
+            {ROLE_LABEL[current.role] ?? 'Équipe'}
+            {current.location_count > 1 ? ` · ${current.location_count} établissements` : ''}
+          </span>
         </span>
-        <span className={styles.orgName}>{current.name}</span>
       </div>
     );
   }
   return (
-    <div className={styles.org}>
-      <span className={styles.orgMark}>
-        {current.logo_url
-          ? <img src={current.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
-          : initials(current.name)}
+    <div className={`${styles.org} ${styles.orgMulti}`}>
+      {mark}
+      <span className={styles.orgText}>
+        <span className={styles.orgName}>{current.name}</span>
+        <span className={styles.orgMeta}>{organizations.length} organisations · changer</span>
       </span>
+      {/* Le vrai select couvre toute la mini-plaque : natif, accessible. */}
       <select
         className={styles.orgSelect}
         value={current.slug}
@@ -195,6 +386,9 @@ function OrgSwitcher({
           <option key={org.slug} value={org.slug}>{org.name}</option>
         ))}
       </select>
+      <svg className={styles.orgChevron} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+        <path d="M3 4.5 6 7.5l3-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
     </div>
   );
 }

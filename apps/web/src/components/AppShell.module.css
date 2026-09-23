@@ -1,20 +1,27 @@
 /* =====================================================================
-   Coque du tableau de bord.
-   Thème clair par défaut : on l'utilise en boutique, souvent en plein
-   jour, parfois sur une tablette posée sur le comptoir.
+   Coque du tableau de bord — « le rail ».
+   Fonds pleins partout : aucun flou d'arrière-plan (barre haute, barre
+   basse, fond de la feuille). Les liens s'accrochent à une ligne de
+   2 px ; l'entrée active est une latte vermillon qui glisse.
    ===================================================================== */
 
 .shell {
+  /* Hauteur réservée en bas par la barre du téléphone : la SaveBar
+     (Page.tsx) et tout élément collant en bas s'y alignent. */
+  --app-bottom: calc(62px + var(--safe-bottom));
+  position: relative;
   min-height: 100dvh;
-  background: var(--surface-sunken);
+  background: var(--surface);
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr auto;
   grid-template-areas: 'top' 'main' 'tabs';
 }
 
+.icon { flex: none; }
+
 /* ---------------------------------------------------------------------
-   Rail latéral (≥ 900 px)
+   En-tête du téléphone : la marque et le nom, rien d'autre
    --------------------------------------------------------------------- */
 .rail { display: none; }
 
@@ -25,16 +32,16 @@
   z-index: 40;
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  height: calc(var(--header-h) + var(--safe-top));
-  padding: var(--safe-top) var(--sp-4) 0;
-  background: color-mix(in oklab, var(--surface) 88%, transparent);
-  backdrop-filter: saturate(150%) blur(12px);
+  gap: 12px;
+  height: calc(56px + var(--safe-top));
+  padding: var(--safe-top) 20px 0;
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
+@media (max-width: 379px) { .topbar { padding-inline: 16px; } }
 
-.topbarBrand { display: flex; align-items: center; }
-
+.topbarBrand { display: flex; align-items: center; min-height: 44px; }
+.topbarRule { width: 1px; height: 20px; background: var(--line-strong); flex: none; }
 .topbarTitle {
   flex: 1;
   min-width: 0;
@@ -46,23 +53,15 @@
   white-space: nowrap;
 }
 
-.topbarMore {
-  width: 38px; height: 38px;
-  display: grid; place-items: center;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  color: var(--text-muted);
-  background: var(--surface-raised);
-}
-
 .main {
   grid-area: main;
   min-width: 0;
-  padding-bottom: var(--sp-6);
+  padding-bottom: 32px;
 }
 
 /* ---------------------------------------------------------------------
-   Barre basse (téléphone) — à portée de pouce
+   Barre basse du téléphone — 5 colonnes à portée de pouce. Son filet
+   haut est un rail : l'onglet actif y pend comme une latte.
    --------------------------------------------------------------------- */
 .tabbar {
   grid-area: tabs;
@@ -70,214 +69,377 @@
   bottom: 0;
   z-index: 40;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 2px;
-  padding: 6px var(--sp-2) calc(6px + var(--safe-bottom));
-  background: color-mix(in oklab, var(--surface) 92%, transparent);
-  backdrop-filter: saturate(150%) blur(12px);
-  border-top: 1px solid var(--line);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  padding: 0 4px var(--safe-bottom);
+  background: var(--surface);
+  border-top: 1px solid var(--line-strong);
 }
 
 .tab {
+  position: relative;
+  min-height: 61px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 7px 4px;
-  border-radius: 10px;
-  color: var(--text-faint);
-  font-variation-settings: 'wdth' 92, 'wght' 620;
-  font-size: 0.625rem;
-  letter-spacing: 0.04em;
-  transition: color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 2px 8px;
+  color: var(--text-muted);
+  font-variation-settings: 'wdth' 92, 'wght' 640;
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
 }
-.tab:active { background: var(--surface-sunken); }
-
-/* L'onglet actif porte une latte de signal au-dessus : le même
-   vocabulaire que la file elle-même. */
-.tabActive { color: var(--text); position: relative; }
-.tabActive::before {
+.tab > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.tab::before {
   content: '';
   position: absolute;
-  top: -6px;
+  top: -1px;
   left: 50%;
-  translate: -50% 0;
   width: 22px;
   height: 3px;
-  border-radius: 3px;
+  margin-left: -11px;
+  border-radius: 0 0 3px 3px;
   background: var(--accent);
+  transform: scaleX(0);
 }
-
-.icon { flex: none; }
+.tab[aria-current='page'],
+.tab[data-current='true'] { color: var(--text); font-variation-settings: 'wdth' 92, 'wght' 720; }
+.tab[aria-current='page']::before,
+.tab[data-current='true']::before { transform: none; }
+.tab[aria-current='page'] .icon { color: var(--accent); }
+.tab:active { color: var(--text); }
+@media (prefers-reduced-motion: no-preference) {
+  .tab::before { transition: transform var(--dur-2) var(--ease-slat); }
+}
 
 /* ---------------------------------------------------------------------
-   Sélecteur d'organisation
+   Sélecteur d'établissement : la mini-plaque
    --------------------------------------------------------------------- */
 .org {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-2);
-  border-radius: var(--r-field);
-  background: var(--surface-sunken);
-  border: 1px solid var(--line);
+  gap: 12px;
   min-width: 0;
+  padding: 10px 12px 10px 10px;
+  border-radius: var(--r-field);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
 }
+.orgMulti:hover { border-color: color-mix(in oklab, var(--bone-100) 34%, transparent); }
+.orgMulti:focus-within { border-color: var(--accent); }
 
+/* Carreau os de 28 px, initiales gravées, et sa tranche de 2 px. */
 .orgMark {
-  width: 28px; height: 28px;
+  width: 28px;
+  height: 28px;
   flex: none;
-  display: grid; place-items: center;
-  border-radius: 8px;
-  background: var(--surface-inverse);
-  color: var(--text-inverse);
-  font-variation-settings: 'wdth' 110, 'wght' 760;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--bone-100);
+  color: color-mix(in oklab, var(--ink-1000) 78%, transparent);
+  box-shadow: 0 2px 0 var(--bone-500), inset 0 -1px 0 color-mix(in oklab, var(--ink-1000) 8%, transparent);
+  font-variation-settings: 'wdth' 118, 'wght' 800;
   font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  margin-bottom: 2px;
 }
+.orgLogo { width: 100%; height: 100%; object-fit: cover; }
 
-.orgName, .orgSelect {
-  font-variation-settings: 'wdth' 100, 'wght' 660;
+.orgText { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.orgName {
+  font-variation-settings: 'wdth' 100, 'wght' 700;
   font-size: 0.875rem;
+  line-height: 1.15;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
+/* Le select natif couvre toute la mini-plaque, invisible. */
 .orgSelect {
-  appearance: none;
-  background: none;
-  border: 0;
-  flex: 1;
-  cursor: pointer;
-  padding: 0;
-}
-
-/* ---------------------------------------------------------------------
-   Feuille de menu (téléphone)
-   --------------------------------------------------------------------- */
-.sheet { position: fixed; inset: 0; z-index: 60; }
-
-.sheetBackdrop {
   position: absolute;
   inset: 0;
-  background: color-mix(in oklab, var(--ink-1000) 45%, transparent);
-  backdrop-filter: blur(2px);
-  animation: fade-in var(--dur-2) var(--ease-out);
   width: 100%;
+  opacity: 0;
+  cursor: pointer;
+  appearance: none;
+  font-size: 1rem;
+}
+.orgMeta {
+  font-size: 0.75rem;
+  line-height: 1.1;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.orgChevron { color: var(--text-muted); flex: none; pointer-events: none; }
+
+/* ---------------------------------------------------------------------
+   Liens accrochés au rail (rail latéral et feuille)
+   --------------------------------------------------------------------- */
+.groupLabel {
+  padding-left: 32px;
+  margin-bottom: 6px;
+  color: var(--text-faint);
 }
 
-.sheetPanel {
-  position: absolute;
-  inset: auto 0 0 0;
-  background: var(--surface-raised);
-  border-radius: 22px 22px 0 0;
-  padding: var(--sp-5) var(--sp-4) calc(var(--sp-5) + var(--safe-bottom));
+.navList, .sheetList {
+  --rx: 6px;
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 22px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  box-shadow: var(--shadow-lift);
-  animation: sheet-up var(--dur-3) var(--ease-slat);
-  max-height: 88dvh;
-  overflow-y: auto;
+}
+.navList::before, .sheetList::before {
+  content: '';
+  position: absolute;
+  left: var(--rx);
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
 }
 
-@keyframes sheet-up {
-  from { transform: translateY(100%); }
-  to   { transform: none; }
-}
-
-.sheetLink, .railLink {
+.navLink, .footLink {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-3);
-  border-radius: var(--r-field);
+  gap: 12px;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: 10px;
   color: var(--text-muted);
   font-variation-settings: 'wdth' 100, 'wght' 620;
   font-size: 0.9375rem;
-  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+  transition: color var(--dur-1) var(--ease-out);
 }
-.sheetLink:hover, .railLink:hover { background: var(--surface-sunken); color: var(--text); }
-.sheetLinkActive, .railLinkActive {
-  background: var(--surface-sunken);
-  color: var(--text);
-  font-variation-settings: 'wdth' 100, 'wght' 700;
-}
-.sheetLinkActive { position: relative; }
+.navLink .icon, .footLink .icon { color: var(--text-faint); transition: color var(--dur-1) var(--ease-out); }
 
-.railLinkActive { position: relative; }
-.railLinkActive::before {
+/* L'encoche : du rail vers le lien. */
+.navLink::before {
   content: '';
   position: absolute;
-  left: 0;
+  left: -14px;
   top: 50%;
-  translate: -10px -50%;
-  width: 3px;
-  height: 18px;
-  border-radius: 3px;
+  width: 10px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 2px;
+  background: var(--rail);
+  transform-origin: 0 50%;
+  transition: transform var(--dur-2) var(--ease-slat);
+}
+.navLink:hover, .footLink:hover { color: var(--text); }
+.navLink:hover .icon, .footLink:hover .icon { color: var(--text-muted); }
+.navLink:hover::before { transform: scaleX(1.4); }
+
+.navLink[aria-current='page'],
+.footLink[aria-current='page'] {
+  color: var(--text);
+  font-variation-settings: 'wdth' 100, 'wght' 720;
+}
+.navLink[aria-current='page'] .icon,
+.footLink[aria-current='page'] .icon { color: var(--accent); }
+
+/* Repli rendu serveur : la latte dessinée sur le lien courant. Masqué dès
+   que l'indicateur mesuré a pris le relais. */
+.navLink[aria-current='page']::after {
+  content: '';
+  position: absolute;
+  left: -17px;
+  top: 50%;
+  width: 4px;
+  height: 20px;
+  margin-top: -10px;
+  border-radius: 2px;
   background: var(--accent);
 }
+.railNav[data-indicator='on'] .navLink[aria-current='page']::after { display: none; }
 
 /* ---------------------------------------------------------------------
-   ≥ 900 px : rail latéral, plus de barre basse
+   Rail latéral (≥ 900 px) : l'aside occupe toute la hauteur de la grille
+   (fond et bordure ne s'arrêtent jamais), son contenu est collant.
    --------------------------------------------------------------------- */
+.railNav {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.railNav > .navList + .groupLabel { margin-top: 22px; }
+
+/* L'unique latte active : 4 × 20 px, posée sur le rail (x = 6 − 1). */
+.latte {
+  position: absolute;
+  left: 5px;
+  top: 0;
+  width: 4px;
+  height: 20px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+}
+.railNav[data-indicator='on'] > .latte { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .railNav[data-indicator='on'] > .latte {
+    transition: transform var(--dur-3) var(--ease-slat), opacity var(--dur-1) var(--ease-out);
+  }
+}
+
 @media (min-width: 900px) {
   .shell {
-    grid-template-columns: 252px 1fr;
-    grid-template-rows: 1fr;
+    --app-bottom: 0px;
+    grid-template-columns: 256px minmax(0, 1fr);
+    grid-template-rows: auto;
     grid-template-areas: 'rail main';
   }
   .topbar, .tabbar, .sheet { display: none; }
 
   .rail {
     grid-area: rail;
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-5);
-    padding: var(--sp-6) var(--sp-4);
-    background: var(--surface);
+    display: block;
+    background: var(--surface-sunken);
     border-right: 1px solid var(--line);
+  }
+  .railInner {
     position: sticky;
     top: 0;
     height: 100dvh;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding: 24px 18px 18px;
+    scrollbar-width: thin;
   }
 
-  .railBrand { display: flex; }
-  .railNav { display: flex; flex-direction: column; gap: 2px; }
-  .railFoot { margin-top: auto; display: flex; flex-direction: column; gap: var(--sp-2); }
+  .railBrand { display: flex; align-items: center; min-height: 32px; padding-left: 4px; }
+  .railFoot {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  .railFoot .footLink { padding-left: 32px; min-height: 38px; font-size: 0.875rem; }
+  .railFoot .footLink .icon { margin-left: -22px; }
 
-  .main { padding: var(--sp-7) 0 var(--sp-8); }
+  .main { padding: 40px 0 72px; }
 }
 
+@media (min-width: 900px) and (max-height: 760px) {
+  .railInner { gap: 18px; padding-top: 18px; }
+  .railNav > .navList + .groupLabel { margin-top: 16px; }
+  .navLink { min-height: 36px; }
+}
+
+/* ---------------------------------------------------------------------
+   Pied du rail : le compte
+   --------------------------------------------------------------------- */
 .account {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-2);
+  gap: 10px;
+  margin-top: 8px;
+  padding: 8px;
   border-radius: var(--r-field);
   border: 1px solid var(--line);
   min-width: 0;
   transition: border-color var(--dur-1) var(--ease-out);
 }
-.account:hover { border-color: var(--line-strong); }
-
+.account:hover, .account[aria-current='page'] { border-color: var(--line-strong); }
 .avatar {
-  width: 32px; height: 32px;
+  width: 32px;
+  height: 32px;
   flex: none;
-  display: grid; place-items: center;
+  display: grid;
+  place-items: center;
   border-radius: 50%;
   background: var(--accent-soft);
   color: var(--accent);
-  font-variation-settings: 'wdth' 106, 'wght' 740;
+  font-variation-settings: 'wdth' 106, 'wght' 760;
   font-size: 0.6875rem;
 }
+.accountText { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.accountName, .accountMail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.accountName { font-variation-settings: 'wght' 660; font-size: 0.8125rem; line-height: 1.2; }
+.accountMail { font-size: 0.75rem; color: var(--text-muted); line-height: 1.2; }
 
-.accountText { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
-.accountName {
-  font-variation-settings: 'wght' 640;
-  font-size: 0.8125rem;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+/* ---------------------------------------------------------------------
+   Feuille « Plus » (téléphone) — fond plein, sans flou
+   --------------------------------------------------------------------- */
+.sheet { position: fixed; inset: 0; z-index: 60; }
+
+.sheetBackdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  background: color-mix(in oklab, var(--ink-1000) 72%, transparent);
 }
-.accountText > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sheetPanel {
+  position: absolute;
+  inset: auto 0 0 0;
+  max-height: 90dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 10px 20px calc(20px + var(--safe-bottom));
+  background: var(--surface-raised);
+  border-top: 1px solid var(--line-strong);
+  border-radius: 20px 20px 0 0;
+}
+@media (max-width: 379px) { .sheetPanel { padding-inline: 16px; } }
+
+.sheetGrip {
+  align-self: center;
+  width: 36px;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--line-strong);
+}
+.sheetHead { display: flex; align-items: center; gap: 8px; }
+.sheetHead > .org { flex: 1; }
+
+.sheetGroups { display: flex; flex-direction: column; gap: 18px; }
+.sheetGroup { display: flex; flex-direction: column; }
+.sheetList .navLink { min-height: 44px; }
+
+.sheetFoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.sheetFoot .footLink {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  padding: 0 14px;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  justify-content: center;
+  font-size: 0.875rem;
+  gap: 8px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sheetBackdrop { animation: sheet-fade var(--dur-2) var(--ease-out) backwards; }
+  .sheetPanel { animation: sheet-up var(--dur-3) var(--ease-slat) backwards; }
+}
+@keyframes sheet-fade { from { opacity: 0; } }
+@keyframes sheet-up { from { transform: translateY(100%); } }

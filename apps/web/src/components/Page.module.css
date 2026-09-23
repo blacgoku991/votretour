@@ -1,131 +1,316 @@
+/* =====================================================================
+   Briques des écrans du tableau de bord.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   En-tête de page
+   --------------------------------------------------------------------- */
 .header {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: var(--sp-4);
+  gap: 16px 24px;
   flex-wrap: wrap;
 }
-.headerText { min-width: 0; }
-.headerText p { max-width: 62ch; margin-top: 4px; }
-.headerActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-
-.section { display: flex; flex-direction: column; gap: var(--sp-3); }
-.sectionHead {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: var(--sp-3); flex-wrap: wrap;
+.headerText { min-width: 0; display: flex; flex-direction: column; }
+.eyebrow { margin-bottom: 12px; }
+.headerDesc {
+  max-width: 62ch;
+  margin-top: 10px;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--text-muted);
 }
-.sectionDesc { max-width: 60ch; margin-top: 3px; }
+.headerActions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+@media (max-width: 599px) {
+  .headerActions { width: 100%; }
+}
+
+/* ---------------------------------------------------------------------
+   Section : titre en étiquette, précédé d'une encoche de 14 × 2 px
+   --------------------------------------------------------------------- */
+.section { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.sectionHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+}
+.sectionTitles { min-width: 0; display: flex; flex-direction: column; }
+.sectionTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.sectionTitle::before {
+  content: '';
+  flex: none;
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.sectionDesc {
+  max-width: 60ch;
+  margin-top: 8px;
+  padding-left: 24px;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+.sectionActions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .sectionBody {
-  display: flex; flex-direction: column;
+  display: flex;
+  flex-direction: column;
   border-radius: var(--r-card);
   background: var(--surface-raised);
   border: 1px solid var(--line);
   overflow: hidden;
 }
+.sectionBare { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
+/* ---------------------------------------------------------------------
+   Ligne de réglage
+   --------------------------------------------------------------------- */
 .row {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: var(--sp-4);
-  padding: var(--sp-4) var(--sp-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--line);
 }
 .row:last-child { border-bottom: 0; }
 .rowStacked { flex-direction: column; align-items: stretch; }
-.rowText { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.rowText p:last-child { max-width: 56ch; }
+.rowText { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .rowLabel { font-variation-settings: 'wght' 640; font-size: 0.9375rem; line-height: 1.3; }
-.rowControl { flex: none; display: flex; align-items: center; gap: var(--sp-2); }
+.rowHint { max-width: 56ch; font-size: 0.8125rem; line-height: 1.45; color: var(--text-muted); }
+.rowControl { flex: none; display: flex; align-items: center; gap: 8px; }
 .rowStacked .rowControl { flex: 1; }
-.rowControl .input, .rowControl .select { min-width: 180px; }
+.rowControl :global(.input), .rowControl :global(.select) { min-width: 180px; }
 
-@media (max-width: 620px) {
-  .row { flex-direction: column; align-items: stretch; }
-  .rowControl { width: 100%; }
-  .rowControl .input, .rowControl .select { min-width: 0; width: 100%; }
-  .rowControl > * { flex: 1; }
+@media (max-width: 639px) {
+  .row { flex-direction: column; align-items: stretch; gap: 12px; }
+  .rowControl { width: 100%; flex-wrap: wrap; }
+  .rowControl :global(.input), .rowControl :global(.select) { min-width: 0; width: 100%; }
+  .rowControl > :not([role='switch']) { flex: 1 1 auto; }
+  /* L'interrupteur reste à sa taille, calé à gauche sous le libellé. */
+  .rowControl:has(> [role='switch']:only-child) { width: auto; }
 }
 
 /* ---------------------------------------------------------------------
-   Interrupteur : une latte qui glisse d'un cran
+   Interrupteur : glissière à latte
+   Piste = rail de 44 × 26 ; bouton = latte de 18 × 12 qui glisse de
+   18 px (140 ms). Vermillon quand actif : un calque dont seule
+   l'opacité change.
    --------------------------------------------------------------------- */
 .toggle {
-  width: 48px; height: 28px;
+  position: relative;
   flex: none;
-  border-radius: var(--r-pill);
+  width: 44px;
+  height: 26px;
+  padding: 0;
+  border-radius: 8px;
   background: var(--surface-sunken);
   border: 1px solid var(--line-strong);
-  padding: 2px;
-  display: flex;
-  transition: background var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out);
 }
-.toggleOn { background: var(--accent); border-color: transparent; }
-.toggle:disabled { opacity: 0.5; cursor: not-allowed; }
-
+.toggle::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 2px;
+  background: var(--rail);
+}
 .toggleKnob {
-  width: 22px; height: 22px;
-  border-radius: 7px;
+  position: absolute;
+  left: 3px;
+  top: 6px;
+  width: 18px;
+  height: 12px;
+  border-radius: 4px;
   background: var(--text-muted);
-  transition: transform var(--dur-3) var(--ease-slat), background var(--dur-2) var(--ease-out);
+  box-shadow: 0 1px 0 var(--ink-1000);
 }
-.toggleOn .toggleKnob { transform: translateX(20px); background: #FFFFFF; }
+.toggleKnob::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  opacity: 0;
+}
+.toggle[aria-checked='true'] { border-color: color-mix(in oklab, var(--accent) 55%, transparent); }
+.toggle[aria-checked='true'] .toggleKnob { transform: translateX(18px); }
+.toggle[aria-checked='true'] .toggleKnob::after { opacity: 1; }
+.toggle:disabled { cursor: not-allowed; border-style: dashed; }
+.toggle:disabled .toggleKnob { background: var(--text-faint); }
+.toggle:disabled .toggleKnob::after { opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .toggleKnob { transition: transform var(--dur-1) var(--ease-out); }
+  .toggleKnob::after { transition: opacity var(--dur-1) var(--ease-out); }
+}
 
 /* ---------------------------------------------------------------------
-   Barre de sauvegarde
+   Barre de sauvegarde : collante en bas (au-dessus de la barre du
+   téléphone), elle monte en translateY.
    --------------------------------------------------------------------- */
 .saveBar {
   position: sticky;
-  bottom: var(--sp-3);
+  bottom: calc(var(--app-bottom, 0px) + 12px);
   z-index: 30;
-  display: flex; align-items: center; justify-content: space-between;
-  gap: var(--sp-4); flex-wrap: wrap;
-  padding: var(--sp-3) var(--sp-4);
+  display: flex;
+  align-items: center;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+  padding: 10px 12px 10px 20px;
   border-radius: var(--r-field);
-  background: var(--surface-inverse);
-  color: var(--text-inverse);
-  box-shadow: var(--shadow-lift);
-  animation: fade-in var(--dur-2) var(--ease-out);
-}
-.saveBar .btn--quiet { color: color-mix(in oklab, var(--text-inverse) 70%, transparent); }
-.saveError { color: #F0958C; font-size: 0.875rem; font-variation-settings: 'wght' 620; }
-.saveOk { font-size: 0.875rem; font-variation-settings: 'wght' 620; }
-
-/* ---------------------------------------------------------------------
-   Statistiques
-   --------------------------------------------------------------------- */
-.stat {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: var(--sp-4) var(--sp-5);
-  border-radius: var(--r-card);
-  background: var(--surface-raised);
-  border: 1px solid var(--line);
-  position: relative;
+  background: var(--ink-700);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--edge-light), var(--shadow-lift);
   overflow: hidden;
 }
-.statAccent::before {
-  content: '';
-  position: absolute; left: 0; top: var(--sp-4); bottom: var(--sp-4);
-  width: 3px; border-radius: 0 3px 3px 0;
+.saveMark {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 4px;
+  height: 20px;
+  margin-top: -10px;
+  border-radius: 0 2px 2px 0;
   background: var(--accent);
 }
-.statValue {
-  /* Chiffres PROPORTIONNELS : à cette taille, le tabulaire donne à
-     chaque chiffre la largeur d'un zéro et « 121 » paraît disloqué.
-     Le tabulaire reste réservé aux colonnes de chiffres alignées. */
-  font-variant-numeric: proportional-nums;
-  font-variation-settings: 'wdth' 106, 'wght' 780;
-  font-size: clamp(1.6rem, 1.3rem + 1.2vw, 2.1rem);
-  letter-spacing: -0.028em;
-  line-height: 1.05;
+.saveBar[data-tone='ok'] .saveMark { background: var(--jade-500); }
+.saveBar[data-tone='error'] .saveMark { background: var(--danger-text); }
+.saveText { font-size: 0.875rem; color: var(--text-muted); }
+.saveError { color: var(--danger-text); font-size: 0.875rem; font-variation-settings: 'wght' 620; }
+.saveOk { font-size: 0.875rem; font-variation-settings: 'wght' 620; color: var(--jade-500); }
+.saveActions { display: flex; gap: 8px; margin-left: auto; }
+@media (prefers-reduced-motion: no-preference) {
+  .saveBar { animation: save-up var(--dur-2) var(--ease-slat) backwards; }
 }
+@keyframes save-up { from { transform: translateY(100%); opacity: 0; } }
 
 /* ---------------------------------------------------------------------
-   État vide
+   Stat : cellule de .kpi-band — tableau d'affichage, pas une carte
+   --------------------------------------------------------------------- */
+.stat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 22px 20px 20px;
+  background: var(--surface);
+  /* Posée seule (hors bande), la cellule garde un contour discret. */
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+}
+:global(.kpi-band) > .stat { border: 0; border-radius: 0; }
+/* Dans une bande, une étiquette peut passer sur deux lignes : on réserve
+   ces deux lignes (texte calé en bas, contre la valeur) pour que les
+   valeurs d'une même rangée restent alignées. */
+:global(.kpi-band) > .stat > :global(.t-label) {
+  display: flex;
+  align-items: flex-end;
+  line-height: 1.2;
+  min-height: 2.4em;
+}
+
+.statNotch {
+  position: absolute;
+  left: 20px;
+  top: 0;
+  width: 14px;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: var(--rail);
+}
+.statAccent .statNotch { width: 20px; height: 4px; background: var(--accent); }
+
+.statValue {
+  display: flex;
+  min-height: 1em;
+  font-size: 2rem;
+  line-height: 1;
+  color: var(--text);
+  --flap-size: 1em;
+}
+.statValue :global(.flap) {
+  font-variation-settings: 'wdth' 112, 'wght' 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.statLead .statValue { font-size: clamp(2.5rem, 1.9rem + 2vw, 3.5rem); }
+.statHint { font-size: 0.8125rem; line-height: 1.4; color: var(--text-muted); }
+
+/* ---------------------------------------------------------------------
+   État vide : rail, latte fantôme en pointillés, puis le texte
    --------------------------------------------------------------------- */
 .empty {
-  display: flex; flex-direction: column; align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-9) var(--sp-5);
-  text-align: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  padding: 32px 20px;
 }
-.emptyMark { color: var(--text-faint); margin-bottom: var(--sp-2); }
-.empty p:last-of-type { max-width: 44ch; }
+.emptyRang {
+  position: relative;
+  height: 72px;
+  max-width: 260px;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.emptyRang::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.emptyGhost {
+  position: relative;
+  height: 34px;
+  border-radius: var(--r-slat);
+  border: 2px dashed color-mix(in oklab, var(--accent) 60%, transparent);
+}
+.emptyGhost::before {
+  content: '';
+  position: absolute;
+  left: -24px;
+  top: 50%;
+  width: 20px;
+  margin-top: -1px;
+  border-top: 2px dashed color-mix(in oklab, var(--accent) 60%, transparent);
+}
+.emptyTick {
+  position: absolute;
+  left: 38px;
+  top: 50%;
+  width: 18px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 2px;
+  background: var(--text-faint);
+  opacity: 0.6;
+}
+.emptyText { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.emptyDesc { max-width: 48ch; font-size: 0.875rem; line-height: 1.5; color: var(--text-muted); }
+.emptyAction { margin-top: 8px; }
+
+@media (min-width: 640px) {
+  .empty {
+    grid-template-columns: 220px minmax(0, 1fr);
+    align-items: center;
+    gap: 32px;
+    padding: 40px 28px;
+  }
+}
