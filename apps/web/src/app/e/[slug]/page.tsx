@@ -53,6 +53,15 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
 
   let effectiveEntryPoint = entryPoint;
   let eventId: string | null = null;
+  let eventTheme: {
+    name: string;
+    heroTitle: string | null;
+    logoUrl: string | null;
+    coverUrl: string | null;
+    accentHex: string;
+    rulesText: string | null;
+    qrLabel: string | null;
+  } | null = null;
 
   const requestedEventId = typeof query.event === 'string' ? query.event : null;
   if (
@@ -63,7 +72,7 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
     const db = supabaseAdmin();
     const { data: event } = await db
       .from('event_campaigns')
-      .select('id, queue_id, status')
+      .select('id, queue_id, status, name, hero_title, logo_url, cover_url, accent_hex, rules_text, qr_label')
       .eq('id', requestedEventId)
       .eq('organization_id', entryPoint.organization.id)
       .eq('location_id', entryPoint.location.id)
@@ -86,6 +95,15 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
 
       if (queue) {
         eventId = event.id;
+        eventTheme = {
+          name: event.name,
+          heroTitle: event.hero_title ?? null,
+          logoUrl: event.logo_url ?? null,
+          coverUrl: event.cover_url ?? null,
+          accentHex: event.accent_hex ?? '#FF4B1F',
+          rulesText: event.rules_text ?? null,
+          qrLabel: event.qr_label ?? null,
+        };
         effectiveEntryPoint = {
           ...entryPoint,
           queue: {
@@ -142,6 +160,7 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
           entryPoint={effectiveEntryPoint}
           initialTicket={initialTicket}
           eventId={eventId}
+          eventTheme={eventTheme}
           source={source}
           vapidPublicKey={vapidPublicKey()}
           activityLabel={ACTIVITY_LABEL[entryPoint.organization.activity] ?? null}
