@@ -1,11 +1,13 @@
 'use client';
 
+import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import styles from './pass.module.css';
 
 export function EventPassCard({
   passId, status, eventName, eventStatus, locationName, city,
-  logoUrl, clientName, validUntil, graceUntil, redeemedAt,
+  logoUrl, coverUrl, accentHex, heroTitle, rulesText, qrLabel,
+  clientName, validUntil, graceUntil, redeemedAt,
 }: {
   passId: string;
   status: string;
@@ -14,6 +16,11 @@ export function EventPassCard({
   locationName: string;
   city: string | null;
   logoUrl: string | null;
+  coverUrl: string | null;
+  accentHex: string;
+  heroTitle: string | null;
+  rulesText: string | null;
+  qrLabel: string | null;
   clientName: string | null;
   validUntil: string;
   graceUntil: string;
@@ -58,15 +65,25 @@ export function EventPassCard({
   const countdown = useMemo(() => {
     const min = Math.floor(remaining / 60);
     const sec = remaining % 60;
-    return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    return String(min).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
   }, [remaining]);
 
   const active = runtimeStatus === 'issued'
     && liveEventStatus !== 'sold_out'
     && liveEventStatus !== 'ended';
 
+  const style = {
+    '--event-accent': /^#[0-9A-Fa-f]{6}$/.test(accentHex) ? accentHex : '#FF4B1F',
+    ...(coverUrl ? {
+      backgroundImage:
+        'linear-gradient(160deg, rgba(7,9,13,.93), rgba(7,9,13,.82)), url('
+        + JSON.stringify(coverUrl)
+        + ')',
+    } : {}),
+  } as CSSProperties;
+
   return (
-    <main className={styles.screen}>
+    <main className={styles.screen} style={style}>
       <div className={styles.ambient} />
       <article className={styles.pass} data-state={runtimeStatus}>
         <header className={styles.header}>
@@ -76,9 +93,16 @@ export function EventPassCard({
           <div>
             <p className={styles.kicker}>RANGVIA ACCESS</p>
             <h1>{eventName}</h1>
-            <p className={styles.place}>{locationName}{city ? ` · ${city}` : ''}</p>
+            <p className={styles.place}>{locationName}{city ? ' · ' + city : ''}</p>
           </div>
         </header>
+
+        {(heroTitle || rulesText) && (
+          <section className={styles.eventIntro}>
+            {heroTitle && <h2>{heroTitle}</h2>}
+            {rulesText && <p>{rulesText}</p>}
+          </section>
+        )}
 
         {active ? (
           <>
@@ -96,12 +120,14 @@ export function EventPassCard({
 
             <div className={styles.qrWrap}>
               <img
-                src={`/api/pass/qr?v=${qrTick}`}
+                src={'/api/pass/qr?v=' + qrTick}
                 alt="QR de contrôle d'accès"
                 className={styles.qr}
               />
               <div className={styles.scanLine} />
             </div>
+
+            {qrLabel && <p className={styles.qrLabel}>{qrLabel}</p>}
 
             <div className={styles.timer}>
               <span>Présentez-vous dans</span>
@@ -121,7 +147,7 @@ export function EventPassCard({
             <h2>Accès validé</h2>
             <p>
               Ce laisser-passer a déjà été utilisé
-              {liveRedeemedAt ? ` à ${new Date(liveRedeemedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}.
+              {liveRedeemedAt ? ' à ' + new Date(liveRedeemedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}.
             </p>
           </div>
         ) : (
