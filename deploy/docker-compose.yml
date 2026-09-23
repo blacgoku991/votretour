@@ -220,6 +220,9 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+      MEDIA_ROOT: ${MEDIA_ROOT:-/app/data/uploads}
+    volumes:
+      - media-data:/app/data/uploads
 
   # -------------------------------------------------------------------
   caddy:
@@ -280,5 +283,6 @@ services:
 
 volumes:
   db-data:
+  media-data:
   caddy-data:
   caddy-config:
