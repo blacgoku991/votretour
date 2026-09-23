@@ -59,7 +59,9 @@ export default async function BillingPage({
 }) {
   const { org } = await params;
   const { paiement } = await searchParams;
-  const access = await requireOrgAccess(org);
+  // Ouverte aussi à une organisation suspendue : c'est ici qu'elle règle
+  // son abonnement ou écrit au support pour rétablir l'accès.
+  const access = await requireOrgAccess(org, undefined, { allowSuspended: true });
   const organizationId = access.organization.organization_id;
   const db = supabaseAdmin();
 

@@ -42,7 +42,9 @@ const HELP = [
  */
 export default async function SupportPage({ params }: { params: Promise<{ org: string }> }) {
   const { org } = await params;
-  const access = await requireOrgAccess(org);
+  // Ouverte aussi à une organisation suspendue : c'est ici qu'elle règle
+  // son abonnement ou écrit au support pour rétablir l'accès.
+  const access = await requireOrgAccess(org, undefined, { allowSuspended: true });
   const db = supabaseAdmin();
 
   const { data: tickets } = await db

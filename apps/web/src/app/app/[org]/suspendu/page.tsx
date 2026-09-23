@@ -1,14 +1,17 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { requireUser } from '@/server/auth';
+import { redirect } from 'next/navigation';
+import { requireOrgAccess } from '@/server/auth';
 import { Barrier } from '../evenements/Barrier';
 import styles from './suspendu.module.css';
 
 export const metadata: Metadata = { title: 'Compte suspendu', robots: { index: false } };
 
 export default async function SuspendedPage({ params }: { params: Promise<{ org: string }> }) {
-  await requireUser();
   const { org } = await params;
+  const access = await requireOrgAccess(org, undefined, { allowSuspended: true });
+  // Une organisation active n'a rien à faire ici.
+  if (access.organization.status !== 'suspended') redirect(`/app/${access.organization.slug}/file`);
   return (
     <div className={`shell ${styles.page}`}>
       <section className={styles.panel} aria-labelledby="suspendu-titre">
@@ -36,7 +39,9 @@ export default async function SuspendedPage({ params }: { params: Promise<{ org:
             <Link className="btn btn--signal" href={`/app/${encodeURIComponent(org)}/abonnement`}>
               Voir mon abonnement
             </Link>
-            <Link className="btn btn--quiet" href="/">Retour à l’accueil</Link>
+            <Link className="btn btn--ghost" href={`/app/${encodeURIComponent(org)}/support`}>
+              Écrire au support
+            </Link>
           </div>
         </div>
       </section>
