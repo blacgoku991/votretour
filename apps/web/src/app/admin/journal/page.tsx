@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requirePlatformAdmin } from '@/server/auth';
 import { PageHeader, Section, EmptyState } from '@/components/Page';
 import { formatDateTime } from '@/lib/format';
 import styles from '../admin.module.css';
@@ -8,6 +9,9 @@ export const metadata: Metadata = { title: 'Journal d’audit', robots: { index:
 export const dynamic = 'force-dynamic';
 
 export default async function AdminAuditPage() {
+  // Chaque page revérifie le rôle elle-même : une requête RSC forgée
+  // peut sauter le layout /admin, jamais la page qu'elle demande.
+  await requirePlatformAdmin();
   const db = supabaseAdmin();
 
   const { data: logs } = await db

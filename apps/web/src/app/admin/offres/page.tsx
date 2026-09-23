@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requirePlatformAdmin } from '@/server/auth';
 import { stripeConfigured } from '@/server/stripe';
 import { PageHeader, Section, Stat } from '@/components/Page';
 import { formatNumber, formatPrice, formatDate } from '@/lib/format';
@@ -15,6 +16,9 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default async function AdminPlansPage() {
+  // Chaque page revérifie le rôle elle-même : une requête RSC forgée
+  // peut sauter le layout /admin, jamais la page qu'elle demande.
+  await requirePlatformAdmin();
   const db = supabaseAdmin();
 
   const [{ data: plans }, { data: subscriptions }] = await Promise.all([

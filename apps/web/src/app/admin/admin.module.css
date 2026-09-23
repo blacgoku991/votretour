@@ -101,7 +101,9 @@
 .table td { color: var(--text-muted); }
 .table tbody tr:hover { background: var(--surface-raised); }
 .table tbody tr:last-child th, .table tbody tr:last-child td { border-bottom: 0; }
-.tableWrap { overflow-x: auto; }
+/* Positionné : un .sr-only (absolu) dans un en-tête de tableau reste
+   pris dans la zone de défilement au lieu d'élargir toute la page. */
+.tableWrap { position: relative; overflow-x: auto; }
 
 .orgName { font-variation-settings: 'wght' 650; color: var(--text); }
 

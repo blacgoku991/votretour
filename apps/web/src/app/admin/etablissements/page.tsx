@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requirePlatformAdmin } from '@/server/auth';
 import { PageHeader, Section, EmptyState } from '@/components/Page';
 import { formatDate, formatNumber } from '@/lib/format';
 import { ACTIVITY_LABEL } from '@/lib/copy';
@@ -17,6 +18,9 @@ export default async function AdminOrganizationsPage({
 }: {
   searchParams: Promise<{ q?: string; etat?: string }>;
 }) {
+  // Chaque page revérifie le rôle elle-même : une requête RSC forgée
+  // peut sauter le layout /admin, jamais la page qu'elle demande.
+  await requirePlatformAdmin();
   const { q, etat } = await searchParams;
   const db = supabaseAdmin();
 

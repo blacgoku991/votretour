@@ -3,11 +3,19 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requirePlatformAdmin } from '@/server/auth';
 import { PageHeader } from '@/components/Page';
 import { formatDateTime, formatNumber } from '@/lib/format';
 import { formatSerial, formatStockCode } from '@/lib/plate-stock';
 import adminStyles from '../../../admin.module.css';
 import styles from '../stock.module.css';
+
+interface PlateJoin {
+  label: string;
+  scan_count: number;
+  organizations: { name: string } | { name: string }[] | null;
+  locations: { name: string } | { name: string }[] | null;
+}
 
 export const metadata: Metadata = { title: 'Lot de plaques', robots: { index: false } };
 export const dynamic = 'force-dynamic';
@@ -29,6 +37,9 @@ export default async function PlateBatchPage({
   params: Promise<{ batchId: string }>;
   searchParams: Promise<{ etat?: string }>;
 }) {
+  // Chaque page revérifie le rôle elle-même : une requête RSC forgée
+  // peut sauter le layout /admin, jamais la page qu'elle demande.
+  await requirePlatformAdmin();
   const { batchId } = await params;
   const { etat } = await searchParams;
   if (!z.string().uuid().safeParse(batchId).success) notFound();
@@ -42,32 +53,38 @@ export default async function PlateBatchPage({
     .maybeSingle();
   if (!batch) notFound();
 
+  // La plaque en service vient par jointure : une liste d'identifiants
+  // dans l'URL (.in) dépasserait la limite de longueur d'un proxy dès
+  // quelques centaines de plaques attribuées.
   let query = db
     .from('plate_stock')
-    .select('serial, code, status, plate_id, assigned_at')
+    .select('serial, code, status, plate_id, assigned_at, plates!plate_id(label, scan_count, organizations(name), locations(name))')
     .eq('batch_id', batchId)
     .order('serial');
   const status = FILTERS.find((f) => f.key === filter)?.status;
   if (status) query = query.eq('status', status);
-  const { data: rows } = await query;
+  const { data: rawRows, error } = await query;
+  if (error) throw error;
 
-  const plateIds = (rows ?? []).map((r) => r.plate_id).filter(Boolean) as string[];
-  const { data: plates } = plateIds.length
-    ? await db.from('plates')
-        .select('id, label, scan_count, organizations(name), locations(name)')
-        .in('id', plateIds)
-    : { data: [] };
-  const plateById = new Map(
-    ((plates ?? []) as unknown as {
-      id: string; label: string; scan_count: number;
-      organizations: { name: string } | { name: string }[] | null;
-      locations: { name: string } | { name: string }[] | null;
-    }[]).map((p) => {
-      const org = Array.isArray(p.organizations) ? p.organizations[0] : p.organizations;
-      const loc = Array.isArray(p.locations) ? p.locations[0] : p.locations;
-      return [p.id, { label: p.label, scans: p.scan_count, org: org?.name ?? '—', loc: loc?.name ?? '—' }];
-    }),
-  );
+  const one = <T,>(value: T | T[] | null | undefined): T | null =>
+    (Array.isArray(value) ? value[0] : value) ?? null;
+  const rows = ((rawRows ?? []) as unknown as {
+    serial: number; code: string; status: string; plate_id: string | null;
+    plates: PlateJoin | PlateJoin[] | null;
+  }[]).map((row) => {
+    const plate = one(row.plates);
+    return {
+      ...row,
+      plate: plate
+        ? {
+            label: plate.label,
+            scans: plate.scan_count,
+            org: one(plate.organizations)?.name ?? '—',
+            loc: one(plate.locations)?.name ?? '—',
+          }
+        : null,
+    };
+  });
 
   return (
     <div className={`shell ${adminStyles.page}`}>
@@ -111,8 +128,8 @@ export default async function PlateBatchPage({
               </tr>
             </thead>
             <tbody>
-              {(rows ?? []).map((row) => {
-                const plate = row.plate_id ? plateById.get(row.plate_id) : null;
+              {rows.map((row) => {
+                const plate = row.plate;
                 return (
                   <tr key={row.code}>
                     <td className={`t-num ${styles.mono}`}>{formatSerial(row.serial)}</td>
@@ -137,7 +154,7 @@ export default async function PlateBatchPage({
             </tbody>
           </table>
         </div>
-        {(rows ?? []).length === 0 && <p className="t-small t-muted">Aucune plaque dans cet état.</p>}
+        {rows.length === 0 && <p className="t-small t-muted">Aucune plaque dans cet état.</p>}
       </section>
     </div>
   );

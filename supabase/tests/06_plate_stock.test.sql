@@ -218,6 +218,26 @@ begin
     raise notice '  ok  seul le stock peut exister sans société';
   end;
 
+  -- -------------------------------------------------------------------
+  raise notice '';
+  raise notice '── 11. Comptes calculés en base ──';
+  v_res := public.plate_stock_summary(array[(v_batch ->> 'id')::uuid]);
+  perform internal.assert_eq(jsonb_array_length(v_res -> 'batches'), 1, 'un détail par lot demandé');
+  perform internal.assert_eq(
+    (v_res -> 'batches' -> 0 ->> 'available')::int
+      + (v_res -> 'batches' -> 0 ->> 'assigned')::int
+      + (v_res -> 'batches' -> 0 ->> 'void')::int,
+    50, 'le détail du lot compte ses 50 plaques');
+  select count(*)::int into v_n from public.plate_stock
+  where batch_id = (v_batch ->> 'id')::uuid and status = 'assigned';
+  perform internal.assert_eq((v_res -> 'batches' -> 0 ->> 'assigned')::int, v_n,
+    'les plaques attribuées du lot sont comptées en base');
+  select count(*)::int into v_n from public.plate_stock where status = 'available';
+  perform internal.assert_eq((v_res -> 'totals' ->> 'available')::int, v_n,
+    'les totaux couvrent toute la plateforme');
+  perform internal.assert_eq(jsonb_array_length(public.plate_stock_summary() -> 'batches'), 0,
+    'sans lot demandé, aucun détail');
+
   raise notice '';
   raise notice '✅ Stock de plaques : tous les tests passent.';
 end
@@ -243,6 +263,12 @@ begin;
       raise exception 'ÉCHEC: un professionnel génère des plaques';
     exception when insufficient_privilege then
       raise notice '  ok  seul le serveur peut générer un lot';
+    end;
+    begin
+      perform public.plate_stock_summary();
+      raise exception 'ÉCHEC: un professionnel lit les comptes du stock';
+    exception when insufficient_privilege then
+      raise notice '  ok  les comptes du stock sont réservés au serveur';
     end;
     begin
       perform public.assign_stock_plate('rv-00000-00000', gen_random_uuid());

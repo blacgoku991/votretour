@@ -90,6 +90,11 @@ export function toAppError(error: unknown): AppError {
     if (sqlState === '23505') {
       return new AppError('conflict', 'Cette action a déjà été enregistrée.', 409);
     }
+    // Interblocage ou conflit de sérialisation : PostgreSQL a annulé
+    // l'opération au profit d'une autre, simultanée. Rien n'est écrit.
+    if (sqlState === '40P01' || sqlState === '40001') {
+      return new AppError('conflict', 'Une autre opération touchait les mêmes données. Réessayez.', 409);
+    }
     if (sqlState === '42501') {
       return new AppError('forbidden', "Accès refusé.", 403);
     }

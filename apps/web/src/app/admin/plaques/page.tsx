@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requirePlatformAdmin } from '@/server/auth';
 import { env } from '@/lib/env';
 import { PageHeader, Section, EmptyState } from '@/components/Page';
 import { formatNumber } from '@/lib/format';
@@ -16,10 +17,10 @@ export const dynamic = 'force-dynamic';
  * état, et de quoi agir : activer, désactiver, renommer, rattacher à
  * une file, programmer le tag NFC.
  *
- * Le contrôle d'accès est celui de la coque /admin : requirePlatformAdmin()
- * dans le layout, revérifié côté serveur à chaque navigation, et
- * assertPlatformAdmin() dans chaque action. Aucune vérification n'est
- * laissée au navigateur.
+ * Le contrôle d'accès est fait côté serveur à trois endroits :
+ * requirePlatformAdmin() dans le layout ET en tête de cette page (une
+ * requête RSC forgée peut sauter le layout), assertPlatformAdmin() dans
+ * chaque action. Aucune vérification n'est laissée au navigateur.
  */
 
 type Filter = 'toutes' | 'actives' | 'inactives' | 'a-programmer' | 'jamais-scannees';
@@ -29,6 +30,9 @@ export default async function AdminPlatesPage({
 }: {
   searchParams: Promise<{ q?: string; etat?: string; org?: string }>;
 }) {
+  // Chaque page revérifie le rôle elle-même : une requête RSC forgée
+  // peut sauter le layout /admin, jamais la page qu'elle demande.
+  await requirePlatformAdmin();
   const { q, etat, org } = await searchParams;
   const filter = (etat ?? 'toutes') as Filter;
   const db = supabaseAdmin();

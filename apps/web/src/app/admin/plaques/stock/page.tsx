@@ -1,12 +1,20 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requirePlatformAdmin } from '@/server/auth';
+import { selectAll } from '@/server/select-all';
 import { PageHeader } from '@/components/Page';
 import { formatDate, formatNumber } from '@/lib/format';
 import { normalizeStockCode } from '@/lib/plate-stock';
 import { StockConsole, type AssignTargets } from './StockConsole';
 import adminStyles from '../../admin.module.css';
 import styles from './stock.module.css';
+
+interface StockCounts { available: number; assigned: number; void: number }
+interface StockSummary {
+  totals: StockCounts;
+  batches: (StockCounts & { batchId: string })[];
+}
 
 export const metadata: Metadata = { title: 'Stock fournisseur', robots: { index: false } };
 export const dynamic = 'force-dynamic';
@@ -22,7 +30,8 @@ export const dynamic = 'force-dynamic';
  * 3. Plus tard, une plaque peut changer de société : le lien gravé ne
  *    change jamais.
  *
- * L'accès est protégé par la coque /admin (requirePlatformAdmin) et
+ * L'accès est vérifié en tête de chaque page du stock — pas seulement
+ * par la coque /admin, qu'une requête RSC forgée peut sauter — et
  * revérifié dans chaque action serveur.
  */
 export default async function PlateStockPage({
@@ -30,48 +39,49 @@ export default async function PlateStockPage({
 }: {
   searchParams: Promise<{ code?: string }>;
 }) {
+  // Chaque page revérifie le rôle elle-même : une requête RSC forgée
+  // peut sauter le layout /admin, jamais la page qu'elle demande.
+  await requirePlatformAdmin();
   const { code } = await searchParams;
   const initialQuery = code ? (normalizeStockCode(code) ?? code) : '';
   const db = supabaseAdmin();
 
-  const [
-    { data: batches },
-    { data: stockRows },
-    { data: organizations },
-    { data: locations },
-    { data: queues },
-    { data: staff },
-  ] = await Promise.all([
-    db.from('plate_batches')
-      .select('id, label, quantity, kind, supplier_note, created_at')
-      .order('created_at', { ascending: false })
-      .limit(200),
-    db.from('plate_stock').select('batch_id, status').limit(50000),
-    db.from('organizations').select('id, name, status').order('name').limit(1000),
-    db.from('locations').select('id, name, city, organization_id, is_active').order('name').limit(2000),
-    db.from('queues').select('id, name, location_id, is_default').order('name').limit(4000),
-    db.from('staff').select('id, display_name, location_id').eq('is_active', true).order('display_name').limit(4000),
+  const { data: batches, error: batchesError } = await db.from('plate_batches')
+    .select('id, label, quantity, kind, supplier_note, created_at')
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (batchesError) throw batchesError;
+
+  // Les comptes se font en base, et les listes se lisent par pages :
+  // PostgREST tronque sans prévenir toute réponse au-delà de 1000 lignes.
+  const [summary, organizations, locations, queues, staff] = await Promise.all([
+    db.rpc('plate_stock_summary', { p_batch_ids: (batches ?? []).map((b) => b.id) })
+      .then(({ data, error }) => {
+        if (error) throw error;
+        return data as StockSummary;
+      }),
+    selectAll<{ id: string; name: string; status: string }>((from, to) =>
+      db.from('organizations').select('id, name, status').order('name').order('id').range(from, to)),
+    selectAll<{ id: string; name: string; city: string | null; organization_id: string; is_active: boolean }>((from, to) =>
+      db.from('locations').select('id, name, city, organization_id, is_active').order('name').order('id').range(from, to)),
+    selectAll<{ id: string; name: string; location_id: string; is_default: boolean }>((from, to) =>
+      db.from('queues').select('id, name, location_id, is_default').order('name').order('id').range(from, to)),
+    selectAll<{ id: string; display_name: string; location_id: string }>((from, to) =>
+      db.from('staff').select('id, display_name, location_id').eq('is_active', true)
+        .order('display_name').order('id').range(from, to)),
   ]);
 
-  const counts = { available: 0, assigned: 0, void: 0 };
-  const perBatch = new Map<string, { available: number; assigned: number; void: number }>();
-  for (const row of (stockRows ?? []) as { batch_id: string; status: keyof typeof counts }[]) {
-    counts[row.status] += 1;
-    const entry = perBatch.get(row.batch_id) ?? { available: 0, assigned: 0, void: 0 };
-    entry[row.status] += 1;
-    perBatch.set(row.batch_id, entry);
-  }
+  const counts = summary.totals;
+  const perBatch = new Map(summary.batches.map((b) => [b.batchId, b]));
   const total = counts.available + counts.assigned + counts.void;
 
   const targets: AssignTargets = {
-    organizations: ((organizations ?? []) as { id: string; name: string; status: string }[])
-      .map((o) => ({ id: o.id, name: o.name, suspended: o.status !== 'active' })),
-    locations: ((locations ?? []) as { id: string; name: string; city: string | null; organization_id: string; is_active: boolean }[])
-      .map((l) => ({ id: l.id, name: l.name, city: l.city, organizationId: l.organization_id, active: l.is_active })),
-    queues: ((queues ?? []) as { id: string; name: string; location_id: string; is_default: boolean }[])
-      .map((q) => ({ id: q.id, name: q.name, locationId: q.location_id, isDefault: q.is_default })),
-    staff: ((staff ?? []) as { id: string; display_name: string; location_id: string }[])
-      .map((s) => ({ id: s.id, name: s.display_name, locationId: s.location_id })),
+    organizations: organizations.map((o) => ({ id: o.id, name: o.name, suspended: o.status !== 'active' })),
+    locations: locations.map((l) => ({
+      id: l.id, name: l.name, city: l.city, organizationId: l.organization_id, active: l.is_active,
+    })),
+    queues: queues.map((q) => ({ id: q.id, name: q.name, locationId: q.location_id, isDefault: q.is_default })),
+    staff: staff.map((s) => ({ id: s.id, name: s.display_name, locationId: s.location_id })),
   };
 
   return (

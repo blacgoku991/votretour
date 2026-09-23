@@ -241,8 +241,12 @@ function AssignForm({
 
   const organizations = useMemo(() => {
     const needle = filter.trim().toLowerCase();
-    return targets.organizations.filter((o) => !needle || o.name.toLowerCase().includes(needle));
-  }, [filter, targets.organizations]);
+    // La société déjà choisie reste dans la liste : sinon le select
+    // afficherait « Choisir » alors qu'un établissement est sélectionné.
+    return targets.organizations.filter(
+      (o) => !needle || o.id === organizationId || o.name.toLowerCase().includes(needle),
+    );
+  }, [filter, organizationId, targets.organizations]);
   const locations = targets.locations.filter((l) => l.organizationId === organizationId);
   const queues = targets.queues.filter((q) => q.locationId === locationId);
   const staff = targets.staff.filter((s) => s.locationId === locationId);
@@ -374,7 +378,11 @@ function AssignForm({
 function BatchPanel() {
   const router = useRouter();
   const [label, setLabel] = useState('');
-  const [quantity, setQuantity] = useState(100);
+  // Gardé tel que tapé : un champ number contrôlé par un nombre ne peut
+  // pas être vidé (React y réécrit « 0 », puis « 025 »).
+  const [quantityInput, setQuantityInput] = useState('100');
+  const quantity = /^\d{1,4}$/.test(quantityInput.trim()) ? Number(quantityInput.trim()) : NaN;
+  const quantityValid = Number.isInteger(quantity) && quantity >= 1 && quantity <= 1000;
   const [kind, setKind] = useState<'both' | 'nfc' | 'qr'>('both');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -382,6 +390,7 @@ function BatchPanel() {
 
   const submit = () => {
     setError(null);
+    if (!quantityValid) { setError('Entre 1 et 1000 plaques par lot.'); return; }
     startTransition(async () => {
       const result = await adminCreatePlateBatch({ label, quantity, kind, note: note || undefined });
       if (!result.ok) { setError(result.error); return; }
@@ -422,8 +431,9 @@ function BatchPanel() {
               inputMode="numeric"
               min={1}
               max={1000}
-              value={quantity}
-              onChange={(event) => setQuantity(Number(event.target.value))}
+              step={1}
+              value={quantityInput}
+              onChange={(event) => setQuantityInput(event.target.value)}
               required
             />
           </div>
@@ -451,8 +461,8 @@ function BatchPanel() {
 
         {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
 
-        <button type="submit" className="btn btn--signal" disabled={pending || !label.trim() || quantity < 1 || quantity > 1000}>
-          {pending ? 'Génération…' : `Générer ${Number.isFinite(quantity) ? quantity : ''} liens`}
+        <button type="submit" className="btn btn--signal" disabled={pending || !label.trim() || !quantityValid}>
+          {pending ? 'Génération…' : quantityValid ? `Générer ${quantity} ${quantity > 1 ? 'liens' : 'lien'}` : 'Générer les liens'}
         </button>
 
         <ol className={styles.steps}>

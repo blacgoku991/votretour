@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requirePlatformAdmin } from '@/server/auth';
 import { formatNumber } from '@/lib/format';
 import { AdminEventsTable } from './AdminEventsTable';
 import { CreateEventButton } from './CreateEventButton';
@@ -13,6 +14,9 @@ export default async function AdminEventsPage({
 }: {
   searchParams: Promise<{ q?: string; etat?: string }>;
 }) {
+  // Chaque page revérifie le rôle elle-même : une requête RSC forgée
+  // peut sauter le layout /admin, jamais la page qu'elle demande.
+  await requirePlatformAdmin();
   const { q, etat } = await searchParams;
   const db = supabaseAdmin();
 

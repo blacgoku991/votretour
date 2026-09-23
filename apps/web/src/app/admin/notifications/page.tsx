@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requirePlatformAdmin } from '@/server/auth';
 import { formatNumber, relativeTime } from '@/lib/format';
 import styles from '../admin.module.css';
 
@@ -11,6 +12,9 @@ export default async function AdminNotificationsPage({
 }: {
   searchParams: Promise<{ statut?: string; canal?: string }>;
 }) {
+  // Chaque page revérifie le rôle elle-même : une requête RSC forgée
+  // peut sauter le layout /admin, jamais la page qu'elle demande.
+  await requirePlatformAdmin();
   const { statut, canal } = await searchParams;
   const db = supabaseAdmin();
   const since24h = new Date(Date.now() - 24 * 60 * 60_000).toISOString();

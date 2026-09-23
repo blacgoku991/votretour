@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requirePlatformAdmin } from '@/server/auth';
 import { PageHeader, Section, EmptyState } from '@/components/Page';
 import { formatDateTime, relativeTime } from '@/lib/format';
 import { TicketThread } from './TicketThread';
@@ -9,6 +10,9 @@ export const metadata: Metadata = { title: 'Support', robots: { index: false } }
 export const dynamic = 'force-dynamic';
 
 export default async function AdminSupportPage() {
+  // Chaque page revérifie le rôle elle-même : une requête RSC forgée
+  // peut sauter le layout /admin, jamais la page qu'elle demande.
+  await requirePlatformAdmin();
   const db = supabaseAdmin();
 
   const { data: tickets } = await db

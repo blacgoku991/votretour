@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requirePlatformAdmin } from '@/server/auth';
 import { PageHeader, Section, EmptyState } from '@/components/Page';
 import { relativeTime, formatDateTime } from '@/lib/format';
 import { ResolveButton } from './ResolveButton';
@@ -13,6 +14,9 @@ export default async function AdminErrorsPage({
 }: {
   searchParams: Promise<{ etat?: string }>;
 }) {
+  // Chaque page revérifie le rôle elle-même : une requête RSC forgée
+  // peut sauter le layout /admin, jamais la page qu'elle demande.
+  await requirePlatformAdmin();
   const { etat } = await searchParams;
   const resolved = etat === 'resolus';
 

@@ -5,8 +5,9 @@ import { createServerClient } from '@supabase/ssr';
  * Rafraîchit le jeton de session à chaque navigation et verrouille les
  * espaces authentifiés.
  *
- * Le middleware ne fait AUCUN contrôle d'autorisation fin : il empêche
- * simplement d'atteindre une page privée sans session. L'appartenance à
+ * Le middleware ne fait aucun contrôle d'autorisation fin : il empêche
+ * d'atteindre une page privée sans session, et /admin sans être
+ * super-admin. L'appartenance à
  * l'organisation et les rôles sont revérifiés côté serveur sur chaque
  * page et chaque action (voir server/auth.ts) — un middleware ne doit
  * jamais être la seule barrière.
@@ -50,6 +51,27 @@ export async function middleware(request: NextRequest) {
     url.pathname = '/connexion';
     url.searchParams.set('next', `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(url);
+  }
+
+  // Seule exception à la règle ci-dessus : /admin est aussi fermé ici aux
+  // comptes qui ne sont pas super-admin. Une requête RSC forgée peut
+  // sauter le layout /admin, pas le middleware. Les pages et les actions
+  // revérifient le rôle de leur côté : ceci n'est qu'une barrière de plus.
+  if (user && (pathname === '/admin' || pathname.startsWith('/admin/'))) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_platform_admin')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (profile?.is_platform_admin !== true) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/app';
+      url.search = '';
+      const redirect = NextResponse.redirect(url);
+      // Garde le jeton éventuellement rafraîchi plus haut.
+      for (const cookie of response.cookies.getAll()) redirect.cookies.set(cookie);
+      return redirect;
+    }
   }
 
   if (user && (pathname === '/connexion' || pathname === '/inscription')) {

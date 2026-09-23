@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import QRCode from 'qrcode';
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requirePlatformAdmin } from '@/server/auth';
 import { env } from '@/lib/env';
 import { formatSerial, formatStockCode, isStockCode, stockPlateUrl } from '@/lib/plate-stock';
 import { PrintButton } from './PrintButton';
@@ -24,6 +25,9 @@ export const dynamic = 'force-dynamic';
  * affiches : ils restent lisibles même rayés ou partiellement masqués.
  */
 export default async function PlanchePage({ params }: { params: Promise<{ batchId: string }> }) {
+  // Chaque page revérifie le rôle elle-même : une requête RSC forgée
+  // peut sauter le layout /admin, jamais la page qu'elle demande.
+  await requirePlatformAdmin();
   const { batchId } = await params;
   if (!z.string().uuid().safeParse(batchId).success) notFound();
 

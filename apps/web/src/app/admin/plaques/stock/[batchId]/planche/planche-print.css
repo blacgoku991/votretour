@@ -1,12 +1,14 @@
 /*
  * Impression de la planche QR : seule la feuille sort.
  *
- * Feuille globale, chargée par cette seule page. La règle ne vise que
- * le média print et la classe rv-print-sheet : elle ne touche rien à
- * l'écran, ni ailleurs dans le site.
+ * Feuille globale : React ne la retire pas après une navigation côté
+ * client, elle peut donc rester chargée sur d'autres pages. C'est pour
+ * cela que chaque règle passe par body:has(.rv-print-sheet) : sans la
+ * planche dans la page, rien ne s'applique, et le reste du site
+ * s'imprime normalement.
  */
 @media print {
-  body * { visibility: hidden; }
-  .rv-print-sheet,
-  .rv-print-sheet * { visibility: visible; }
+  body:has(.rv-print-sheet) * { visibility: hidden; }
+  body:has(.rv-print-sheet) .rv-print-sheet,
+  body:has(.rv-print-sheet) .rv-print-sheet * { visibility: visible; }
 }
