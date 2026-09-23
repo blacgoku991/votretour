@@ -1,5 +1,6 @@
 'use client';
 
+import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { Rang } from '@/components/Rang';
 import { FlapNumber } from '@/components/FlapNumber';
@@ -32,6 +33,15 @@ interface Props {
   vapidPublicKey: string | null;
   activityLabel: string | null;
   eventId?: string | null;
+  eventTheme?: {
+    name: string;
+    heroTitle: string | null;
+    logoUrl: string | null;
+    coverUrl: string | null;
+    accentHex: string;
+    rulesText: string | null;
+    qrLabel: string | null;
+  } | null;
 }
 
 function phaseFor(ticket: TicketState | null): Phase {
@@ -45,7 +55,13 @@ function phaseFor(ticket: TicketState | null): Phase {
 }
 
 export function ClientExperience({
-  entryPoint, initialTicket, source, vapidPublicKey, activityLabel, eventId = null,
+  entryPoint,
+  initialTicket,
+  source,
+  vapidPublicKey,
+  activityLabel,
+  eventId = null,
+  eventTheme = null,
 }: Props) {
   const [ticket, setTicket] = useState<TicketState | null>(initialTicket);
   const [waitingCount, setWaitingCount] = useState(entryPoint.queue?.waitingCount ?? 0);
@@ -207,11 +223,15 @@ export function ClientExperience({
       <Header
         name={locationName}
         subtitle={subtitle}
-        logoUrl={entryPoint.location.logoUrl}
+        logoUrl={eventTheme?.logoUrl ?? entryPoint.location.logoUrl}
         connection={connection}
         queueStatus={ticket?.queue.status ?? entryPoint.queue?.status ?? 'closed'}
         inQueue={phase === 'queued' || phase === 'turn'}
       />
+
+      {eventTheme && (phase === 'join' || phase === 'queued') && (
+        <EventWelcome theme={eventTheme} />
+      )}
 
       {error && (
         <div className="banner banner--error" role="alert">
@@ -475,6 +495,46 @@ function RangPreview({ count }: { count: number }) {
         <div key={i} className="slat" style={{ opacity: 1 - i * 0.12 }} />
       ))}
     </div>
+  );
+}
+
+
+function EventWelcome({
+  theme,
+}: {
+  theme: NonNullable<Props['eventTheme']>;
+}) {
+  const style = {
+    '--event-accent': /^#[0-9A-Fa-f]{6}$/.test(theme.accentHex)
+      ? theme.accentHex
+      : '#FF4B1F',
+    ...(theme.coverUrl
+      ? {
+          backgroundImage:
+            'linear-gradient(155deg, rgba(8,10,14,.93), rgba(8,10,14,.76)), url('
+            + JSON.stringify(theme.coverUrl)
+            + ')',
+        }
+      : {}),
+  } as CSSProperties;
+
+  return (
+    <section className={styles.eventWelcome} style={style}>
+      <div className={styles.eventWelcomeHead}>
+        {theme.logoUrl && <img src={theme.logoUrl} alt="" />}
+        <div>
+          <span>ÉVÉNEMENT RANGVIA</span>
+          <h2>{theme.heroTitle || theme.name}</h2>
+        </div>
+      </div>
+
+      {theme.rulesText && <p>{theme.rulesText}</p>}
+
+      <div className={styles.eventWelcomeFoot}>
+        <span>{theme.qrLabel || 'Vous êtes sur la file officielle de cet événement.'}</span>
+        <i />
+      </div>
+    </section>
   );
 }
 
