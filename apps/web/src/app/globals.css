@@ -143,6 +143,8 @@
   /* Encre sur vermillon : 5,9:1 (le blanc ne donnait que 3,3:1). */
   --accent-ink:  var(--ink-1000);
   --accent-soft: var(--signal-100);
+  /* Texte « destructif » (brique) : 5,5:1 sur os. */
+  --danger-text: var(--brique-500);
   --shadow-1: 0 1px 2px color-mix(in oklab, var(--ink-900) 8%, transparent);
   --shadow-2: 0 2px 4px color-mix(in oklab, var(--ink-900) 6%, transparent),
               0 12px 28px -12px color-mix(in oklab, var(--ink-900) 22%, transparent);
@@ -169,6 +171,9 @@
   --accent-hover: var(--signal-400);
   --accent-ink:  var(--ink-1000);
   --accent-soft: color-mix(in oklab, var(--signal-500) 18%, transparent);
+  /* Brique éclaircie pour le TEXTE sur encre : 6,7:1 sur encre 900 et
+     5,7:1 sur encre 700 (la brique #A8453C n'y donne que 3,3:1). */
+  --danger-text: #E8766B;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.45), 0 18px 40px -16px rgba(0, 0, 0, 0.7);
   --shadow-lift: 0 22px 56px -20px rgba(0, 0, 0, 0.8);
@@ -193,6 +198,7 @@
     --accent-hover: var(--signal-400);
     --accent-ink:  var(--ink-1000);
     --accent-soft: color-mix(in oklab, var(--signal-500) 18%, transparent);
+    --danger-text: #E8766B;
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.45), 0 18px 40px -16px rgba(0, 0, 0, 0.7);
     --shadow-lift: 0 22px 56px -20px rgba(0, 0, 0, 0.8);
@@ -436,13 +442,17 @@ a { color: inherit; text-decoration: none; }
 /* Impulsion qui remonte le rail quand la file avance, de la queue vers
    la tête : on « voit » le mouvement traverser la file, pas seulement les
    lattes bouger. Le calque couvre toute la hauteur du rail ; seule sa
-   bande centrale est colorée, et il glisse en translateY (compositeur). */
-.rang[data-pulse='1']::after {
+   bande centrale (56 px) est colorée, et il glisse en translateY
+   (compositeur) entre des bornes qui gardent la bande SUR le rail : elle
+   ne déborde jamais au-dessus de la tête ni sous la queue. Vitesse
+   constante (linear) : la bande parcourt la file, elle ne s'y attarde pas.
+   Les valeurs 1 et 2 alternent pour relancer l'animation à chaque cran. */
+.rang:is([data-pulse='1'], [data-pulse='2'])::after {
   content: '';
   position: absolute;
   left: calc(var(--rail-w) * -1);
-  top: 0;
-  bottom: 0;
+  top: 2px;
+  bottom: 2px;
   width: calc(var(--rail-w) * 3);
   border-radius: var(--rail-w);
   background: linear-gradient(to bottom,
@@ -454,14 +464,21 @@ a { color: inherit; text-decoration: none; }
   pointer-events: none;
 }
 @media (prefers-reduced-motion: no-preference) {
-  .rang[data-pulse='1']::after { animation: rail-pulse var(--dur-4) var(--ease-slat) 1; }
+  .rang[data-pulse='1']::after { animation: rail-pulse var(--dur-4) linear 1; }
+  .rang[data-pulse='2']::after { animation: rail-pulse-b var(--dur-4) linear 1; }
 }
 
 @keyframes rail-pulse {
-  0%   { transform: translateY(calc(50% + 28px)); opacity: 0; }
-  20%  { opacity: 1; }
+  0%   { transform: translateY(calc(50% - 28px)); opacity: 0; }
+  15%  { opacity: 1; }
   80%  { opacity: 1; }
-  100% { transform: translateY(calc(-50% - 28px)); opacity: 0; }
+  100% { transform: translateY(calc(-50% + 28px)); opacity: 0; }
+}
+@keyframes rail-pulse-b {
+  0%   { transform: translateY(calc(50% - 28px)); opacity: 0; }
+  15%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { transform: translateY(calc(-50% + 28px)); opacity: 0; }
 }
 
 .slat {
@@ -477,7 +494,6 @@ a { color: inherit; text-decoration: none; }
   transition:
     transform var(--dur-4) var(--ease-slat),
     background var(--dur-2) var(--ease-out);
-  will-change: transform;
 }
 
 /* L'encoche : la forme signature. Le trait part du rail et vient
@@ -519,10 +535,14 @@ a { color: inherit; text-decoration: none; }
 .slat--head { background: color-mix(in oklab, var(--text) 7%, var(--slat)); }
 
 /* LE PASSAGE — la latte de tête se relève comme un volet autour de son
-   bord côté seuil (en haut), puis s'efface. Remplace la rétractation. */
+   bord côté seuil (en haut), puis s'efface. Remplace la rétractation.
+   Elle GARDE sa place dans le flux (opacité 0 à la fin) : les lattes
+   suivantes montent la prendre en `translate`, puis le composant la
+   retire quand tout est immobile. Aucun décalage de mise en page. */
 .slat--leaving {
   transform-origin: 50% 0;
   animation: slat-pass var(--dur-3) var(--ease-in) forwards;
+  pointer-events: none;
 }
 @keyframes slat-pass {
   0%   { transform: perspective(600px) rotateX(0deg); opacity: 1; }
@@ -558,10 +578,20 @@ a { color: inherit; text-decoration: none; }
 }
 .slat--kept::before { background: var(--accent); height: 4px; }
 
-/* La file avance d'un cran : décalage de la tête vers la queue. */
+/* La file avance d'un cran. Le composant écrit --shift (en crans, ≤ 0)
+   sur chaque latte : chaque latte qui passe devant elle lui laisse une
+   place. On passe par la propriété individuelle `translate`, qui se
+   compose AVANT le `transform` du Passage : une latte peut monter et
+   passer en même temps. L'avance attend 200 ms le début du Passage
+   (même grammaire que la file en relief), puis part de la tête vers la
+   queue (34 ms). */
+.rang { --rang-advance-delay: 200ms; }
+.rang > .slat { translate: 0 calc(var(--shift, 0) * var(--step)); }
 @media (prefers-reduced-motion: no-preference) {
   .rang > .slat {
     transition:
+      translate var(--dur-4) var(--ease-slat)
+        calc(var(--rang-advance-delay) + var(--i, 0) * var(--stagger)),
       transform var(--dur-4) var(--ease-slat) calc(var(--i, 0) * var(--stagger)),
       background var(--dur-2) var(--ease-out);
   }
@@ -593,7 +623,7 @@ a { color: inherit; text-decoration: none; }
    des demi-cellules. --flap-delay décale une cellule (FlapText).
    --------------------------------------------------------------------- */
 .flap-row { display: inline-flex; align-items: center; }
-.flap-row--tile { gap: 0.06em; }
+.flap-row--tile { gap: 0.08em; }
 
 .flap {
   position: relative;
@@ -613,10 +643,18 @@ a { color: inherit; text-decoration: none; }
   background: var(--flap-tile, var(--ink-700));
   border-radius: 0.08em;
   box-shadow: var(--edge-light), 0 1px 0 var(--ink-1000);
-  /* Tuile : chasse un peu moins large, pour que M et W tiennent dans la cellule. */
-  font-variation-settings: 'wdth' 108, 'wght' 800;
+  /* Tuile : chasse normale (le glyphe est plus petit que la tuile, voir
+     plus bas), pour que M et W gardent une marge dans leur case. */
+  font-variation-settings: 'wdth' 102, 'wght' 800;
 }
 .flap--tile:not(.flap--auto) { width: 0.74em; }
+/* Sur tuile, la taille du glyphe est découplée de celle de la tuile
+   (0.74em × 1em) : 0.78 × la taille de la tuile laisse au moins 0.06em de
+   marge de chaque côté, même pour M et W. */
+.flap--tile > .flap__face { font-size: 0.78em; }
+/* Couche au repos : rognée à la tuile. Jamais les couches animées (elles
+   sont déjà découpées en demi-cellules par clip-path). */
+.flap--tile > .flap__rest { overflow: clip; }
 /* Charnière : seulement sur tuile. */
 .flap--tile::after {
   content: '';
@@ -732,9 +770,11 @@ a { color: inherit; text-decoration: none; }
 .btn--solid { --btn-bg: var(--surface-inverse); --btn-fg: var(--text-inverse); --btn-bd: transparent; }
 .btn--ghost { --btn-bg: transparent; --btn-bd: var(--line-strong); }
 .btn--quiet { --btn-bg: transparent; --btn-bd: transparent; --btn-fg: var(--text-muted); }
-.btn--danger { --btn-bg: transparent; --btn-fg: var(--brique-500); --btn-bd: color-mix(in oklab, var(--brique-500) 35%, transparent); }
+.btn--danger { --btn-bg: transparent; --btn-fg: var(--danger-text, var(--brique-500)); --btn-bd: color-mix(in oklab, var(--brique-500) 55%, transparent); }
 .btn--lg { min-height: 58px; font-size: 1.0625rem; padding: 0 var(--sp-6); border-radius: 14px; }
 .btn--sm { min-height: 38px; font-size: 0.8125rem; padding: 0 var(--sp-3); border-radius: 10px; }
+/* Au doigt, jamais sous la cible tactile de 44 px. */
+@media (pointer: coarse) { .btn--sm { min-height: 44px; } }
 .btn--block { width: 100%; }
 
 /* Bouton principal de l'écran client : large, épais, à portée de pouce. */
@@ -837,7 +877,7 @@ a { color: inherit; text-decoration: none; }
   padding-right: var(--sp-8);
 }
 .hint { font-size: 0.8125rem; color: var(--text-muted); }
-.error-text { font-size: 0.8125rem; color: var(--brique-500); font-variation-settings: 'wght' 600; }
+.error-text { font-size: 0.8125rem; color: var(--danger-text, var(--brique-500)); font-variation-settings: 'wght' 600; }
 
 /* Champs accrochés au rail : chaque champ a son encoche, qui passe au
    jade quand il est valide et au vermillon quand il a le focus. */
@@ -904,7 +944,7 @@ a { color: inherit; text-decoration: none; }
 .chip--brique { background: var(--brique-100); border-color: transparent; color: var(--brique-500); }
 [data-theme='dark'] .chip--jade   { background: color-mix(in oklab, var(--jade-500) 18%, transparent); }
 [data-theme='dark'] .chip--copper { background: color-mix(in oklab, var(--copper-500) 18%, transparent); }
-[data-theme='dark'] .chip--brique { background: color-mix(in oklab, var(--brique-500) 20%, transparent); }
+[data-theme='dark'] .chip--brique { background: color-mix(in oklab, var(--brique-500) 20%, transparent); color: var(--danger-text); }
 
 /* Point d'état clignotant (file ouverte, connexion temps réel). */
 .pip {
@@ -1332,8 +1372,14 @@ a { color: inherit; text-decoration: none; }
 .slot3d[data-state='fallen'] .slot3d__notch { opacity: 0.4; }
 .slot3d[data-state='hidden'] .slot3d__lift { scale: 0 1; }
 .slot3d[data-state='hidden'] :is(.slot3d__face, .slot3d__edge, .slot3d__notch) { opacity: 0; }
+/* LE PASSAGE en relief : la latte se relève en volet au bord côté seuil.
+   Son bord de tête monte (translateZ de la hauteur d'une latte) pendant
+   qu'elle bascule de 88° : elle finit DEBOUT sur la ligne du comptoir, sa
+   face tournée vers la file, puis s'efface. Basculer dans l'autre sens
+   (bord de queue levé) la faisait passer par la tranche face à la caméra
+   inclinée, puis ressembler à une latte à plat derrière la tête. */
 .slot3d[data-state='passed'] .slot3d__lift {
-  transform: translate3d(0, calc(var(--pitch) * -0.6), 0) rotateX(90deg);
+  transform: translateZ(var(--slat-h3d, 44px)) rotateX(-88deg);
 }
 .slot3d[data-state='passed'] :is(.slot3d__face, .slot3d__edge, .slot3d__notch) { opacity: 0; }
 /* Appareil modeste : pas de tranche. */
@@ -1349,8 +1395,19 @@ a { color: inherit; text-decoration: none; }
   .slot3d__face, .slot3d__edge, .slot3d__notch {
     transition: opacity var(--dur-2) var(--ease-out);
   }
+  /* Même grammaire que le Rang 2D : le Passage commence, et l'avance ne
+     part que 200 ms plus tard, de la tête vers la queue. */
+  .world3d:has(> .slot3d[data-state='passed']) > .slot3d:not([data-state='passed']) {
+    transition: transform var(--dur-4) var(--ease-slat) calc(200ms + var(--i, 0) * var(--stagger));
+  }
+  /* Bascule lisible : le volet se relève d'abord (courbe --ease-slat,
+     debout en ~200 ms), reste pleinement visible, puis s'efface ; le
+     tout en 620 ms. En accéléré (ease-in), on ne le voyait jamais debout. */
+  .slot3d[data-state='passed'] .slot3d__lift {
+    transition: transform var(--dur-4) var(--ease-slat);
+  }
   .slot3d[data-state='passed'] :is(.slot3d__face, .slot3d__edge, .slot3d__notch) {
-    transition: opacity var(--dur-2) var(--ease-in) 380ms;
+    transition: opacity 300ms var(--ease-in) 320ms;
   }
 }
 

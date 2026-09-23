@@ -64,7 +64,7 @@ function FlapCell({ ch, instant, fixed, tile, delay }: FlapCellProps) {
   return (
     <span className={className} style={style}>
       {state.from === null ? (
-        <span className="flap__face">{glyph(state.shown)}</span>
+        <span className="flap__face flap__rest">{glyph(state.shown)}</span>
       ) : (
         <Fragment key={state.id}>
           <span className="flap__face flap__top">{glyph(state.shown)}</span>
@@ -104,8 +104,12 @@ function FlapRow({ chars, size, label, isStatic, fixed, tile }: FlapRowProps) {
       </span>
     );
   }
+  // Région live : un VRAI nœud texte (les lecteurs d'écran n'annoncent pas
+  // un changement d'aria-label). Il ne porte que la valeur finale : les
+  // cellules qui tombent restent aria-hidden.
   return (
-    <span className={rowClass} style={style} role="status" aria-live="polite" aria-label={label}>
+    <span className={rowClass} style={style} role="status" aria-live="polite" aria-atomic="true">
+      <span className="sr-only">{label}</span>
       <span className="flap-row" aria-hidden="true">
         {cells}
       </span>
@@ -158,6 +162,14 @@ export interface FlapTextProps {
   tile?: boolean;
   /** ms entre cellules, défaut 40, plafonné à 420 ms au total. */
   stagger?: number;
+  /**
+   * Mode `fixed` seulement : nombre de cellules du tableau. Le texte est
+   * complété par des cases vides, si bien qu'une lettre qui disparaît TOMBE
+   * vers une case vide au lieu de s'effacer, et que la rangée garde sa
+   * largeur pendant la chute (ex. 12 pour un prénom, 6 pour un code).
+   * Un texte plus long ajoute des cellules.
+   */
+  cells?: number;
 }
 
 /** Un texte court en volet à palettes : chaque caractère qui change tombe, en cascade. */
@@ -169,8 +181,12 @@ export function FlapText({
   fixed = false,
   tile = false,
   stagger = 40,
+  cells,
 }: FlapTextProps): React.JSX.Element {
   const glyphs = Array.from(text);
+  if (fixed && cells && cells > glyphs.length) {
+    while (glyphs.length < Math.min(cells, 64)) glyphs.push(' ');
+  }
   const n = glyphs.length;
   const step = n > 1 ? Math.min(Math.max(0, stagger), 420 / (n - 1)) : 0;
   // Proportionnel (« 12 min », prix) : cellules comptées depuis la droite,

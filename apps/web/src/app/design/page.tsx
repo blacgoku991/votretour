@@ -277,7 +277,10 @@ export default async function DesignPage() {
                 <button type="button" className="btn btn--signal btn--sm">Essayer</button>
               </li>
               <li>
-                <span className="t-board">Absent · Décaler · Retirer</span>
+                {/* Clé sur plusieurs lignes dans la colonne de 17rem : des
+                    virgules, qui finissent proprement une ligne, plutôt
+                    qu'un « · » orphelin en bout de ligne. */}
+                <span className="t-board">Absent, décaler, retirer</span>
                 <span className="t-body t-muted">Quelqu&apos;un n&apos;est pas revenu ? Il recule, il attend de côté, ou il sort.</span>
                 <button type="button" className="btn btn--ghost btn--sm">Essayer</button>
               </li>
@@ -315,7 +318,7 @@ export default async function DesignPage() {
         </Sec>
 
         {/* --------------------------------------------------- 07 Rang */}
-        <Sec n={7} id="rang" title="Le Passage et l'avance d'un cran" note="La tête se relève comme un volet (rotateX 88°) puis s'efface ; la file avance de la tête vers la queue. Relief = tranche dure de 2 px. Aucune vibration ici (haptics est faux par défaut).">
+        <Sec n={7} id="rang" title="Le Passage et l'avance d'un cran" note="La tête se relève comme un volet (rotateX 88°) puis s'efface ; 200 ms après, la file avance de la tête vers la queue. La latte qui passe garde sa place jusqu'à la fin : la mise en page ne bouge qu'une fois, après le mouvement. Relief = tranche dure de 2 px. Aucune vibration ici (haptics est faux par défaut).">
           <RangDemo />
         </Sec>
 

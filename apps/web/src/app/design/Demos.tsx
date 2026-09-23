@@ -33,7 +33,7 @@ export function FlapDemo() {
     <div className={styles.flapDemo}>
       <div className={styles.flapHero}>
         <div className={styles.flapBig} data-testid="flap-main">
-          <FlapNumber value={n} label={`${n} ${n === 1 ? 'personne' : 'personnes'} devant vous`} />
+          <FlapNumber value={n} label={`${n} ${n <= 1 ? 'personne' : 'personnes'} devant vous`} />
           <p className="t-label">{n <= 1 ? 'personne devant vous' : 'personnes devant vous'}</p>
         </div>
         <div className={styles.flapSide}>
@@ -46,12 +46,12 @@ export function FlapDemo() {
             <FlapText text={TEXTS[step % 3] as string} size="2.5rem" static />
           </div>
           <div className={styles.flapCell}>
-            <span className="t-label">FlapText · fixe, tuile, cascade</span>
-            <FlapText text={NAMES[step % 3] as string} fixed tile size="2.25rem" static />
+            <span className="t-label">FlapText · fixe, tuile, 7 cases</span>
+            <FlapText text={NAMES[step % 3] as string} fixed tile cells={7} size="2.25rem" static />
           </div>
           <div className={styles.flapCell}>
             <span className="t-label">Code d&apos;appairage</span>
-            <FlapText text={CODES[step % 3] as string} fixed tile size="2.25rem" static stagger={60} />
+            <FlapText text={CODES[step % 3] as string} fixed tile cells={6} size="2.25rem" static stagger={60} />
           </div>
         </div>
       </div>
@@ -74,7 +74,11 @@ export function RangDemo() {
     <div className={styles.rangDemo}>
       <div className={styles.rangCol}>
         <div className={styles.rangHead}>
-          <FlapNumber value={ahead} size="4.5rem" label={`${ahead} devant`} />
+          <FlapNumber
+            value={ahead}
+            size="4.5rem"
+            label={`${ahead} ${ahead <= 1 ? 'personne' : 'personnes'} devant vous`}
+          />
           <p className="t-label">{ahead <= 1 ? 'personne devant vous' : 'personnes devant vous'}</p>
         </div>
         <Rang
@@ -146,19 +150,41 @@ export function SegDemo() {
 
 /* ------------------------------------------------------------ TimeField */
 export function TimeDemo() {
+  // La valeur reçue peut contenir des secondes ; ce que TimeField RENVOIE
+  // est toujours 'HH:MM'. On affiche les deux, sans confondre l'entrée et
+  // la sortie.
   const [open, setOpen] = useState('09:00');
   const [close, setClose] = useState('19:10:00');
+  const [sentOpen, setSentOpen] = useState<string | null>(null);
+  const [sentClose, setSentClose] = useState<string | null>(null);
+  const sent = (v: string | null) => (v === null ? 'rien pour l’instant' : `« ${v} »`);
   return (
     <div className="field-rail">
       <div className="field">
         <label htmlFor="tf-open">Ouverture du lundi</label>
-        <TimeField id="tf-open" value={open} onChange={setOpen} aria-label="Ouverture du lundi" />
-        <span className="hint">Valeur renvoyée : « {open} »</span>
+        <TimeField
+          id="tf-open"
+          value={open}
+          onChange={(v) => {
+            setOpen(v);
+            setSentOpen(v);
+          }}
+          aria-label="Ouverture du lundi"
+        />
+        <span className="hint">Reçue : « {open} » · renvoyée : {sent(sentOpen)}</span>
       </div>
       <div className="field">
         <label htmlFor="tf-close">Fermeture (hors pas : 19 h 10)</label>
-        <TimeField id="tf-close" value={close} onChange={setClose} aria-label="Fermeture du lundi" />
-        <span className="hint">Valeur renvoyée : « {close} »</span>
+        <TimeField
+          id="tf-close"
+          value={close}
+          onChange={(v) => {
+            setClose(v);
+            setSentClose(v);
+          }}
+          aria-label="Fermeture du lundi"
+        />
+        <span className="hint">Reçue : « {close} » · renvoyée : {sent(sentClose)}</span>
       </div>
       <div className="field">
         <label htmlFor="tf-off">Dimanche · fermé</label>

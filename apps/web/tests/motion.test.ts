@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   clamp, lerp, progress, cubicBezier, easeSlat, easeCamera, easeIn, keyframes, round3,
 } from '@/lib/motion';
+import {
+  reconcileRang, settleRang, shiftAt, presentTokens, type RangModel,
+} from '@/components/motion/rangTokens';
 
 const curves = { easeSlat, easeCamera, easeIn } as const;
 
@@ -108,5 +111,66 @@ describe('keyframes', () => {
     expect(Number.isNaN(keyframes(Number.NaN, keys))).toBe(false);
     expect(keyframes(1, [])).toBe(0);
     expect(keyframes(5, [[2, 7]])).toBe(7);
+  });
+});
+
+describe('Rang : réconciliation des jetons', () => {
+  const factory = () => {
+    let n = 0;
+    return (k: number) => Array.from({ length: k }, () => `t${(n += 1)}`);
+  };
+
+  it('4 → 3 → 2 en moins de 420 ms finit sur 2 lattes (un départ par avance)', () => {
+    const make = factory();
+    let model: RangModel = { tokens: make(4), leaving: [] };
+    const a = reconcileRang(model, 3, make);
+    expect(a.removed).toEqual(['t1']);
+    model = a.model;
+    // Deuxième avance AVANT la fin du Passage : t1 part encore.
+    const b = reconcileRang(model, 2, make);
+    expect(b.removed).toEqual(['t2']);
+    model = b.model;
+    expect(model.leaving).toEqual(['t1', 't2']);
+    expect(presentTokens(model)).toEqual(['t3', 't4']);
+    // Les lattes qui partent gardent leur place dans le flux…
+    expect(model.tokens).toHaveLength(4);
+    // …et les suivantes montent de deux crans.
+    expect(shiftAt(model, 0)).toBe(0);
+    expect(shiftAt(model, 1)).toBe(-1);
+    expect(shiftAt(model, 2)).toBe(-2);
+    expect(shiftAt(model, 4)).toBe(-2);
+    const done = settleRang(model);
+    expect(done).toEqual({ tokens: ['t3', 't4'], leaving: [] });
+  });
+
+  it('retire par identité : une arrivée pendant le Passage est conservée', () => {
+    const make = factory();
+    let model: RangModel = { tokens: make(3), leaving: [] };
+    model = reconcileRang(model, 2, make).model;
+    const arrive = reconcileRang(model, 3, make);
+    expect(arrive.added).toEqual(['t4']);
+    model = arrive.model;
+    expect(settleRang(model).tokens).toEqual(['t2', 't3', 't4']);
+  });
+
+  it('valeur inchangée : même modèle, rien à faire', () => {
+    const make = factory();
+    const model: RangModel = { tokens: make(2), leaving: [] };
+    expect(reconcileRang(model, 2, make).model).toBe(model);
+    expect(settleRang(model)).toBe(model);
+  });
+
+  it('mouvement réduit : retrait immédiat, sans Passage', () => {
+    const make = factory();
+    const model: RangModel = { tokens: make(4), leaving: [] };
+    const step = reconcileRang(model, 1, make, true);
+    expect(step.model).toEqual({ tokens: ['t4'], leaving: [] });
+  });
+
+  it('4 → 0 : toutes les lattes passent, aucune valeur négative', () => {
+    const make = factory();
+    const step = reconcileRang({ tokens: make(4), leaving: [] }, -3, make);
+    expect(step.model.leaving).toHaveLength(4);
+    expect(presentTokens(step.model)).toEqual([]);
   });
 });

@@ -13,8 +13,10 @@ import styles from './FloorScene.module.css';
  * Animation : chaque latte est placée par --pos, qui passe par une
  * transition. Une MISE À JOUR de `slats` (mêmes `id`) anime donc l'avance
  * sans autre code (écran TV). Pour jouer le Passage, garder d'abord la
- * latte de tête avec l'état 'passed' (elle se relève et s'efface), puis la
- * retirer du tableau au rendu suivant.
+ * latte de tête avec l'état 'passed' : elle se relève en volet et
+ * s'efface (620 ms) ; les autres n'avancent que 200 ms après, comme dans le
+ * Rang 2D. On peut la retirer du tableau dès 640 ms : le pivot est sur la
+ * ligne du comptoir, donc rien ne saute quand le nombre de rangées change.
  */
 
 export type FloorSlatState =
@@ -89,13 +91,19 @@ export function FloorScene({
     rank += 1;
     return { slat, pos };
   });
-  const rows = Math.max(rank, 3);
+  // --rows compte aussi la latte qui passe : la boîte ne bouge pas pendant
+  // le Passage, seulement quand le parent retire la latte (elle glisse).
+  const rows = Math.max(list.length, 3);
+  const numbered = Math.max(rank, 3) - 1;
   const seuilLabel = seuil === true ? 'Comptoir' : typeof seuil === 'string' ? seuil : null;
 
   const sceneStyle = {
     ...style,
     ['--pitch' as string]: `${PITCH[size]}px`,
     ['--rows' as string]: rows,
+    // Recul de la boîte : une file de 5 garde la même taille apparente
+    // qu'avec un pivot au bas de la boîte.
+    ['--depth' as string]: `${Math.round(5 * PITCH[size] * Math.sin((safeTilt * Math.PI) / 180))}px`,
   } as React.CSSProperties;
 
   const a11y = label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true as const };
@@ -117,7 +125,7 @@ export function FloorScene({
         {spill && <div className="spill3d" />}
         <div className="rail3d" />
         {positions &&
-          Array.from({ length: Math.max(0, rows - 1) }, (_, i) => i + 1).map((n) => (
+          Array.from({ length: Math.max(0, numbered) }, (_, i) => i + 1).map((n) => (
             <span key={n} className="floorNum" style={{ ['--n' as string]: n } as React.CSSProperties}>
               {n}
             </span>

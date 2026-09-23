@@ -20,6 +20,16 @@
 .stage[data-pose='rest']  { --plaque-rx: 12deg; --plaque-ry: -14deg; --plaque-rz: -3deg; }
 .stage[data-pose='front'] { --plaque-rx: 0deg;  --plaque-ry: 0deg;   --plaque-rz: 0deg; }
 .stage[data-pose='flat']  { --plaque-rx: 78deg; --plaque-ry: 0deg;   --plaque-rz: 0deg; }
+/* De face, on la regarde dans l'axe : aucune tranche ne dépasse (vue
+   d'au-dessus, la tranche haute formait une barre détachée). */
+.stage[data-pose='front'] { perspective-origin: 50% 50%; }
+/* Couchée : on la regarde presque à hauteur de comptoir, sinon, vue de
+   très haut, elle semblait dressée à 45°. Ombre recentrée sous elle. */
+.stage[data-pose='flat'] { perspective-origin: 50% 20%; }
+.stage[data-pose='front'] .edgeTop,
+.stage[data-pose='front'] .edgeRight,
+.stage[data-pose='flat'] .edgeTop,
+.stage[data-pose='flat'] .edgeRight { opacity: 0; }
 
 /* Se redresse au survol (souris) et au focus. */
 @media (hover: hover) and (pointer: fine) {
@@ -39,7 +49,7 @@
   pointer-events: none;
 }
 .stage[data-pose='front'] .shadow { opacity: 0.7; }
-.stage[data-pose='flat'] .shadow { opacity: 0.55; }
+.stage[data-pose='flat'] .shadow { opacity: 0.55; bottom: 26%; height: 34%; left: -6%; right: -6%; }
 
 .plaque {
   position: absolute;

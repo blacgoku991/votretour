@@ -10,21 +10,57 @@
 .md { height: 320px; --persp: 900px; --persp-origin: 55% 12%; }
 .lg { height: 100%; min-height: 360px; --persp: 1200px; --persp-origin: 55% 18%; }
 
-/* Le monde à plat : centré, la queue en bas, la tête (comptoir) en haut. */
+/* Le monde à plat : centré, la queue en bas, la tête (comptoir) en haut.
+   Le pivot de l'inclinaison est sur la LIGNE DU COMPTOIR (en haut), pas
+   en bas : les lattes sont placées depuis la tête, donc quand le nombre
+   de rangées change (une latte arrive, une latte passée est retirée), la
+   tête, le seuil et toutes les lattes restent exactement où ils sont.
+   Seule la boîte glisse d'un peu (translate, compositeur) pour garder la
+   file centrée verticalement dans la scène. */
 .world {
   left: 0;
   right: 0;
   margin-inline: auto;
   width: min(78%, 360px);
   height: calc(var(--rows) * var(--pitch));
+  transform-origin: 50% 0;
+  top: var(--world-top);
+  /* Recul constant (--depth, calculé d'après l'inclinaison pour une file
+     de 5) : la queue ne vient pas grossir contre la caméra. */
+  translate: 0 calc((5 - var(--rows)) * var(--pitch) * var(--center-k, 0.3)) calc(var(--depth, 0px) * -1);
 }
-/* Bandeau : la queue file hors du cadre en bas, le seuil est plus bas
-   pour tenir dans 140 px. */
-.sm .world { bottom: 4px; width: min(62%, 280px); scale: 0.84; }
-.sm :global(.seuil3d) { height: calc(var(--pitch) * 1.25); }
-.sm :global(.seuil3d__label) { top: 5px; font-size: 0.625rem; }
-.md .world { bottom: 26px; }
-.lg .world { bottom: 12%; }
+@media (prefers-reduced-motion: no-preference) {
+  .world { transition: translate var(--dur-4) var(--ease-slat); }
+}
+/* Le sol et le rail ne suivent pas la hauteur de la boîte : sol étendu
+   vers la caméra, rail tracé à la longueur de la file par scaleY. */
+.world :global(.floor3d) { bottom: calc(var(--pitch) * -6); }
+.world :global(.rail3d) {
+  bottom: auto;
+  height: calc(8 * var(--pitch));
+  transform-origin: 50% 0;
+  transform: translateZ(0.5px) scaleY(calc(var(--rows) / 8));
+}
+/* Le seuil est ancré à la tête (en haut), pas au bas de la boîte. */
+.world :global(.seuil3d) {
+  --seuil-h: calc(var(--pitch) * 1.9);
+  bottom: auto;
+  top: calc(-1 * (var(--pitch) * 0.2 + var(--seuil-h)));
+  height: var(--seuil-h);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .world :global(.rail3d) { transition: transform var(--dur-4) var(--ease-slat); }
+}
+
+.md { --world-top: 142px; --center-k: 0.35; }
+.lg { --world-top: 44%; --center-k: 0.35; }
+/* Bandeau : la tête sous le seuil, la queue file hors du cadre en bas ;
+   pas de recentrage. Seuil plus bas, et sans libellé : à cette taille,
+   « COMPTOIR » ne ferait que 5 px à l'écran. */
+.sm { --world-top: 50px; --center-k: 0; }
+.sm .world { width: min(62%, 280px); scale: 0.84; }
+.sm .world :global(.seuil3d) { --seuil-h: calc(var(--pitch) * 1.25); }
+.sm :global(.seuil3d__label) { display: none; }
 
 /* Libellés courts et décoratifs posés sur la face. */
 .face { justify-content: flex-start; }

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import styles from './Rang.module.css';
+import { useReducedMotion } from './motion/useMotionPreference';
+import { reconcileRang, settleRang, shiftAt, type RangModel } from './motion/rangTokens';
 
 /**
  * LE RANG — la représentation visuelle de la file.
@@ -25,8 +27,17 @@ let counter = 0;
 const nextToken = () => `s${(counter += 1)}`;
 const makeTokens = (n: number) => Array.from({ length: Math.max(0, n) }, nextToken);
 
-/** Durée du Passage (--dur-3). */
+/** Durée du Passage et du dépliage (--dur-3). */
 const PASS_MS = 420;
+/**
+ * Fin du mouvement complet : l'avance démarre 200 ms après le début du
+ * Passage (--rang-advance-delay), dure 620 ms (--dur-4), et la dernière
+ * latte part avec 8 × 34 ms de décalage. Ce n'est qu'ensuite que les
+ * lattes parties quittent le flux : la mise en page ne change qu'une fois.
+ */
+const SETTLE_MS = 200 + 620 + 8 * 34 + 40;
+/** Durée de l'impulsion du rail (--dur-4) + marge. */
+const PULSE_MS = 660;
 
 export interface RangProps {
   /** Nombre de personnes devant. */
@@ -64,23 +75,37 @@ export function Rang({
 }: RangProps) {
   const visible = Math.min(Math.max(0, ahead), maxSlats);
   const overflow = Math.max(0, ahead - maxSlats);
+  const reduced = useReducedMotion();
 
-  const [tokens, setTokens] = useState<string[]>(() => makeTokens(visible));
-  const [leaving, setLeaving] = useState<string[]>([]);
+  const [model, setModel] = useState<RangModel>(() => ({ tokens: makeTokens(visible), leaving: [] }));
   const [entering, setEntering] = useState<string[]>([]);
-  // Après un Passage, les lattes restantes repartent d'un cran plus bas et
-  // glissent vers leur nouvelle place (FLIP, transform seulement).
-  const [settle, setSettle] = useState(0);
+  // Image où les lattes parties quittent le flux : les décalages repassent
+  // à 0 en même temps, SANS transition, donc sans mouvement visible.
+  const [snap, setSnap] = useState(false);
+  // 0 au repos ; 1 et 2 alternent pour relancer l'impulsion à chaque avance.
   const [pulse, setPulse] = useState(0);
+
+  // Source de vérité hors des fonctions de mise à jour : l'effet calcule le
+  // modèle suivant, puis déclenche les effets de bord dans son propre corps.
+  const modelRef = useRef(model);
   const previousAhead = useRef(ahead);
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const timers = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hapticsRef = useRef(haptics);
   hapticsRef.current = haptics;
+  const reducedRef = useRef(reduced);
+  reducedRef.current = reduced;
+  const onAdvanceRef = useRef(onAdvance);
+  onAdvanceRef.current = onAdvance;
 
   useEffect(() => {
     const list = timers.current;
     return () => {
       list.forEach(clearTimeout);
+      list.clear();
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+      if (pulseTimer.current) clearTimeout(pulseTimer.current);
     };
   }, []);
 
@@ -90,8 +115,10 @@ export function Rang({
     previousAhead.current = ahead;
 
     if (ahead < before) {
-      onAdvance?.(before, ahead);
-      setPulse((p) => p + 1);
+      onAdvanceRef.current?.(before, ahead);
+      setPulse((p) => (p === 1 ? 2 : 1));
+      if (pulseTimer.current) clearTimeout(pulseTimer.current);
+      pulseTimer.current = setTimeout(() => setPulse(0), PULSE_MS);
       // Retour haptique seulement si on le demande (écran client) ; sur
       // iPhone c'est l'App Clip qui déclenche un vrai retour Taptic.
       if (hapticsRef.current && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
@@ -101,91 +128,107 @@ export function Rang({
           /* certains navigateurs refusent sans geste utilisateur */
         }
       }
-      const t = setTimeout(() => setPulse(0), 640);
-      timers.current.push(t);
     }
 
-    setTokens((current) => {
-      if (visible > current.length) {
-        const added = makeTokens(visible - current.length);
-        setEntering(added);
-        const t = setTimeout(() => setEntering([]), PASS_MS);
-        timers.current.push(t);
-        return [...current, ...added];
-      }
-      if (visible < current.length) {
-        const removedCount = current.length - visible;
-        const removed = current.slice(0, removedCount);
-        setLeaving(removed);
-        const t = setTimeout(() => {
-          setTokens((c) => c.slice(removedCount));
-          setLeaving([]);
-          setSettle(removedCount);
-        }, PASS_MS);
-        timers.current.push(t);
-        return current;
-      }
-      return current;
-    });
-  }, [ahead, visible, onAdvance]);
+    const step = reconcileRang(modelRef.current, visible, makeTokens, reducedRef.current);
+    if (step.model === modelRef.current) return;
+    modelRef.current = step.model;
+    setModel(step.model);
 
-  // Deux images plus tard, on retire le décalage : la transition CSS de
-  // transform fait glisser chaque latte d'un cran (décalage de 34 ms).
+    if (step.added.length > 0) {
+      const added = step.added;
+      setEntering((e) => [...e, ...added]);
+      const t = setTimeout(() => {
+        timers.current.delete(t);
+        setEntering((e) => e.filter((token) => !added.includes(token)));
+      }, PASS_MS);
+      timers.current.add(t);
+    }
+
+    if (step.removed.length > 0 && !reducedRef.current) {
+      // Un seul minuteur, relancé à chaque départ : on ne retire les lattes
+      // parties qu'une fois TOUT le mouvement joué.
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+      settleTimer.current = setTimeout(() => {
+        settleTimer.current = null;
+        const next = settleRang(modelRef.current);
+        if (next === modelRef.current) return;
+        modelRef.current = next;
+        setModel(next);
+        setSnap(true);
+      }, SETTLE_MS);
+    }
+  }, [ahead, visible]);
+
+  // Deux images plus tard, on rend les transitions : les décalages sont
+  // déjà à 0, rien ne bouge.
   useEffect(() => {
-    if (!settle) return;
+    if (!snap) return;
     let raf2 = 0;
     const raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => setSettle(0));
+      raf2 = requestAnimationFrame(() => setSnap(false));
     });
     return () => {
       cancelAnimationFrame(raf1);
       cancelAnimationFrame(raf2);
     };
-  }, [settle]);
+  }, [snap]);
 
-  const rows = tokens.filter((token) => !leaving.includes(token));
-  const settleStyle = (index: number): React.CSSProperties =>
-    settle
-      ? ({
-          ['--i' as string]: Math.min(index, 8),
-          transform: `translateY(calc(var(--step) * ${settle}))`,
-          transition: 'none',
-        } as React.CSSProperties)
-      : ({ ['--i' as string]: Math.min(index, 8) } as React.CSSProperties);
+  const leavingSet = new Set(model.leaving);
+  const slatStyle = (index: number, rank: number): React.CSSProperties => {
+    const style: Record<string, string | number> = {
+      '--i': Math.min(Math.max(rank, 0), 8),
+      '--shift': shiftAt(model, index),
+    };
+    if (snap) style.transition = 'none';
+    return style as React.CSSProperties;
+  };
 
   const rangClass = `rang${relief ? ' rang--relief' : ''}`;
   const selfClass = ghostSelf
     ? `slat slat--ghost ${styles.ghost}`
     : `slat slat--self ${styles.self}`;
+  const headClass = headIsServing ? 'slat--serving' : 'slat--head';
 
+  let rank = 0;
   return (
     <div className={styles.wrap}>
       {overflow > 0 && (
-        <p className={`t-micro t-faint ${styles.overflow}`}>
+        <p className={`t-micro t-muted ${styles.overflow}`}>
           + {overflow} {overflow === 1 ? 'personne' : 'personnes'} plus haut dans la file
         </p>
       )}
 
-      <div className={rangClass} data-pulse={pulse ? '1' : '0'} aria-hidden="true">
-        {leaving.map((token) => (
-          <div key={token} className="slat slat--leaving" />
-        ))}
-
-        {rows.map((token, index) => {
-          const head = index === 0 && !isServing;
-          const base = head ? `slat ${headIsServing ? 'slat--serving' : 'slat--head'}` : 'slat';
+      <div className={rangClass} data-pulse={pulse ? String(pulse) : '0'} aria-hidden="true">
+        {model.tokens.map((token, index) => {
+          if (leavingSet.has(token)) {
+            // La latte qui passe garde sa place et son allure de tête.
+            return (
+              <div
+                key={token}
+                className={`slat ${isServing ? '' : headClass} slat--leaving`}
+                style={slatStyle(index, 0)}
+              >
+                <span className={isServing ? styles.tick : styles.tickHead} />
+              </div>
+            );
+          }
+          const r = rank;
+          rank += 1;
+          const head = r === 0 && !isServing;
+          const base = head ? `slat ${headClass}` : 'slat';
           return (
             <div
               key={token}
               className={entering.includes(token) ? `${base} slat--entering` : base}
-              style={settleStyle(index)}
+              style={slatStyle(index, r)}
             >
               <span className={head ? styles.tickHead : styles.tick} />
             </div>
           );
         })}
 
-        <div className={selfClass} style={settleStyle(rows.length)}>
+        <div className={selfClass} style={slatStyle(model.tokens.length, rank)}>
           {!ghostSelf && <span className={styles.selfDot} />}
           <span className={styles.selfText}>
             <span className={styles.selfName}>{selfLabel || (ghostSelf ? 'Votre place' : 'Vous')}</span>
