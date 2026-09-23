@@ -52,6 +52,7 @@ export default async function AdminHomePage({
     { data: activeEntries },
     searchOrganizations,
     searchEvents,
+    searchPlates,
   ] = await Promise.all([
     db.rpc('platform_stats'),
     db.from('queues')
@@ -95,6 +96,13 @@ export default async function AdminHomePage({
       ? db.from('event_campaigns')
           .select('id, name, status, organization_id, organizations(name)')
           .ilike('name', '%' + q + '%')
+          .order('created_at', { ascending: false })
+          .limit(8)
+      : Promise.resolve({ data: [] }),
+    q.length >= 2
+      ? db.from('plates')
+          .select('id, label, code, is_active, organization_id, organizations(name)')
+          .ilike('label', '%' + q + '%')
           .order('created_at', { ascending: false })
           .limit(8)
       : Promise.resolve({ data: [] }),
@@ -163,6 +171,7 @@ export default async function AdminHomePage({
 
   const searchedOrganizations = searchOrganizations.data ?? [];
   const searchedEvents = searchEvents.data ?? [];
+  const searchedPlates = searchPlates.data ?? [];
 
   return (
     <div className={styles.page}>
@@ -242,6 +251,28 @@ export default async function AdminHomePage({
                           <span>{org?.name ?? '—'}</span>
                         </div>
                         <span className="chip">{event.status}</span>
+                      </Link>
+                    );
+                  })}
+              </div>
+            </div>
+
+            <div>
+              <span className={styles.searchGroupLabel}>Plaques & NFC</span>
+              <div className={styles.liveStack}>
+                {searchedPlates.length === 0
+                  ? <p className="t-small t-muted">Aucune plaque.</p>
+                  : searchedPlates.map((plate) => {
+                    const org = Array.isArray(plate.organizations) ? plate.organizations[0] : plate.organizations;
+                    return (
+                      <Link key={plate.id} href="/admin/plaques" className={styles.searchRow}>
+                        <div>
+                          <strong>{plate.label}</strong>
+                          <span>{org?.name ?? '—'} · {plate.code}</span>
+                        </div>
+                        <span className={plate.is_active ? 'chip chip--jade' : 'chip'}>
+                          {plate.is_active ? 'Active' : 'Inactive'}
+                        </span>
                       </Link>
                     );
                   })}
