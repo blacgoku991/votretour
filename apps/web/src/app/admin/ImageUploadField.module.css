@@ -1,0 +1,109 @@
+.field {
+  display: grid;
+  gap: 10px;
+}
+
+.labelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  font-weight: 720;
+  color: #c9cfd6;
+}
+
+.remove {
+  border: 0;
+  background: transparent;
+  color: #8f98a5;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.remove:hover {
+  color: #e36f64;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.preview {
+  width: 92px;
+  height: 92px;
+  overflow: hidden;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  background: #151a21;
+  border: 1px dashed rgba(255,255,255,.12);
+  color: #59616d;
+  font-size: 10px;
+  font-weight: 760;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.coverPreview {
+  aspect-ratio: 16 / 10;
+  height: auto;
+}
+
+.preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.controls {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.controls small {
+  color: #69737f;
+  font-size: 9px;
+}
+
+.hidden {
+  display: none;
+}
+
+.error {
+  margin: 0;
+  color: #e36f64;
+  font-size: 10px;
+}
+
+.compact .body {
+  grid-template-columns: 70px minmax(0, 1fr);
+}
+
+.compact .preview {
+  width: 70px;
+  height: 70px;
+  border-radius: 14px;
+}
+
+@media (max-width: 620px) {
+  .body,
+  .compact .body {
+    grid-template-columns: 1fr;
+  }
+
+  .preview,
+  .compact .preview {
+    width: 100%;
+    height: 150px;
+  }
+
+  .coverPreview {
+    height: auto;
+  }
+}
