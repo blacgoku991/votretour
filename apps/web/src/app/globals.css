@@ -411,6 +411,9 @@ a { color: inherit; text-decoration: none; }
   font-variation-settings: 'wght' 700;
 }
 .skip-link:focus-visible { transform: none; }
+/* Placé en haut d'une section plutôt que de la page, translateY ne suffit
+   plus à le sortir de la vue : il resterait par-dessus l'en-tête. */
+.skip-link:not(:focus-visible) { opacity: 0; pointer-events: none; }
 
 /* ---------------------------------------------------------------------
    4. LE RAIL ET LES LATTES
