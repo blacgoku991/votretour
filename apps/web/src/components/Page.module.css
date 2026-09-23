@@ -230,7 +230,8 @@
   border-radius: 0 0 2px 2px;
   background: var(--rail);
 }
-.statAccent .statNotch { width: 20px; height: 4px; background: var(--accent); }
+.statNotch { display: none; }
+.statAccent .statNotch { display: block; width: 20px; height: 4px; background: var(--accent); }
 
 .statValue {
   display: flex;

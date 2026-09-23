@@ -107,11 +107,21 @@
   transform-origin: 50% 100%;
 }
 
-/* Les barres montent depuis la base, une fois, à l'entrée dans la vue. */
+/* Zéro : la ligne de base reste nue, pas de talon. */
+.bar[data-zero] { min-height: 0; }
+
+/* Les barres montent depuis la base, une fois, à l'entrée dans la vue.
+   Décalage plafonné : la dernière colonne part au plus 420 ms après la première. */
 @media (prefers-reduced-motion: no-preference) {
   .plot:not([data-in]) .bar { transform: scaleY(0); }
   .plot[data-in] .bar {
-    transition: transform var(--dur-3) var(--ease-slat) calc(var(--i, 0) * 20ms);
+    transition: transform var(--dur-3) var(--ease-slat) min(calc(var(--i, 0) * 20ms), 420ms);
+  }
+  /* L'étiquette de l'extrême n'apparaît qu'une fois sa barre montée. */
+  .plot:not([data-in]) .peakLabel { opacity: 0; }
+  .plot[data-in] .peakLabel {
+    transition: opacity var(--dur-2, 200ms) var(--ease-out)
+      calc(min(calc(var(--i, 0) * 20ms), 420ms) + var(--dur-3));
   }
 }
 

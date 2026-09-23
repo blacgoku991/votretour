@@ -51,7 +51,7 @@ function niceCeiling(max: number): number {
 }
 
 /** Sans JavaScript, rien n'est « armé » : les barres restent visibles. */
-const NOSCRIPT_CSS = '[data-chart-bars] [data-bar]{transform:none!important}';
+const NOSCRIPT_CSS = '[data-chart-bars] [data-bar]{transform:none!important}[data-chart-bars] [data-peak]{opacity:1!important}';
 
 /* ==================================================================
    Colonnes dans le temps
@@ -120,7 +120,9 @@ export function ColumnChart({
   }
 
   const ticks = [0, 0.5, 1].map((ratio) => Math.round(max * ratio));
-  const sparse = points.length > 14;
+  // Au-delà de 14 colonnes, un libellé toutes les `step` colonnes,
+  // compté depuis la plus récente (toujours étiquetée).
+  const step = points.length > 14 ? Math.ceil(points.length / 10) : 1;
 
   return (
     <figure className={styles.figure}>
@@ -166,10 +168,7 @@ export function ColumnChart({
               style={{ ['--i' as string]: index } as React.CSSProperties}
               onMouseEnter={() => setHover(index)}
               onMouseLeave={() => setHover(null)}
-              onFocus={() => setHover(index)}
-              onBlur={() => setHover(null)}
-              tabIndex={0}
-              role="button"
+              role="img"
               aria-label={`${point.fullLabel ?? point.label} : ${series
                 .map((s) => `${s.label} ${point.values[s.key] ?? 0}${unit}`)
                 .join(', ')}`}
@@ -181,6 +180,7 @@ export function ColumnChart({
                     <span
                       key={s.key}
                       data-bar=""
+                      data-zero={value <= 0 ? '1' : undefined}
                       className={styles.bar}
                       style={{
                         height: `${max > 0 ? (value / max) * 100 : 0}%`,
@@ -193,6 +193,7 @@ export function ColumnChart({
 
               {index === peakIndex && series[0] && (
                 <span
+                  data-peak=""
                   className={`t-num ${styles.peakLabel}`}
                   style={{ bottom: `${max > 0 ? ((point.values[series[0].key] ?? 0) / max) * 100 : 0}%` }}
                 >
@@ -222,7 +223,7 @@ export function ColumnChart({
           const isNow = nowLabel != null && point.label === nowLabel;
           return (
             <span key={index} className={styles.xLabel} data-now={isNow ? '1' : undefined}>
-              {isNow || !sparse || index % 3 === 0 ? point.label : ''}
+              {isNow || (points.length - 1 - index) % step === 0 ? point.label : ''}
             </span>
           );
         })}

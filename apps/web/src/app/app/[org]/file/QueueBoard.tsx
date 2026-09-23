@@ -67,6 +67,27 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
   const now = useNow(30_000);
   const reduced = useReducedMotion();
 
+  /* Les personnes déjà là à l'ouverture de l'écran ne se « déplient » pas :
+     SE DÉPLIER est réservé à quelqu'un qui arrive (ou qui monte d'un cran)
+     après le premier instantané. Ensembles figés au montage. */
+  const initialIds = useRef<{ serving: Set<string>; next: string | null; all: Set<string> } | null>(null);
+  if (initialIds.current === null) {
+    const s0 = initialSnapshot;
+    const serving0 = s0?.serving ?? [];
+    const called0 = s0?.called ?? [];
+    const waiting0 = s0?.waiting ?? [];
+    initialIds.current = {
+      serving: new Set(serving0.map((e) => e.id)),
+      next: (called0[0] ?? waiting0[0])?.id ?? null,
+      all: new Set([...serving0, ...called0, ...waiting0].map((e) => e.id)),
+    };
+  }
+  const isNew = {
+    serving: (id: string) => !initialIds.current!.serving.has(id),
+    next: (id: string) => id !== initialIds.current!.next,
+    waiting: (id: string) => !initialIds.current!.all.has(id),
+  };
+
   /* ---------------------------------------------------------------
      Temps réel : Postgres Changes sous RLS.
      Le professionnel a le droit de voir les prénoms de SA file ; les
@@ -318,6 +339,7 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
                         entry={entry}
                         staffName={staffName(entry.staffId)}
                         busy={busyEntry === entry.id}
+                        entering={isNew.serving(entry.id)}
                         disabled={!canOperate}
                         absentPolicy={queue.absentPolicy}
                         moveBackBy={queue.absentMoveBackBy}
@@ -353,6 +375,8 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
                     entry={nextUp}
                     staffName={staffName(nextUp.staffId)}
                     busy={busyEntry === nextUp.id}
+                    entering={isNew.next(nextUp.id)}
+                    quiet={servingList.length > 0}
                     disabled={!canOperate}
                     advanceMode={queue.advanceMode}
                     now={now}
@@ -377,6 +401,7 @@ export function QueueBoard({ orgSlug, initialSnapshot, queues, canOperate, canCo
                         key={entry.id}
                         entry={entry}
                         position={index + 2}
+                        entering={isNew.waiting(entry.id)}
                         staffName={staffName(entry.staffId)}
                         busy={busyEntry === entry.id}
                         disabled={!canOperate}
@@ -495,6 +520,21 @@ function StatusHeader({
   const status = queue.status;
   const [mode, setMode] = useState<'pause' | 'close' | null>(null);
   const [reason, setReason] = useState('');
+  const segRef = useRef<HTMLDivElement | null>(null);
+
+  /** Annuler (bouton ou Échap) : le panneau se ferme, le focus revient au segment. */
+  const cancel = () => {
+    const from = mode === 'pause' ? 'paused' : mode === 'close' ? 'closed' : null;
+    setMode(null);
+    if (from) {
+      requestAnimationFrame(() => {
+        segRef.current?.querySelector<HTMLButtonElement>(`[data-status="${from}"]`)?.focus();
+      });
+    }
+  };
+  const onPanelKey = (event: React.KeyboardEvent) => {
+    if (event.key === 'Escape') { event.preventDefault(); cancel(); }
+  };
 
   const choose = (value: QueueStatus) => {
     if (value === status) { setMode(null); return; }
@@ -531,7 +571,7 @@ function StatusHeader({
         </div>
 
         {canOperate && (
-          <div className={`seg ${styles.statusSeg}`} role="group" aria-label="État de la file" data-pending={pending ? '1' : undefined}>
+          <div ref={segRef} className={`seg ${styles.statusSeg}`} role="group" aria-label="État de la file" data-pending={pending ? '1' : undefined}>
             {STATUS_OPTIONS.map((option) => {
               const pressed = option.value === status;
               const armed = (option.value === 'paused' && mode === 'pause') || (option.value === 'closed' && mode === 'close');
@@ -559,6 +599,7 @@ function StatusHeader({
         <form
           className={styles.inlinePanel}
           data-tone="pause"
+          onKeyDown={onPanelKey}
           onSubmit={(event) => {
             event.preventDefault();
             onStatus('paused', reason.trim() || undefined);
@@ -580,13 +621,13 @@ function StatusHeader({
               onChange={(e) => setReason(e.target.value)}
             />
             <button type="submit" className="btn btn--solid btn--sm">Mettre en pause</button>
-            <button type="button" className="btn btn--quiet btn--sm" onClick={() => setMode(null)}>Annuler</button>
+            <button type="button" className="btn btn--quiet btn--sm" onClick={cancel}>Annuler</button>
           </div>
         </form>
       )}
 
       {mode === 'close' && (
-        <div className={styles.inlinePanel} data-tone="close" role="alertdialog" aria-labelledby="close-question">
+        <div className={styles.inlinePanel} data-tone="close" role="alertdialog" aria-labelledby="close-question" onKeyDown={onPanelKey}>
           <p id="close-question" className={styles.inlineText}>
             <strong>Fermer la file ?</strong> Les personnes en attente seront prévenues.
           </p>
@@ -594,12 +635,11 @@ function StatusHeader({
             <button
               type="button"
               className="btn btn--danger btn--sm"
-              autoFocus
               onClick={() => { setMode(null); onStatus('closed'); }}
             >
               Fermer
             </button>
-            <button type="button" className="btn btn--quiet btn--sm" onClick={() => setMode(null)}>Annuler</button>
+            <button type="button" className="btn btn--quiet btn--sm" autoFocus onClick={cancel}>Annuler</button>
           </div>
         </div>
       )}
@@ -628,7 +668,10 @@ function StatusHeader({
 
 function ServingSlat({
   entry, staffName, busy, disabled, absentPolicy, moveBackBy, onAct, ghost = false, style, onPassed,
+  entering = false,
 }: {
+  /** Se déplie au montage (arrivée après le premier instantané). */
+  entering?: boolean;
   /** Fantôme : appelé quand le Passage est joué. */
   onPassed?: () => void;
   entry: StaffEntry;
@@ -685,7 +728,7 @@ function ServingSlat({
   }
 
   return (
-    <article className={`${styles.serving} slat--entering`} data-serving-id={entry.id}>
+    <article className={`${styles.serving}${entering ? ' slat--entering' : ''}`} data-serving-id={entry.id}>
       {who}
 
       <button
@@ -727,8 +770,11 @@ function ServingSlat({
    ================================================================== */
 
 function NextSlat({
-  entry, staffName, busy, disabled, advanceMode, now, onAct,
+  entry, staffName, busy, disabled, advanceMode, now, onAct, entering = false, quiet = false,
 }: {
+  entering?: boolean;
+  /** Quelqu'un est déjà en prestation : TERMINER reste la seule touche pleine. */
+  quiet?: boolean;
   entry: StaffEntry;
   staffName: string | null;
   busy: boolean;
@@ -738,7 +784,7 @@ function NextSlat({
   onAct: Act;
 }) {
   return (
-    <article className={`${styles.next} slat--entering`}>
+    <article className={`${styles.next}${entering ? ' slat--entering' : ''}`}>
       <span className={styles.pos} aria-hidden="true">01</span>
       <div className={styles.nextWho}>
         <p className={styles.nextName}>
@@ -751,14 +797,14 @@ function NextSlat({
             staffName ? `pour ${staffName}` : null,
             `arrivé à ${formatTime(entry.joinedAt)}`,
           ].filter(Boolean).join(' · ')}
-          {now != null && <> · <span className="t-num">{waitText(entry.joinedAt)}</span> d&apos;attente</>}
+          {now != null && <> · <span className={styles.nowrap}><span className="t-num">{waitText(entry.joinedAt)}</span> d&apos;attente</span></>}
         </p>
       </div>
 
       <div className={styles.nextActions}>
         <button
           type="button"
-          className="btn btn--solid"
+          className={quiet ? 'btn btn--ghost' : 'btn btn--solid'}
           disabled={disabled}
           aria-busy={busy || undefined}
           onClick={() => { if (!busy) onAct(entry.id, 'start_serving'); }}
@@ -785,8 +831,9 @@ function NextSlat({
    ================================================================== */
 
 function WaitingRow({
-  entry, position, staffName, busy, disabled, moveBackBy, now, onAct,
+  entry, position, staffName, busy, disabled, moveBackBy, now, onAct, entering = false,
 }: {
+  entering?: boolean;
   entry: StaffEntry;
   position: number;
   staffName: string | null;
@@ -802,9 +849,8 @@ function WaitingRow({
 
   return (
     <li
-      className={`${styles.waitRow} slat--entering`}
+      className={`${styles.waitRow}${entering ? ' slat--entering' : ''}`}
       data-open={open ? '1' : undefined}
-      style={{ animationDelay: `${Math.min(position - 2, 8) * 34}ms` }}
     >
       <span className={styles.pos} aria-label={`Position ${position}`}>
         {String(position).padStart(2, '0')}
@@ -853,8 +899,9 @@ function WaitingRow({
           <button type="button" onClick={() => { onAct(entry.id, 'call'); setOpen(false); }}>Appeler</button>
           <button type="button" onClick={() => { onAct(entry.id, 'mark_present'); setOpen(false); }}>Présent</button>
           <button type="button" onClick={() => { onAct(entry.id, 'mark_absent'); setOpen(false); }}>Absent</button>
-          <button type="button" onClick={() => { onAct(entry.id, 'defer', { by: moveBackBy }); setOpen(false); }}>
-            Décaler de {moveBackBy}
+          <button type="button" aria-label={`Décaler de ${moveBackBy} places`}
+            onClick={() => { onAct(entry.id, 'defer', { by: moveBackBy }); setOpen(false); }}>
+            Décaler +{moveBackBy}
           </button>
           <button type="button" className={styles.danger}
             onClick={() => { onAct(entry.id, 'remove'); setOpen(false); }}>
@@ -1032,8 +1079,18 @@ function useLiveElapsed(from: string | null): number | null {
   useEffect(() => {
     setValue(elapsedSeconds(from));
     if (!from) return;
-    const timer = setInterval(() => setValue(elapsedSeconds(from)), 1000);
-    return () => clearInterval(timer);
+    // L'affichage change à la seconde sous une minute, puis à la minute :
+    // on ne re-rend qu'à ces instants-là (une minuterie recalée à chaque fois).
+    let timer = 0;
+    const tick = () => {
+      const s = elapsedSeconds(from);
+      setValue(s);
+      const delay = s == null || s < 60 ? 1000 : (60 - (s % 60)) * 1000;
+      timer = window.setTimeout(tick, delay);
+    };
+    const s0 = elapsedSeconds(from);
+    timer = window.setTimeout(tick, s0 == null || s0 < 60 ? 1000 : (60 - (s0 % 60)) * 1000);
+    return () => window.clearTimeout(timer);
   }, [from]);
   return value;
 }

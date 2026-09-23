@@ -99,12 +99,24 @@ export function AppShell({ organization, organizations, user, children }: Props)
     return () => window.removeEventListener('keydown', onKey);
   }, [menuOpen]);
 
+  // À la fermeture de la feuille, le focus revient au bouton « Plus »
+  // (sauf si une navigation l'a déjà placé ailleurs).
+  const moreRef = useRef<HTMLButtonElement | null>(null);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (wasOpen.current && !menuOpen) {
+      const active = document.activeElement;
+      if (!active || active === document.body) moreRef.current?.focus();
+    }
+    wasOpen.current = menuOpen;
+  }, [menuOpen]);
+
   return (
     <div className={styles.shell}>
       <a href="#contenu" className="skip-link">Aller au contenu</a>
 
       {/* ---------- Rail latéral (≥ 900 px) ---------- */}
-      <aside className={styles.rail}>
+      <aside className={styles.rail} inert={menuOpen || undefined}>
         <div className={styles.railInner}>
           <Link href={`/app/${organization.slug}/file`} className={styles.railBrand} aria-label="Rangvia — file en cours">
             <Wordmark />
@@ -147,7 +159,7 @@ export function AppShell({ organization, organizations, user, children }: Props)
       </aside>
 
       {/* ---------- En-tête mobile : la marque et l'établissement ---------- */}
-      <header className={styles.topbar}>
+      <header className={styles.topbar} inert={menuOpen || undefined}>
         <Link href={`/app/${organization.slug}/file`} className={styles.topbarBrand} aria-label="Rangvia — file en cours">
           <Wordmark compact />
         </Link>
@@ -155,10 +167,10 @@ export function AppShell({ organization, organizations, user, children }: Props)
         <span className={styles.topbarTitle}>{organization.name}</span>
       </header>
 
-      <main id="contenu" className={styles.main}>{children}</main>
+      <main id="contenu" className={styles.main} inert={menuOpen || undefined}>{children}</main>
 
       {/* ---------- Barre basse (téléphone) ---------- */}
-      <nav className={styles.tabbar} aria-label="Navigation">
+      <nav className={styles.tabbar} aria-label="Navigation" inert={menuOpen || undefined}>
         {tabs.map((item) => {
           const active = isActive(item.href);
           return (
@@ -174,6 +186,7 @@ export function AppShell({ organization, organizations, user, children }: Props)
           );
         })}
         <button
+          ref={moreRef}
           type="button"
           className={styles.tab}
           onClick={() => setMenuOpen(true)}

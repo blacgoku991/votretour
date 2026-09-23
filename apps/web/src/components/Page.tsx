@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { FlapText } from './FlapNumber';
-import { useInViewOnce } from './motion/useInViewOnce';
-import { useReducedMotion } from './motion/useMotionPreference';
 import styles from './Page.module.css';
 
 /**
@@ -154,10 +152,38 @@ export function Stat({
   lead?: boolean;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const seen = useInViewOnce(ref, { threshold: 0.4 });
-  // Mouvement réduit : la valeur tout de suite, sans chute.
-  const reduced = useReducedMotion();
-  const shown = seen || reduced ? value : placeholder(value);
+  // Rendu serveur et premier rendu client : la valeur, jamais de tirets.
+  // Après montage seulement, une cellule encore sous la fenêtre est « armée »
+  // (tirets) puis tombe une fois à son entrée dans la vue. Mouvement réduit :
+  // jamais armée (lu dans l'effet, pas via un hook qui vaut false à l'hydratation).
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof window === 'undefined' || !('IntersectionObserver' in window)) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    let first = true;
+    let wasArmed = false;
+    const io = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.some((e) => e.isIntersecting);
+        if (first) {
+          first = false;
+          if (visible) { io.disconnect(); return; }
+          wasArmed = true;
+          setArmed(true);
+          return;
+        }
+        if (visible && wasArmed) {
+          setArmed(false);
+          io.disconnect();
+        }
+      },
+      { threshold: 0.4 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  const shown = armed ? placeholder(value) : value;
 
   return (
     <div

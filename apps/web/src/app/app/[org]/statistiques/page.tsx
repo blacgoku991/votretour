@@ -99,14 +99,33 @@ export default async function StatsPage({
   const reviewClickRate = completed > 0 ? (googleClicks / completed) * 100 : null;
   const timeZone = current.timezone || 'Europe/Paris';
 
-  const byDay = (stats?.byDay ?? []).map((d) => {
-    const date = new Date(d.day);
+  // Série complète de `range.days` jours, du plus ancien au plus récent,
+  // datés dans le fuseau de l'établissement ; zéro pour les jours vides.
+  const dayKey = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric', month: '2-digit', day: '2-digit', timeZone,
+  });
+  const found = new Map((stats?.byDay ?? []).map((d) => [String(d.day).slice(0, 10), d]));
+  const dayShort = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', timeZone: 'UTC' });
+  const dayMonth = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const dayFull = new Intl.DateTimeFormat('fr-FR', {
+    weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC',
+  });
+  const nowMs = Date.now();
+  const byDay = Array.from({ length: range.days }, (_, i) => {
+    const key = dayKey.format(new Date(nowMs - (range.days - 1 - i) * 86_400_000));
+    const date = new Date(`${key}T12:00:00Z`);
+    const d = found.get(key);
+    // Le 1er du mois et la première colonne portent le mois.
+    const withMonth = i === 0 || key.endsWith('-01');
     return {
-      label: new Intl.DateTimeFormat('fr-FR', { day: 'numeric', timeZone: 'UTC' }).format(date),
-      fullLabel: new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(date),
-      values: { joined: d.joined, completed: d.completed },
+      label: (withMonth ? dayMonth : dayShort).format(date),
+      fullLabel: dayFull.format(date),
+      values: { joined: d?.joined ?? 0, completed: d?.completed ?? 0 },
     };
   });
+  const spanLabel = byDay.length > 0
+    ? `du ${byDay[0]!.fullLabel.replace(/^\S+\s/, '')} au ${byDay[byDay.length - 1]!.fullLabel.replace(/^\S+\s/, '')}`
+    : '';
 
   const byHour = Array.from({ length: 24 }, (_, hour) => {
     const found = (stats?.byHour ?? []).find((h) => h.hour === hour);
@@ -169,9 +188,9 @@ export default async function StatsPage({
             hint={plural(completed, 'passage terminé', 'passages terminés')}
           />
           <Stat
-            label="Durée de prestation"
+            label="Prestation"
             value={formatDurationBounded(stats?.avgServiceSeconds ?? null)}
-            hint="moyenne constatée"
+            hint="durée moyenne constatée"
           />
           <Stat
             label="Taux de passage"
@@ -199,7 +218,7 @@ export default async function StatsPage({
             hint="acceptées par le fournisseur"
           />
           <Stat
-            label="Clics vers Google"
+            label="Clics Google"
             value={formatNumber(googleClicks)}
             hint="1 clic compté au plus par visite"
           />
@@ -225,7 +244,7 @@ export default async function StatsPage({
         </p>
       </Section>
 
-      <Section bare title="Jour après jour" description="Arrivées et passages terminés.">
+      <Section bare title="Jour après jour" description={`Arrivées et passages terminés, ${spanLabel}`}>
         <ColumnChart
           points={byDay}
           series={[
