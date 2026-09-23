@@ -1,49 +1,342 @@
-.page { display: flex; flex-direction: column; gap: var(--sp-6); padding-top: var(--sp-5); }
+/* =====================================================================
+   RÉGLAGES — lignes de réglage, sommaire en rail, horaires en 24 h.
+   Aucun dégradé, aucun backdrop-filter. On n'anime que transform et
+   opacity, et seulement en prefers-reduced-motion: no-preference.
+   ===================================================================== */
 
-.hours { display: flex; flex-direction: column; }
-
-.hoursRow {
-  display: grid;
-  grid-template-columns: 100px 48px 1fr 1fr;
-  gap: var(--sp-3);
-  align-items: center;
-  padding: var(--sp-3) var(--sp-5);
-  border-bottom: 1px solid var(--line);
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  padding-top: var(--sp-5);
 }
-.hoursRow:last-child { border-bottom: 0; }
-.hoursRow .input { min-height: 40px; padding: 6px 10px; font-size: 0.875rem; }
 
-.dayName { font-variation-settings: 'wght' 620; font-size: 0.875rem; }
+/* Aides de réglage : jamais sous 13 px, jamais en --text-faint (texte
+   porteur de sens). Filet en attendant la nouvelle SettingRow (WP5). */
+.page :global(.t-micro.t-faint) {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
 
-@media (max-width: 560px) {
-  .hoursRow { grid-template-columns: 90px 48px 1fr 1fr; gap: var(--sp-2); }
-  .hoursRow .input { font-size: 0.75rem; padding: 6px; }
+/* ---------------------------------------------------------------------
+   Mise en page : sommaire collant à gauche à partir de 1200 px
+   --------------------------------------------------------------------- */
+.layout { display: block; }
+.aside { display: none; }
+.content { display: flex; flex-direction: column; gap: var(--sp-7); min-width: 0; }
+
+/* Une section visée par le sommaire s'arrête sous la barre haute. */
+.anchor { scroll-margin-top: calc(var(--header-h) + var(--safe-top, 0px) + 16px); min-width: 0; }
+
+@media (min-width: 900px) {
+  .anchor { scroll-margin-top: 24px; }
+}
+
+@media (min-width: 1200px) {
+  .layout {
+    display: grid;
+    grid-template-columns: 216px minmax(0, 1fr);
+    column-gap: 48px;
+    align-items: start;
+  }
+  .aside { display: block; position: sticky; top: 32px; }
+  .content > .tocSelect { display: none; }
+}
+
+/* Sommaire en rail */
+.tocRail { display: flex; flex-direction: column; gap: 14px; }
+.tocTitle { padding-left: 40px; }
+
+.toc.toc > li {
+  padding: 0;
+  border-top: 0;
+}
+.toc.toc > li::before { top: 21px; }
+.toc.toc > li[aria-current='true']::before { top: 20px; transform-origin: 0 50%; }
+@media (prefers-reduced-motion: no-preference) {
+  .toc.toc > li[aria-current='true']::before { animation: toc-notch var(--dur-2) var(--ease-slat); }
+}
+@keyframes toc-notch { from { transform: scaleX(0); } }
+
+.tocLink {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 44px;
+  padding: 12px 8px 12px 0;
+  font-size: 0.875rem;
+  line-height: 20px;
+  color: var(--text-muted);
+  font-variation-settings: 'wght' 560;
+  transition: color var(--dur-1) var(--ease-out);
+}
+.tocLink:hover { color: var(--text); }
+.toc > li[aria-current='true'] .tocLink { color: var(--text); font-variation-settings: 'wght' 680; }
+.tocNum {
+  flex: none;
+  min-width: 20px;
+  white-space: nowrap;
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--floor-number);
+}
+.toc > li[aria-current='true'] .tocNum { color: var(--accent); }
+
+/* Sous 1200 px : « Aller à la section » */
+.tocSelect { display: flex; flex-direction: column; gap: 10px; }
+@media (min-width: 640px) {
+  .tocSelect { flex-direction: row; align-items: center; gap: 16px; }
+  .tocSelect .select { max-width: 320px; }
+}
+
+/* ---------------------------------------------------------------------
+   Champs particuliers
+   --------------------------------------------------------------------- */
+.page .postal.postal { flex: 0 0 104px; width: 104px; min-width: 0; }
+
+.queueTabs { max-width: 100%; overflow-x: auto; }
+
+.emptyLine {
+  padding: 16px 20px;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--line);
 }
 
 .addRow {
-  display: flex; gap: var(--sp-2); flex-wrap: wrap;
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
   padding: var(--sp-4) var(--sp-5);
   border-top: 1px solid var(--line);
   background: var(--surface);
 }
-.addRow .input { flex: 2 1 180px; }
-.addRow .input[type='number'] { flex: 1 1 110px; }
-
-/* Sélecteur de file, quand un établissement en compte plusieurs. */
-.queueTabs {
-  display: inline-flex;
-  padding: 3px;
-  border-radius: var(--r-pill);
-  background: var(--surface-sunken);
-  border: 1px solid var(--line);
+.addRow :global(.input) { flex: 2 1 180px; min-width: 0; }
+.addRow :global(.input[type='number']) { flex: 1 1 110px; }
+.addRow :global(.btn) { flex: 0 0 auto; }
+@media (max-width: 479px) {
+  .addRow :global(.input),
+  .addRow :global(.input[type='number']),
+  .addRow :global(.btn) { flex: 1 1 100%; }
 }
 
-.queueTab {
-  padding: 5px 12px;
-  border-radius: var(--r-pill);
-  font-size: 0.75rem;
-  font-variation-settings: 'wght' 620;
+/* ---------------------------------------------------------------------
+   « Prévenir à partir de » : mini-rang de 5 lattes
+   --------------------------------------------------------------------- */
+.thr {
+  --w: 44px;
+  --g: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: calc(var(--w) * 5 + var(--g) * 4);
+}
+.thrSlats {
+  position: relative;
+  display: flex;
+  gap: var(--g);
+}
+.thrSlat {
+  position: relative;
+  z-index: 1;
+  width: var(--w);
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--slat);
+  box-shadow: 0 2px 0 var(--slat-edge);
+  cursor: pointer;
   color: var(--text-muted);
+}
+/* L'encoche : de la latte au rail. */
+.thrSlat::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 2px;
+  height: 12px;
+  margin-left: -1px;
+  background: var(--rail);
+}
+.thrSlat[data-zone='1'] { color: var(--text); }
+.thrSlat[data-zone='1']::after { background: color-mix(in oklab, var(--accent) 70%, transparent); }
+.thrSlat:has(input:checked) { background: transparent; box-shadow: none; color: var(--accent-ink); }
+.thrSlat:has(input:checked)::after { width: 4px; margin-left: -2px; background: var(--accent); }
+.thrSlat:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+.thr:disabled .thrSlat { cursor: not-allowed; }
+
+.thrNum {
+  position: relative;
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 1.0625rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Le repère : une latte vermillon qui glisse d'une place à l'autre. */
+.thrMarker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  width: var(--w);
+  height: 40px;
+  border-radius: 8px;
+  background: var(--accent);
+  box-shadow: 0 3px 0 var(--slat-edge-self);
+}
+.thr:disabled .thrMarker { opacity: 0.55; }
+
+.thrRail {
+  position: relative;
+  height: 2px;
+  margin-top: 12px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.thrZone {
+  position: absolute;
+  inset: 0;
+  border-radius: 2px;
+  background: var(--accent);
+  transform-origin: 0 50%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .thrMarker, .thrZone { transition: transform var(--dur-3) var(--ease-slat); }
+}
+
+.thrCaption {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+.thrCaption sup { font-size: 0.7em; line-height: 0; }
+.thrCounter {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.thrCounter::before { content: '←'; margin-right: 6px; letter-spacing: 0; }
+
+/* ---------------------------------------------------------------------
+   Horaires : une ligne par jour, heures en 24 h (TimeField)
+   --------------------------------------------------------------------- */
+.hours { display: flex; flex-direction: column; }
+
+.day {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'name toggle'
+    'main main';
+  align-items: center;
+  gap: 12px 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.day:last-child { border-bottom: 0; }
+/* Jour fermé : tout tient sur une ligne. */
+.day[data-closed='1'] {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'name main toggle';
+}
+
+.dayName {
+  grid-area: name;
+  font-variation-settings: 'wdth' 108, 'wght' 700;
+  font-size: 0.9375rem;
+  letter-spacing: -0.005em;
+}
+.day[data-closed='1'] .dayName { color: var(--text-muted); }
+.dayToggle { grid-area: toggle; display: flex; justify-content: flex-end; }
+.dayMain {
+  grid-area: main;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Trait entre ouverture et fermeture : un bout de rail. */
+.dash {
+  flex: none;
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+
+/* Puce « Fermé » en ardoise. */
+.closedChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--ardoise-500) 26%, transparent);
+  color: var(--ardoise-100);
+  font-variation-settings: 'wdth' 92, 'wght' 650;
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
-.queueTabActive { background: var(--surface-raised); color: var(--text); box-shadow: var(--shadow-1); }
+.closedChip::before {
+  content: '';
+  width: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.7;
+}
+
+/* Sur téléphone, les deux TimeField tiennent sur une ligne. */
+@media (max-width: 559px) {
+  .dayMain :global(.select) {
+    width: 60px;
+    min-height: 44px;
+    padding: 0 20px 0 10px;
+    font-size: 1rem;
+    background-position: right 12px center, right 7px center;
+  }
+  .dayMain { gap: 6px; }
+}
+@media (max-width: 379px) {
+  .dayMain :global(.select) { width: 58px; padding: 0 19px 0 9px; }
+  .dayMain { gap: 4px; }
+}
+
+@media (min-width: 560px) {
+  .day,
+  .day[data-closed='1'] {
+    grid-template-columns: 116px 56px minmax(0, 1fr);
+    grid-template-areas: 'name toggle main';
+    padding: 12px 20px;
+    min-height: 72px;
+  }
+  .dayToggle { justify-content: flex-start; }
+}
+
+.hoursNote {
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}

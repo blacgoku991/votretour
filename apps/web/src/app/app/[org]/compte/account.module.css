@@ -1,0 +1,55 @@
+/* =====================================================================
+   MON COMPTE — cartes (rayon 14) et champs accrochés au rail. Sans effet.
+   ===================================================================== */
+
+.page { display: flex; flex-direction: column; gap: var(--sp-7); padding-top: var(--sp-5); }
+
+.grid { display: grid; gap: var(--sp-7); min-width: 0; }
+@media (min-width: 1100px) {
+  .grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 32px; align-items: start; }
+}
+
+.block { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.head { display: flex; align-items: center; gap: 10px; }
+.head::before { content: ''; width: 14px; height: 2px; border-radius: 2px; background: var(--rail); }
+
+.card { border-radius: 14px; min-width: 0; }
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+}
+/* Initiales gravées sur un carreau os : la mini-plaque. */
+.tile {
+  width: 48px;
+  height: 48px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--bone-100);
+  color: var(--ink-1000);
+  box-shadow: 0 3px 0 var(--bone-500);
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 1rem;
+}
+.whoText { min-width: 0; }
+.whoName { font-variation-settings: 'wdth' 106, 'wght' 720; font-size: 1.125rem; line-height: 1.2; }
+.whoOrg { margin-top: 4px; font-size: 0.875rem; color: var(--text-muted); }
+
+.fields { margin: 0; }
+.fields dd { margin: 0; }
+.label {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  line-height: 18px;
+}
+.value { font-size: 1rem; line-height: 1.4; overflow-wrap: anywhere; }
+.hint { font-size: 0.8125rem; line-height: 1.45; color: var(--text-muted); margin-top: -4px; }

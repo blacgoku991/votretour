@@ -1,43 +1,216 @@
-.page { display: flex; flex-direction: column; gap: var(--sp-6); padding-top: var(--sp-5); }
+/* =====================================================================
+   NOTIFICATIONS — aperçu écran verrouillé accroché au rail, bande KPI,
+   journal en liste-rail. Aucun dégradé, aucun backdrop-filter.
+   ===================================================================== */
 
-.statGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--sp-3);
+.page { display: flex; flex-direction: column; gap: var(--sp-8); padding-top: var(--sp-5); }
+
+.page :global(.t-micro.t-faint) { font-size: 0.8125rem; line-height: 1.45; color: var(--text-muted); }
+
+.top { display: grid; gap: var(--sp-8); min-width: 0; }
+.side { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+@media (min-width: 1100px) {
+  .top { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 48px; align-items: start; }
 }
 
-.log { display: flex; flex-direction: column; }
-
-.logRow {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-5);
-  border-bottom: 1px solid var(--line);
+/* ---------------------------------------------------------------------
+   Aperçu : les vrais messages, chacun à sa place sur le rail
+   --------------------------------------------------------------------- */
+.preview { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.previewTitle { display: flex; align-items: center; gap: 10px; }
+.previewTitle::before {
+  content: '';
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
 }
-.logRow:last-child { border-bottom: 0; }
-
-.dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  flex: none;
-  margin-top: 6px;
-}
-.dotSent { background: var(--jade-500); }
-.dotFailed { background: var(--brique-500); }
-.dotSkipped { background: var(--text-faint); }
-
-.logText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.logTitle { font-variation-settings: 'wght' 640; font-size: 0.875rem; }
-.logBody {
-  font-size: 0.8125rem;
+.previewDesc {
+  margin-top: 8px;
+  padding-left: 24px;
+  max-width: 52ch;
+  font-size: 0.875rem;
+  line-height: 1.45;
   color: var(--text-muted);
-  font-style: italic;
-  margin-top: 2px;
 }
 
-.logTime { flex: none; white-space: nowrap; padding-top: 2px; }
+.lock {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* Le rail : de la première place au comptoir. */
+.lock::before {
+  content: '';
+  position: absolute;
+  left: 52px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
 
-@media (max-width: 620px) {
-  .logTime { display: none; }
+.lockItem { position: relative; min-width: 0; }
+/* L'encoche qui relie la place à la notification. */
+.lockItem::before {
+  content: '';
+  position: absolute;
+  left: -20px;
+  top: 30px;
+  width: 20px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.lockItem[data-kind='your_turn']::before { background: var(--accent); height: 4px; top: 29px; }
+
+/* Position sur le rail : « 2 devant », « 1 devant », « 0 à vous »… */
+.pos {
+  position: absolute;
+  left: -72px;
+  top: 14px;
+  width: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  text-align: right;
+}
+.posNum {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 1.5rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.posLbl {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.lockItem[data-kind='your_turn'] .posNum { color: var(--accent); }
+.lockItem[data-kind='visit_completed'] .posNum { color: var(--jade-500); }
+
+/* La notification d'écran verrouillé */
+.notif {
+  max-width: 420px;
+  padding: 12px 14px 14px;
+  border-radius: 16px;
+  background: var(--ink-800);
+  border: 1px solid var(--line);
+  box-shadow: var(--edge-light), 0 10px 24px -16px var(--ink-1000);
+}
+.notifApp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-variation-settings: 'wdth' 92, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.notifWhen { margin-left: auto; font-variation-settings: 'wdth' 92, 'wght' 560; letter-spacing: 0.04em; text-transform: none; font-size: 0.75rem; }
+/* Icône : les trois lattes de la marque, la dernière en vermillon. */
+.appIcon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 4px;
+  border-radius: 5px;
+  background: var(--ink-1000);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.appIcon i { display: block; height: 2px; border-radius: 1px; background: var(--bone-100); }
+.appIcon i:nth-child(1) { width: 100%; }
+.appIcon i:nth-child(2) { width: 75%; }
+.appIcon i:nth-child(3) { width: 55%; background: var(--signal-500); }
+.notifTitle {
+  font-variation-settings: 'wdth' 100, 'wght' 700;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+}
+.notifBody {
+  margin-top: 2px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: color-mix(in oklab, var(--text) 86%, transparent);
+}
+
+@media (max-width: 379px) {
+  .lock { padding-left: 64px; }
+  .lock::before { left: 46px; }
+  .pos { left: -64px; width: 38px; }
+}
+
+/* ---------------------------------------------------------------------
+   Bande KPI (Stat) : cellules d'un tableau d'affichage
+   --------------------------------------------------------------------- */
+.kpis { display: flex; flex-direction: column; gap: 14px; }
+/* Filet : la Stat actuelle est une carte ; dans la bande, elle ne l'est plus. */
+.band.band > * { border: 0; border-radius: 0; background: var(--surface); }
+
+/* ---------------------------------------------------------------------
+   Journal en liste-rail
+   --------------------------------------------------------------------- */
+.journal { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.journalDesc { margin-top: 8px; font-size: 0.875rem; color: var(--text-muted); }
+
+.log > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+.log.log > li[data-status='sent']::before { background: var(--jade-500); }
+.log.log > li[data-status='failed']::before { background: var(--danger-text); }
+.log > li:last-child { border-bottom: 1px solid var(--line); }
+
+.logMain { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.logTitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-variation-settings: 'wght' 650;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+}
+.logStatus {
+  font-variation-settings: 'wdth' 92, 'wght' 700;
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--ardoise-500) 28%, transparent);
+  color: var(--ardoise-100);
+}
+.logStatus[data-status='sent'] { background: color-mix(in oklab, var(--jade-500) 18%, transparent); color: var(--jade-500); }
+.logStatus[data-status='failed'] { background: color-mix(in oklab, var(--brique-500) 22%, transparent); color: var(--danger-text); }
+.logDetail { font-size: 0.8125rem; line-height: 1.45; color: var(--text-muted); overflow-wrap: anywhere; }
+.logBody {
+  margin-top: 2px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line-strong);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+.logTime { font-size: 0.8125rem; color: var(--text-muted); white-space: nowrap; }
+
+@media (min-width: 720px) {
+  .log > li { grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: baseline; }
 }

@@ -3,11 +3,14 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageHeader, Section, SettingRow, Toggle, SaveBar } from '@/components/Page';
+import { TimeField } from '@/components/TimeField';
 import {
   updateLocation, updateQueueSettings, updateOrganizationSettings,
   updateOpeningHours, upsertService, deleteService, createLocation,
 } from '@/server/actions/settings';
 import { WEEKDAYS, formatPrice } from '@/lib/format';
+import { SettingsTocRail, SettingsTocSelect, type TocEntry } from './SettingsToc';
+import { ThresholdRang } from './ThresholdRang';
 import styles from './settings.module.css';
 
 /**
@@ -16,6 +19,11 @@ import styles from './settings.module.css';
  * Regroupés par ce que le professionnel cherche, pas par table de base
  * de données : l'établissement, la file, l'avis Google, les horaires,
  * les prestations, et les données personnelles.
+ *
+ * Mise en page : un sommaire collant en rail à partir de 1200 px, une
+ * liste « Aller à la section » en dessous. Les horaires passent par
+ * TimeField (24 h, quelle que soit la langue) et gardent le format
+ * 'HH:MM' envoyé à updateOpeningHours.
  */
 
 interface Location {
@@ -105,6 +113,24 @@ export function SettingsManager({
     setPlaceDirty(true);
   };
 
+  const patchDay = (index: number, patch: Partial<(typeof days)[number]>) => {
+    setDays((prev) => prev.map((d, i) => (i === index ? { ...d, ...patch } : d)));
+    setHoursDirty(true);
+  };
+
+  /** Recopie les heures du lundi sur les autres jours. Changement LOCAL :
+   *  la SaveBar des horaires enregistre (même appel qu'avant) ou rien ne
+   *  part. Les jours fermés restent fermés ; leurs heures sont prêtes
+   *  s'ils rouvrent. */
+  const copyMonday = () => {
+    setDays((prev) => {
+      const monday = prev[0];
+      if (!monday) return prev;
+      return prev.map((d) => ({ ...d, opensAt: monday.opensAt, closesAt: monday.closesAt }));
+    });
+    setHoursDirty(true);
+  };
+
   if (!currentLocation) {
     return (
       <div className="shell" style={{ paddingTop: 'var(--sp-5)' }}>
@@ -112,6 +138,16 @@ export function SettingsManager({
       </div>
     );
   }
+
+  const toc: TocEntry[] = [
+    { id: 'etablissement', label: 'Établissement' },
+    { id: 'avis-google', label: 'Avis Google' },
+    ...(queue ? [{ id: 'file', label: 'Fonctionnement de la file' }] : []),
+    { id: 'horaires', label: 'Horaires' },
+    { id: 'prestations', label: 'Prestations' },
+    { id: 'donnees', label: 'Données personnelles' },
+    ...(canManage ? [{ id: 'etablissements', label: 'Établissements' }] : []),
+  ];
 
   return (
     <div className={`shell ${styles.page}`}>
@@ -127,356 +163,417 @@ export function SettingsManager({
         ) : undefined}
       />
 
-      {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
+      <div className={styles.layout}>
+        <aside className={styles.aside}>
+          <SettingsTocRail entries={toc} />
+        </aside>
 
-      {/* ---------------- Établissement ---------------- */}
-      <Section title="Établissement" description="Ce que voient vos clients quand ils scannent.">
-        <SettingRow label="Nom" hint="Affiché en haut de l’écran client.">
-          <input className="input" value={place.name} disabled={!canManage}
-            onChange={(e) => patchPlace('name', e.target.value)} />
-        </SettingRow>
-        <SettingRow label="Adresse">
-          <input className="input" value={place.addressLine1} disabled={!canManage}
-            onChange={(e) => patchPlace('addressLine1', e.target.value)} />
-        </SettingRow>
-        <SettingRow label="Code postal et ville">
-          <input className="input" style={{ maxWidth: 110 }} value={place.postalCode}
-            disabled={!canManage} onChange={(e) => patchPlace('postalCode', e.target.value)} />
-          <input className="input" value={place.city} disabled={!canManage}
-            onChange={(e) => patchPlace('city', e.target.value)} />
-        </SettingRow>
-        <SettingRow label="Téléphone" hint="Le client peut vous appeler depuis son écran.">
-          <input className="input" type="tel" value={place.phone} disabled={!canManage}
-            onChange={(e) => patchPlace('phone', e.target.value)} />
-        </SettingRow>
-        <SettingRow label="Lien d’itinéraire" hint="Facultatif. Sinon l’adresse est utilisée.">
-          <input className="input" type="url" placeholder="https://maps.app.goo.gl/…"
-            value={place.mapsUrl} disabled={!canManage}
-            onChange={(e) => patchPlace('mapsUrl', e.target.value)} />
-        </SettingRow>
-      </Section>
+        <div className={styles.content}>
+          <SettingsTocSelect entries={toc} />
 
-      {/* ---------------- Avis Google ---------------- */}
-      <Section
-        title="Avis Google"
-        description="Proposé à la fin de chaque passage, à tous les clients, sans filtrage sur la satisfaction."
-      >
-        <SettingRow
-          label="Lien « Rédiger un avis »"
-          hint="Fiche Google de votre établissement → Demander des avis → copiez le lien court."
-          stacked
-        >
-          <input className="input" type="url" placeholder="https://g.page/r/…"
-            value={place.googleReviewUrl} disabled={!canManage}
-            onChange={(e) => patchPlace('googleReviewUrl', e.target.value)} />
-        </SettingRow>
-        {place.googleReviewUrl && (
-          <SettingRow label="Vérifier le lien" hint="Ouvrez-le pour confirmer qu’il pointe bien chez vous.">
-            <a className="btn btn--ghost btn--sm" href={place.googleReviewUrl}
-              target="_blank" rel="noreferrer">Ouvrir</a>
-          </SettingRow>
-        )}
-      </Section>
+          {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
 
-      <SaveBar
-        dirty={placeDirty} pending={pending} saved={saved} error={error}
-        onReset={() => {
-          setPlace({
-            name: currentLocation.name,
-            addressLine1: currentLocation.address_line1 ?? '',
-            postalCode: currentLocation.postal_code ?? '',
-            city: currentLocation.city ?? '',
-            phone: currentLocation.phone ?? '',
-            mapsUrl: currentLocation.maps_url ?? '',
-            googleReviewUrl: currentLocation.google_review_url ?? '',
-          });
-          setPlaceDirty(false);
-        }}
-        onSave={() => run(() => updateLocation({
-          organizationId, locationId: currentLocation.id,
-          name: place.name.trim(),
-          addressLine1: place.addressLine1.trim() || null,
-          postalCode: place.postalCode.trim() || null,
-          city: place.city.trim() || null,
-          phone: place.phone.trim() || null,
-          mapsUrl: place.mapsUrl.trim() || null,
-          googleReviewUrl: place.googleReviewUrl.trim() || null,
-        }), () => setPlaceDirty(false))}
-      />
+          {/* ---------------- Établissement ---------------- */}
+          <div id="etablissement" className={styles.anchor}>
+            <Section title="Établissement" description="Ce que voient vos clients quand ils scannent.">
+              <SettingRow label="Nom" hint="Affiché en haut de l’écran client.">
+                <input className="input" value={place.name} disabled={!canManage} aria-label="Nom"
+                  onChange={(e) => patchPlace('name', e.target.value)} />
+              </SettingRow>
+              <SettingRow label="Adresse">
+                <input className="input" value={place.addressLine1} disabled={!canManage} aria-label="Adresse"
+                  onChange={(e) => patchPlace('addressLine1', e.target.value)} />
+              </SettingRow>
+              <SettingRow label="Code postal et ville">
+                <input className={`input ${styles.postal}`} value={place.postalCode} inputMode="numeric"
+                  aria-label="Code postal" disabled={!canManage}
+                  onChange={(e) => patchPlace('postalCode', e.target.value)} />
+                <input className="input" value={place.city} disabled={!canManage} aria-label="Ville"
+                  onChange={(e) => patchPlace('city', e.target.value)} />
+              </SettingRow>
+              <SettingRow label="Téléphone" hint="Le client peut vous appeler depuis son écran.">
+                <input className="input" type="tel" value={place.phone} disabled={!canManage}
+                  aria-label="Téléphone"
+                  onChange={(e) => patchPlace('phone', e.target.value)} />
+              </SettingRow>
+              <SettingRow label="Lien d’itinéraire" hint="Facultatif. Sinon l’adresse est utilisée.">
+                <input className="input" type="url" placeholder="https://maps.app.goo.gl/…"
+                  aria-label="Lien d’itinéraire"
+                  value={place.mapsUrl} disabled={!canManage}
+                  onChange={(e) => patchPlace('mapsUrl', e.target.value)} />
+              </SettingRow>
+            </Section>
+          </div>
 
-      {/* ---------------- File ---------------- */}
-      {queue && (
-        <Section
-          title="Fonctionnement de la file"
-          actions={queues.length > 1 ? (
-            <div className={styles.queueTabs} role="group" aria-label="File à régler">
-              {queues.map((q) => (
-                <a
-                  key={q.id}
-                  href={`/app/${orgSlug}/reglages?lieu=${currentLocation.id}&file=${q.id}`}
-                  className={`${styles.queueTab} ${q.id === queue.id ? styles.queueTabActive : ''}`}
-                  aria-current={q.id === queue.id ? 'true' : undefined}
-                >
-                  {q.name}
-                </a>
-              ))}
-            </div>
-          ) : undefined}
-        >
-          <SettingRow label="Mode" hint="File commune, ou une file par professionnel.">
-            <select className="select" value={queue.mode} disabled={!canManage}
-              onChange={(e) => run(() => updateQueueSettings({
-                queueId: queue.id, mode: e.target.value as never,
-              }))}>
-              <option value="shared">File commune</option>
-              <option value="per_staff">Une file par professionnel</option>
-            </select>
-          </SettingRow>
-
-          <SettingRow
-            label="Après « Terminer »"
-            hint="Le suivant démarre tout seul, ou vous le lancez à la main."
-          >
-            <select className="select" value={queue.advance_mode} disabled={!canManage}
-              onChange={(e) => run(() => updateQueueSettings({
-                queueId: queue.id, advanceMode: e.target.value as never,
-              }))}>
-              <option value="auto_serve">Le suivant passe en cours</option>
-              <option value="call_next">Le suivant est seulement appelé</option>
-            </select>
-          </SettingRow>
-
-          <SettingRow label="Demander le prénom" hint="Sinon, rejoindre ne demande rien du tout.">
-            <Toggle checked={queue.ask_client_name} label="Demander le prénom" disabled={!canManage}
-              onChange={(v) => run(() => updateQueueSettings({ queueId: queue.id, askClientName: v }))} />
-          </SettingRow>
-
-          {queue.ask_client_name && (
-            <SettingRow label="Prénom obligatoire">
-              <Toggle checked={queue.client_name_required} label="Prénom obligatoire" disabled={!canManage}
-                onChange={(v) => run(() => updateQueueSettings({
-                  queueId: queue.id, clientNameRequired: v,
-                }))} />
-            </SettingRow>
-          )}
-
-          <SettingRow label="Choix du professionnel" hint="Le client peut demander quelqu’un en particulier.">
-            <Toggle checked={queue.allow_staff_choice} label="Choix du professionnel" disabled={!canManage}
-              onChange={(v) => run(() => updateQueueSettings({
-                queueId: queue.id, allowStaffChoice: v,
-              }))} />
-          </SettingRow>
-
-          <SettingRow label="Choix de la prestation">
-            <Toggle checked={queue.allow_service_choice} label="Choix de la prestation" disabled={!canManage}
-              onChange={(v) => run(() => updateQueueSettings({
-                queueId: queue.id, allowServiceChoice: v,
-              }))} />
-          </SettingRow>
-
-          <SettingRow
-            label="Prévenir à partir de"
-            hint="Nombre de personnes devant à partir duquel on envoie la première notification."
-          >
-            <select className="select" value={queue.notify_ahead_threshold} disabled={!canManage}
-              onChange={(e) => run(() => updateQueueSettings({
-                queueId: queue.id, notifyAheadThreshold: Number(e.target.value),
-              }))}>
-              {[1, 2, 3, 4, 5].map((n) => (
-                <option key={n} value={n}>{n} personne{n > 1 ? 's' : ''}</option>
-              ))}
-            </select>
-          </SettingRow>
-
-          <SettingRow
-            label="Client absent"
-            hint="Ce que fait le bouton « Absent » par défaut. Vous pourrez toujours choisir au cas par cas."
-          >
-            <select className="select" value={queue.absent_policy} disabled={!canManage}
-              onChange={(e) => run(() => updateQueueSettings({
-                queueId: queue.id, absentPolicy: e.target.value as never,
-              }))}>
-              <option value="move_back">Le reculer dans la file</option>
-              <option value="hold">Le mettre de côté</option>
-              <option value="remove">Le sortir de la file</option>
-            </select>
-          </SettingRow>
-
-          {queue.absent_policy === 'move_back' && (
-            <SettingRow label="Reculer de">
-              <select className="select" value={queue.absent_move_back_by} disabled={!canManage}
-                onChange={(e) => run(() => updateQueueSettings({
-                  queueId: queue.id, absentMoveBackBy: Number(e.target.value),
-                }))}>
-                {[1, 2, 3, 4, 5, 8, 10].map((n) => (
-                  <option key={n} value={n}>{n} place{n > 1 ? 's' : ''}</option>
-                ))}
-              </select>
-            </SettingRow>
-          )}
-
-          <SettingRow
-            label="Expiration automatique"
-            hint="Un ticket oublié libère sa place au bout de ce délai."
-          >
-            <select className="select" value={queue.entry_ttl_minutes} disabled={!canManage}
-              onChange={(e) => run(() => updateQueueSettings({
-                queueId: queue.id, entryTtlMinutes: Number(e.target.value),
-              }))}>
-              {[60, 120, 180, 240, 360, 480, 720].map((n) => (
-                <option key={n} value={n}>{n / 60} h</option>
-              ))}
-            </select>
-          </SettingRow>
-        </Section>
-      )}
-
-      {/* ---------------- Horaires ---------------- */}
-      <Section title="Horaires" description="Indicatifs : la file s’ouvre et se ferme d’un geste.">
-        <div className={styles.hours}>
-          {days.map((day, i) => (
-            <div key={day.weekday} className={styles.hoursRow}>
-              <span className={styles.dayName}>{WEEKDAYS[day.weekday]}</span>
-              <Toggle
-                checked={!day.isClosed}
-                label={`Ouvert le ${WEEKDAYS[day.weekday]}`}
-                disabled={!canManage}
-                onChange={(v) => {
-                  const next = [...days];
-                  next[i] = { ...day, isClosed: !v };
-                  setDays(next); setHoursDirty(true);
-                }}
-              />
-              {day.isClosed ? (
-                <span className="t-small t-faint">Fermé</span>
-              ) : (
-                <>
-                  <input type="time" className="input" value={day.opensAt} disabled={!canManage}
-                    onChange={(e) => {
-                      const next = [...days];
-                      next[i] = { ...day, opensAt: e.target.value };
-                      setDays(next); setHoursDirty(true);
-                    }} />
-                  <input type="time" className="input" value={day.closesAt} disabled={!canManage}
-                    onChange={(e) => {
-                      const next = [...days];
-                      next[i] = { ...day, closesAt: e.target.value };
-                      setDays(next); setHoursDirty(true);
-                    }} />
-                </>
+          {/* ---------------- Avis Google ---------------- */}
+          <div id="avis-google" className={styles.anchor}>
+            <Section
+              title="Avis Google"
+              description="Proposé à la fin de chaque passage, à tous les clients, sans filtrage sur la satisfaction."
+            >
+              <SettingRow
+                label="Lien « Rédiger un avis »"
+                hint="Fiche Google de votre établissement → Demander des avis → copiez le lien court."
+                stacked
+              >
+                <input className="input" type="url" placeholder="https://g.page/r/…"
+                  aria-label="Lien « Rédiger un avis »"
+                  value={place.googleReviewUrl} disabled={!canManage}
+                  onChange={(e) => patchPlace('googleReviewUrl', e.target.value)} />
+              </SettingRow>
+              {place.googleReviewUrl && (
+                <SettingRow label="Vérifier le lien" hint="Ouvrez-le pour confirmer qu’il pointe bien chez vous.">
+                  <a className="btn btn--ghost btn--sm" href={place.googleReviewUrl}
+                    target="_blank" rel="noreferrer">Ouvrir</a>
+                </SettingRow>
               )}
+            </Section>
+          </div>
+
+          <SaveBar
+            dirty={placeDirty} pending={pending} saved={saved} error={error}
+            onReset={() => {
+              setPlace({
+                name: currentLocation.name,
+                addressLine1: currentLocation.address_line1 ?? '',
+                postalCode: currentLocation.postal_code ?? '',
+                city: currentLocation.city ?? '',
+                phone: currentLocation.phone ?? '',
+                mapsUrl: currentLocation.maps_url ?? '',
+                googleReviewUrl: currentLocation.google_review_url ?? '',
+              });
+              setPlaceDirty(false);
+            }}
+            onSave={() => run(() => updateLocation({
+              organizationId, locationId: currentLocation.id,
+              name: place.name.trim(),
+              addressLine1: place.addressLine1.trim() || null,
+              postalCode: place.postalCode.trim() || null,
+              city: place.city.trim() || null,
+              phone: place.phone.trim() || null,
+              mapsUrl: place.mapsUrl.trim() || null,
+              googleReviewUrl: place.googleReviewUrl.trim() || null,
+            }), () => setPlaceDirty(false))}
+          />
+
+          {/* ---------------- File ---------------- */}
+          {queue && (
+            <div id="file" className={styles.anchor}>
+              <Section
+                title="Fonctionnement de la file"
+                actions={queues.length > 1 ? (
+                  <div className={`seg ${styles.queueTabs}`} role="group" aria-label="File à régler">
+                    {queues.map((q) => (
+                      <a
+                        key={q.id}
+                        href={`/app/${orgSlug}/reglages?lieu=${currentLocation.id}&file=${q.id}`}
+                        aria-current={q.id === queue.id ? 'page' : undefined}
+                      >
+                        {q.name}
+                      </a>
+                    ))}
+                  </div>
+                ) : undefined}
+              >
+                <SettingRow label="Mode" hint="File commune, ou une file par professionnel.">
+                  <select className="select" value={queue.mode} disabled={!canManage} aria-label="Mode"
+                    onChange={(e) => run(() => updateQueueSettings({
+                      queueId: queue.id, mode: e.target.value as never,
+                    }))}>
+                    <option value="shared">File commune</option>
+                    <option value="per_staff">Une file par professionnel</option>
+                  </select>
+                </SettingRow>
+
+                <SettingRow
+                  label="Après « Terminer »"
+                  hint="Le suivant démarre tout seul, ou vous le lancez à la main."
+                >
+                  <select className="select" value={queue.advance_mode} disabled={!canManage}
+                    aria-label="Après « Terminer »"
+                    onChange={(e) => run(() => updateQueueSettings({
+                      queueId: queue.id, advanceMode: e.target.value as never,
+                    }))}>
+                    <option value="auto_serve">Le suivant passe en cours</option>
+                    <option value="call_next">Le suivant est seulement appelé</option>
+                  </select>
+                </SettingRow>
+
+                <SettingRow label="Demander le prénom" hint="Sinon, rejoindre ne demande rien du tout.">
+                  <Toggle checked={queue.ask_client_name} label="Demander le prénom" disabled={!canManage}
+                    onChange={(v) => run(() => updateQueueSettings({ queueId: queue.id, askClientName: v }))} />
+                </SettingRow>
+
+                {queue.ask_client_name && (
+                  <SettingRow label="Prénom obligatoire">
+                    <Toggle checked={queue.client_name_required} label="Prénom obligatoire" disabled={!canManage}
+                      onChange={(v) => run(() => updateQueueSettings({
+                        queueId: queue.id, clientNameRequired: v,
+                      }))} />
+                  </SettingRow>
+                )}
+
+                <SettingRow label="Choix du professionnel" hint="Le client peut demander quelqu’un en particulier.">
+                  <Toggle checked={queue.allow_staff_choice} label="Choix du professionnel" disabled={!canManage}
+                    onChange={(v) => run(() => updateQueueSettings({
+                      queueId: queue.id, allowStaffChoice: v,
+                    }))} />
+                </SettingRow>
+
+                <SettingRow label="Choix de la prestation">
+                  <Toggle checked={queue.allow_service_choice} label="Choix de la prestation" disabled={!canManage}
+                    onChange={(v) => run(() => updateQueueSettings({
+                      queueId: queue.id, allowServiceChoice: v,
+                    }))} />
+                </SettingRow>
+
+                <SettingRow
+                  label="Prévenir à partir de"
+                  hint="Nombre de personnes devant à partir duquel on envoie la première notification."
+                >
+                  <ThresholdRang
+                    value={queue.notify_ahead_threshold}
+                    disabled={!canManage}
+                    onChange={(n) => run(() => updateQueueSettings({
+                      queueId: queue.id, notifyAheadThreshold: n,
+                    }))}
+                  />
+                </SettingRow>
+
+                <SettingRow
+                  label="Client absent"
+                  hint="Ce que fait le bouton « Absent » par défaut. Vous pourrez toujours choisir au cas par cas."
+                >
+                  <select className="select" value={queue.absent_policy} disabled={!canManage}
+                    aria-label="Client absent"
+                    onChange={(e) => run(() => updateQueueSettings({
+                      queueId: queue.id, absentPolicy: e.target.value as never,
+                    }))}>
+                    <option value="move_back">Le reculer dans la file</option>
+                    <option value="hold">Le mettre de côté</option>
+                    <option value="remove">Le sortir de la file</option>
+                  </select>
+                </SettingRow>
+
+                {queue.absent_policy === 'move_back' && (
+                  <SettingRow label="Reculer de">
+                    <select className="select" value={queue.absent_move_back_by} disabled={!canManage}
+                      aria-label="Reculer de"
+                      onChange={(e) => run(() => updateQueueSettings({
+                        queueId: queue.id, absentMoveBackBy: Number(e.target.value),
+                      }))}>
+                      {[1, 2, 3, 4, 5, 8, 10].map((n) => (
+                        <option key={n} value={n}>{n} place{n > 1 ? 's' : ''}</option>
+                      ))}
+                    </select>
+                  </SettingRow>
+                )}
+
+                <SettingRow
+                  label="Expiration automatique"
+                  hint="Un ticket oublié libère sa place au bout de ce délai."
+                >
+                  <select className="select" value={queue.entry_ttl_minutes} disabled={!canManage}
+                    aria-label="Expiration automatique"
+                    onChange={(e) => run(() => updateQueueSettings({
+                      queueId: queue.id, entryTtlMinutes: Number(e.target.value),
+                    }))}>
+                    {[60, 120, 180, 240, 360, 480, 720].map((n) => (
+                      <option key={n} value={n}>{n / 60} h</option>
+                    ))}
+                  </select>
+                </SettingRow>
+              </Section>
             </div>
-          ))}
-        </div>
-      </Section>
+          )}
 
-      <SaveBar
-        dirty={hoursDirty} pending={pending} saved={saved}
-        onSave={() => run(
-          () => updateOpeningHours({ organizationId, locationId: currentLocation.id, days }),
-          () => setHoursDirty(false),
-        )}
-      />
+          {/* ---------------- Horaires ---------------- */}
+          <div id="horaires" className={styles.anchor}>
+            <Section
+              title="Horaires"
+              description="Indicatifs : la file s’ouvre et se ferme d’un geste."
+              actions={canManage ? (
+                <button type="button" className="btn btn--ghost btn--sm" onClick={copyMonday}>
+                  Copier lundi sur toute la semaine
+                </button>
+              ) : undefined}
+            >
+              <div className={styles.hours}>
+                {days.map((day, i) => {
+                  const name = WEEKDAYS[day.weekday] ?? '';
+                  const lower = name.toLowerCase();
+                  return (
+                    <div key={day.weekday} className={styles.day} data-closed={day.isClosed ? '1' : undefined}>
+                      <span className={styles.dayName}>{name}</span>
+                      <span className={styles.dayToggle}>
+                        <Toggle
+                          checked={!day.isClosed}
+                          label={`Ouvert le ${lower}`}
+                          disabled={!canManage}
+                          onChange={(v) => patchDay(i, { isClosed: !v })}
+                        />
+                      </span>
+                      <span className={styles.dayMain}>
+                        {day.isClosed ? (
+                          <span className={styles.closedChip}>Fermé</span>
+                        ) : (
+                          <>
+                            <TimeField
+                              value={day.opensAt}
+                              disabled={!canManage}
+                              aria-label={`Ouverture du ${lower}`}
+                              onChange={(v) => patchDay(i, { opensAt: v })}
+                            />
+                            <span className={styles.dash} aria-hidden="true" />
+                            <TimeField
+                              value={day.closesAt}
+                              disabled={!canManage}
+                              aria-label={`Fermeture du ${lower}`}
+                              onChange={(v) => patchDay(i, { closesAt: v })}
+                            />
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {canManage && (
+                <p className={styles.hoursNote}>
+                  La copie du lundi ne rouvre aucun jour fermé, et rien n’est enregistré avant
+                  « Enregistrer ».
+                </p>
+              )}
+            </Section>
+          </div>
 
-      {/* ---------------- Prestations ---------------- */}
-      <Section
-        title="Prestations"
-        description="Proposées au client si vous avez activé le choix de la prestation."
-      >
-        {services.map((service) => (
-          <SettingRow
-            key={service.id}
-            label={service.name}
-            hint={[
-              service.duration_minutes ? `${service.duration_minutes} min` : null,
-              service.price_cents != null ? formatPrice(service.price_cents) : null,
-            ].filter(Boolean).join(' · ') || undefined}
-          >
-            {canManage && (
-              <button type="button" className="btn btn--quiet btn--sm"
-                onClick={() => run(() => deleteService(organizationId, service.id))}>
-                Retirer
-              </button>
+          <SaveBar
+            dirty={hoursDirty} pending={pending} saved={saved}
+            onSave={() => run(
+              () => updateOpeningHours({ organizationId, locationId: currentLocation.id, days }),
+              () => setHoursDirty(false),
             )}
-          </SettingRow>
-        ))}
-        {canManage && (
-          <div className={styles.addRow}>
-            <input className="input" placeholder="Nom de la prestation" value={newService.name}
-              onChange={(e) => setNewService({ ...newService, name: e.target.value })} />
-            <input className="input" type="number" min={1} max={600} placeholder="Durée (min)"
-              value={newService.duration}
-              onChange={(e) => setNewService({ ...newService, duration: e.target.value })} />
-            <button type="button" className="btn btn--solid"
-              disabled={pending || !newService.name.trim()}
-              onClick={() => run(
-                () => upsertService({
-                  organizationId, locationId: currentLocation.id,
-                  name: newService.name.trim(),
-                  durationMinutes: newService.duration ? Number(newService.duration) : null,
-                }),
-                () => setNewService({ name: '', duration: '' }),
-              )}>
-              Ajouter
-            </button>
+          />
+
+          {/* ---------------- Prestations ---------------- */}
+          <div id="prestations" className={styles.anchor}>
+            <Section
+              title="Prestations"
+              description="Proposées au client si vous avez activé le choix de la prestation."
+            >
+              {services.map((service) => (
+                <SettingRow
+                  key={service.id}
+                  label={service.name}
+                  hint={[
+                    service.duration_minutes ? `${service.duration_minutes} min` : null,
+                    service.price_cents != null ? formatPrice(service.price_cents) : null,
+                  ].filter(Boolean).join(' · ') || undefined}
+                >
+                  {canManage && (
+                    <button type="button" className="btn btn--quiet btn--sm"
+                      onClick={() => run(() => deleteService(organizationId, service.id))}>
+                      Retirer
+                    </button>
+                  )}
+                </SettingRow>
+              ))}
+              {services.length === 0 && (
+                <p className={styles.emptyLine}>
+                  Aucune prestation. Le client rejoint la file sans rien choisir.
+                </p>
+              )}
+              {canManage && (
+                <div className={styles.addRow}>
+                  <input className="input" placeholder="Nom de la prestation" value={newService.name}
+                    aria-label="Nom de la prestation"
+                    onChange={(e) => setNewService({ ...newService, name: e.target.value })} />
+                  <input className="input" type="number" min={1} max={600} placeholder="Durée (min)"
+                    aria-label="Durée en minutes"
+                    value={newService.duration}
+                    onChange={(e) => setNewService({ ...newService, duration: e.target.value })} />
+                  <button type="button" className="btn btn--solid"
+                    disabled={pending || !newService.name.trim()}
+                    onClick={() => run(
+                      () => upsertService({
+                        organizationId, locationId: currentLocation.id,
+                        name: newService.name.trim(),
+                        durationMinutes: newService.duration ? Number(newService.duration) : null,
+                      }),
+                      () => setNewService({ name: '', duration: '' }),
+                    )}>
+                    Ajouter
+                  </button>
+                </div>
+              )}
+            </Section>
           </div>
-        )}
-      </Section>
 
-      {/* ---------------- Données personnelles ---------------- */}
-      <Section
-        title="Données personnelles"
-        description="Nous collectons le strict minimum : aucun e-mail, aucun numéro de téléphone client."
-      >
-        <SettingRow
-          label="Durée de conservation"
-          hint="Au-delà, les prénoms sont effacés et les sessions supprimées. Seules des statistiques anonymes subsistent."
-        >
-          <select className="select" value={settings?.data_retention_days ?? 30} disabled={!canManage}
-            onChange={(e) => run(() => updateOrganizationSettings({
-              organizationId, dataRetentionDays: Number(e.target.value),
-            }))}>
-            {[7, 14, 30, 60, 90, 180, 365].map((n) => (
-              <option key={n} value={n}>{n} jours</option>
-            ))}
-          </select>
-        </SettingRow>
+          {/* ---------------- Données personnelles ---------------- */}
+          <div id="donnees" className={styles.anchor}>
+            <Section
+              title="Données personnelles"
+              description="Nous collectons le strict minimum : aucun e-mail, aucun numéro de téléphone client."
+            >
+              <SettingRow
+                label="Durée de conservation"
+                hint="Au-delà, les prénoms sont effacés et les sessions supprimées. Seules des statistiques anonymes subsistent."
+              >
+                <select className="select" value={settings?.data_retention_days ?? 30} disabled={!canManage}
+                  aria-label="Durée de conservation"
+                  onChange={(e) => run(() => updateOrganizationSettings({
+                    organizationId, dataRetentionDays: Number(e.target.value),
+                  }))}>
+                  {[7, 14, 30, 60, 90, 180, 365].map((n) => (
+                    <option key={n} value={n}>{n} jours</option>
+                  ))}
+                </select>
+              </SettingRow>
 
-        <SettingRow label="Le client peut quitter la file lui-même">
-          <Toggle checked={settings?.allow_client_leave ?? true} label="Quitter la file"
-            disabled={!canManage}
-            onChange={(v) => run(() => updateOrganizationSettings({
-              organizationId, allowClientLeave: v,
-            }))} />
-        </SettingRow>
+              <SettingRow label="Le client peut quitter la file lui-même">
+                <Toggle checked={settings?.allow_client_leave ?? true} label="Quitter la file"
+                  disabled={!canManage}
+                  onChange={(v) => run(() => updateOrganizationSettings({
+                    organizationId, allowClientLeave: v,
+                  }))} />
+              </SettingRow>
 
-        <SettingRow
-          label="Proposer l’avis Google en fin de passage"
-          hint="Nécessite un lien d’avis renseigné ci-dessus."
-        >
-          <Toggle checked={settings?.send_completion_review ?? true} label="Avis Google"
-            disabled={!canManage}
-            onChange={(v) => run(() => updateOrganizationSettings({
-              organizationId, sendCompletionReview: v,
-            }))} />
-        </SettingRow>
-      </Section>
-
-      {/* ---------------- Établissements ---------------- */}
-      {canManage && (
-        <Section title="Établissements" description="Chaque établissement a sa file, ses plaques et son lien d’avis.">
-          {locations.map((l) => (
-            <SettingRow key={l.id} label={l.name} hint={l.city ?? undefined}>
-              <a className="btn btn--ghost btn--sm" href={`/app/${orgSlug}/reglages?lieu=${l.id}`}>
-                Ouvrir
-              </a>
-            </SettingRow>
-          ))}
-          <div className={styles.addRow}>
-            <NewLocationForm organizationId={organizationId} onDone={() => router.refresh()} />
+              <SettingRow
+                label="Proposer l’avis Google en fin de passage"
+                hint="Nécessite un lien d’avis renseigné ci-dessus."
+              >
+                <Toggle checked={settings?.send_completion_review ?? true} label="Avis Google"
+                  disabled={!canManage}
+                  onChange={(v) => run(() => updateOrganizationSettings({
+                    organizationId, sendCompletionReview: v,
+                  }))} />
+              </SettingRow>
+            </Section>
           </div>
-        </Section>
-      )}
+
+          {/* ---------------- Établissements ---------------- */}
+          {canManage && (
+            <div id="etablissements" className={styles.anchor}>
+              <Section title="Établissements" description="Chaque établissement a sa file, ses plaques et son lien d’avis.">
+                {locations.map((l) => (
+                  <SettingRow key={l.id} label={l.name} hint={l.city ?? undefined}>
+                    {l.id === currentLocation.id ? (
+                      <span className="chip chip--signal">Affiché</span>
+                    ) : (
+                      <a className="btn btn--ghost btn--sm" href={`/app/${orgSlug}/reglages?lieu=${l.id}`}>
+                        Ouvrir
+                      </a>
+                    )}
+                  </SettingRow>
+                ))}
+                <div className={styles.addRow}>
+                  <NewLocationForm organizationId={organizationId} onDone={() => router.refresh()} />
+                </div>
+              </Section>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -491,6 +588,7 @@ function NewLocationForm({
   return (
     <>
       <input className="input" placeholder="Nom du nouvel établissement" value={name}
+        aria-label="Nom du nouvel établissement"
         onChange={(e) => setName(e.target.value)} />
       <button type="button" className="btn btn--solid" disabled={pending || !name.trim()}
         onClick={() => startTransition(async () => {

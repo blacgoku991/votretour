@@ -1,70 +1,187 @@
-.page { display: flex; flex-direction: column; gap: var(--sp-6); padding-top: var(--sp-5); }
+/* =====================================================================
+   ABONNEMENT — tableau des départs, jauges-rails, listes-rails.
+   On n'anime que transform (jauges) ; aucun dégradé, aucun flou.
+   ===================================================================== */
 
-.actionsRow { padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--line); }
+.page { display: flex; flex-direction: column; gap: var(--sp-8); padding-top: var(--sp-5); }
 
-.usage { display: flex; align-items: center; gap: var(--sp-3); min-width: 200px; }
+.block { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
-.usageTrack {
-  flex: 1;
-  height: 8px;
-  border-radius: 4px;
-  background: var(--chart-track);
-  overflow: hidden;
+/* Titre de bloc : étiquette précédée d'une encoche de 14 × 2 px. */
+.head { display: flex; align-items: center; gap: 10px; }
+.head::before {
+  content: '';
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
 }
-.usageFill {
-  display: block;
-  height: 100%;
-  border-radius: 0 4px 4px 0;
-  transition: width var(--dur-3) var(--ease-slat);
-}
-.usageLabel { font-size: 0.8125rem; color: var(--text-muted); white-space: nowrap; }
-
-.plans {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: var(--sp-3);
-  padding: var(--sp-5);
-}
-
-.plan {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-  padding: var(--sp-5);
-  border-radius: var(--r-card);
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-}
-.planCurrent { border-color: var(--accent); }
-
-.planHead { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
-
-.planPrice { display: flex; align-items: baseline; gap: 4px; }
-.planAmount {
-  font-variation-settings: 'wdth' 110, 'wght' 780;
-  font-size: 1.75rem;
-  letter-spacing: -0.03em;
-}
-
-.planFeatures {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 0.8125rem;
+.desc {
+  margin-top: 8px;
+  padding-left: 24px;
+  max-width: 60ch;
+  font-size: 0.875rem;
+  line-height: 1.45;
   color: var(--text-muted);
 }
-/* Une petite latte en guise de puce : le motif du produit, partout. */
-.planFeatures li { display: flex; align-items: center; gap: 8px; }
-.planFeatures li::before {
-  content: '';
-  width: 10px; height: 3px;
-  border-radius: 2px;
-  background: var(--accent);
-  flex: none;
-  opacity: 0.7;
+
+/* ---------------------------------------------------------------------
+   Tableau des départs
+   --------------------------------------------------------------------- */
+.board > li:last-child { border-bottom: 1px solid var(--line); }
+/* La ligne de l'offre en cours : deux fois plus d'air. */
+.board > li:global(.is-self) { padding-block: 28px; }
+.board > li:global(.is-self)::before { top: 36px; }
+
+.key {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+.key :global(.chip) { flex: none; }
+.keyMuted { color: var(--text-muted); }
+
+.text {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 56ch;
+}
+.text strong { color: var(--text); font-variation-settings: 'wght' 650; }
+
+.planText { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.limits { font-size: 0.9375rem; line-height: 1.5; color: var(--text); }
+.included { font-size: 0.8125rem; line-height: 1.45; color: var(--text-muted); }
+
+.planAside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
 }
 
-.plan .btn { margin-top: auto; }
+/* Prix en volet (FlapText static) */
+.price {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+  line-height: 1;
+}
+.price :global(.flap) {
+  font-variation-settings: 'wdth' 112, 'wght' 800;
+  letter-spacing: -0.02em;
+}
+.per { font-size: 0.8125rem; color: var(--text-muted); }
+
+@media (min-width: 720px) {
+  .board > li { align-items: center; }
+  .planAside { align-items: flex-end; text-align: right; }
+  .board > li > .price { justify-self: end; }
+}
+
+/* Jours d'essai restants */
+.trial { display: inline-flex; align-items: center; gap: 12px; }
+.trialFlap { --flap-size: 2.25rem; display: inline-flex; }
+.trialUnit {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  max-width: 16ch;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  line-height: 1.3;
+}
+@media (min-width: 720px) {
+  .trial { justify-self: end; }
+}
+
+/* ---------------------------------------------------------------------
+   Consommation : jauges-rails
+   --------------------------------------------------------------------- */
+.usage > li:last-child { border-bottom: 1px solid var(--line); }
+.usageRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'label value'
+    'gauge gauge';
+  align-items: baseline;
+  gap: 12px 16px;
+}
+.usageLabel {
+  grid-area: label;
+  font-variation-settings: 'wght' 640;
+  font-size: 0.9375rem;
+}
+.usageValue {
+  grid-area: value;
+  font-variation-settings: 'wdth' 112, 'wght' 760;
+  font-size: 1.0625rem;
+  white-space: nowrap;
+}
+.usageOf { color: var(--text-muted); font-variation-settings: 'wdth' 100, 'wght' 560; font-size: 0.875rem; }
+.usageRow[data-full='1'] .usageValue { color: var(--copper-500); }
+
+.gauge {
+  grid-area: gauge;
+  position: relative;
+  display: block;
+  height: 4px;
+  align-self: center;
+}
+/* La piste : un rail de 2 px. */
+.gauge::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.gauge[data-unlimited='1']::before {
+  background: none;
+  border-top: 2px dashed var(--rail);
+  height: 0;
+}
+/* Les crans : une place par unité autorisée. */
+.ticks { position: absolute; inset: 0; }
+.ticks i {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 10px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--line-strong);
+}
+/* Le remplissage : une latte de 4 px, en scaleX depuis la gauche. */
+.fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 2px;
+  background: var(--accent);
+  transform-origin: 0 50%;
+}
+.usageRow[data-full='1'] .fill { background: var(--copper-500); }
+@media (prefers-reduced-motion: no-preference) {
+  .fill { animation: gauge-in var(--dur-4) var(--ease-slat) calc(200ms + var(--i, 0) * 60ms) backwards; }
+}
+@keyframes gauge-in { from { transform: scaleX(0); } }
+
+@media (min-width: 720px) {
+  .usageRow {
+    grid-template-columns: 12rem minmax(0, 1fr) 7rem;
+    grid-template-areas: 'label gauge value';
+    align-items: center;
+    column-gap: 32px;
+  }
+  .usageValue { text-align: right; }
+}

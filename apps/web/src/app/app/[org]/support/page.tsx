@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { requireOrgAccess } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { PageHeader, Section } from '@/components/Page';
+import { PageHeader } from '@/components/Page';
 import { SupportForm } from './SupportForm';
 import { formatDateTime } from '@/lib/format';
 import styles from './support.module.css';
@@ -36,6 +36,10 @@ const HELP = [
   },
 ];
 
+/**
+ * SUPPORT — questions fréquentes accrochées au rail, formulaire sur une
+ * carte (rayon 14) aux champs sur rail, demandes en liste-rail. Sobre.
+ */
 export default async function SupportPage({ params }: { params: Promise<{ org: string }> }) {
   const { org } = await params;
   const access = await requireOrgAccess(org);
@@ -55,37 +59,52 @@ export default async function SupportPage({ params }: { params: Promise<{ org: s
         description="Les réponses aux questions les plus fréquentes, et un moyen de nous joindre."
       />
 
-      <Section title="Questions fréquentes">
-        <div className={styles.faq}>
-          {HELP.map((item) => (
-            <details key={item.q} className={styles.faqItem}>
-              <summary>{item.q}</summary>
-              <p>{item.a}</p>
-            </details>
-          ))}
-        </div>
-      </Section>
+      <div className={styles.grid}>
+        <section className={styles.block} aria-labelledby="faq">
+          <h2 id="faq" className={`t-label ${styles.head}`}>Questions fréquentes</h2>
+          <ul className={`rail-list ${styles.faq}`}>
+            {HELP.map((item) => (
+              <li key={item.q}>
+                <details className={styles.faqItem}>
+                  <summary>
+                    <span>{item.q}</span>
+                    <span className={styles.plus} aria-hidden="true" />
+                  </summary>
+                  <p>{item.a}</p>
+                </details>
+              </li>
+            ))}
+          </ul>
+        </section>
 
-      <Section title="Nous écrire" description="Nous répondons à l’adresse de votre compte.">
-        <div className={styles.formWrap}>
-          <SupportForm organizationId={access.organization.organization_id} />
-        </div>
-      </Section>
+        <section className={styles.block} aria-labelledby="ecrire">
+          <div>
+            <h2 id="ecrire" className={`t-label ${styles.head}`}>Nous écrire</h2>
+            <p className={styles.desc}>Nous répondons à l’adresse de votre compte.</p>
+          </div>
+          <div className={`card ${styles.card}`}>
+            <SupportForm organizationId={access.organization.organization_id} />
+          </div>
+        </section>
+      </div>
 
       {(tickets ?? []).length > 0 && (
-        <Section title="Vos demandes">
-          {(tickets ?? []).map((ticket) => (
-            <div key={ticket.id} className={styles.ticket}>
-              <div className={styles.ticketText}>
-                <p className={styles.ticketSubject}>{ticket.subject}</p>
-                <p className="t-micro t-faint">{formatDateTime(ticket.created_at)}</p>
-              </div>
-              <span className={ticket.status === 'resolved' ? 'chip chip--jade' : 'chip'}>
-                {STATUS_LABEL[ticket.status] ?? ticket.status}
-              </span>
-            </div>
-          ))}
-        </Section>
+        <section className={styles.block} aria-labelledby="demandes">
+          <h2 id="demandes" className={`t-label ${styles.head}`}>Vos demandes</h2>
+          <ol className={`rail-list ${styles.tickets}`}>
+            {(tickets ?? []).map((ticket) => (
+              <li key={ticket.id} data-status={ticket.status}>
+                <div className={styles.ticketText}>
+                  <p className={styles.ticketSubject}>{ticket.subject}</p>
+                  <p className={`t-num ${styles.ticketDate}`}>{formatDateTime(ticket.created_at)}</p>
+                </div>
+                <span className={ticket.status === 'resolved' ? 'chip chip--jade' : 'chip'}>
+                  {STATUS_LABEL[ticket.status] ?? ticket.status}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </section>
       )}
     </div>
   );

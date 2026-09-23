@@ -1,81 +1,334 @@
-.page { display: flex; flex-direction: column; gap: var(--sp-6); padding-top: var(--sp-5); }
+/* =====================================================================
+   ÉQUIPE — chaque personne est une latte accrochée au rail.
+   Aucun dégradé, aucun backdrop-filter.
+   ===================================================================== */
 
-.staffRow {
-  display: flex; align-items: center; gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-5);
-  border-bottom: 1px solid var(--line);
+.page { display: flex; flex-direction: column; gap: var(--sp-7); padding-top: var(--sp-5); }
+
+/* Aides : jamais sous 13 px (filet en attendant la nouvelle Page.tsx). */
+.page :global(.t-micro.t-faint) { font-size: 0.8125rem; line-height: 1.45; color: var(--text-muted); }
+
+/* Quota : « 3 / 12 professionnels », en chiffres de tableau. */
+.quota {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-raised);
 }
-.staffRow:last-of-type { border-bottom: 0; }
+.quotaNum {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.quotaSep { color: var(--text-faint); font-size: 1rem; }
+.quotaLbl { margin-left: 6px; font-size: 0.8125rem; color: var(--text-muted); }
 
-.avatar {
-  width: 38px; height: 38px; flex: none;
-  display: grid; place-items: center;
-  border-radius: 11px;
+/* ---------------------------------------------------------------------
+   Le rang : un rail, et une latte par personne
+   --------------------------------------------------------------------- */
+.rang {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 16px 16px 16px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rang::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  top: 16px;
+  bottom: 16px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.rang:empty { display: none; }
+
+.slat {
+  position: relative;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-areas:
+    'tile who controls'
+    'stats stats stats';
+  align-items: center;
+  gap: 10px 12px;
+  min-height: 64px;
+  padding: 12px 12px 12px 12px;
+  border-radius: var(--r-slat);
+  background: var(--ink-700);
+  box-shadow: var(--edge-light), 0 2px 0 var(--ink-1000);
+}
+/* L'encoche : du rail à la latte. */
+.slat::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 31px;
+  width: 22px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.slat[data-state='serving']::before { background: var(--accent); height: 4px; top: 30px; }
+.slat[data-state='off'] { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+.slat[data-state='off'] .tile { background: transparent; color: var(--text-muted); box-shadow: inset 0 0 0 1.5px var(--line-strong); }
+.slat[data-state='off'] .inlineInput,
+.slat[data-state='off'] .name { color: var(--text-muted); }
+
+/* Latte fantôme (ajout) et invitation en attente : pointillés. */
+.ghost,
+.pending {
+  background: transparent;
+  box-shadow: none;
+  border: 2px dashed var(--line-strong);
+  padding: 10px;
+}
+.ghost::before,
+.pending::before {
+  left: -24px;
+  background: none;
+  border-top: 2px dashed var(--line-strong);
+  height: 0;
+}
+.pending { border-color: color-mix(in oklab, var(--accent) 55%, transparent); }
+.pending::before { border-top-color: color-mix(in oklab, var(--accent) 55%, transparent); }
+
+.ghost { grid-template-columns: 40px minmax(0, 1fr); grid-template-areas: 'tile form'; align-items: start; }
+.ghost .addForm { grid-area: form; }
+
+/* Carreau d'initiales */
+.tile {
+  grid-area: tile;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 2px 0 color-mix(in oklab, var(--accent) 55%, var(--ink-1000));
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+}
+.tile[data-accent] { background: var(--accent); }
+.tileBone {
+  background: var(--bone-100);
+  color: var(--ink-1000);
+  box-shadow: 0 2px 0 var(--bone-500);
+}
+.tileGhost {
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+  border: 1.5px dashed var(--line-strong);
+  font-size: 1rem;
+}
+.pending .tileGhost { font-size: 0.8125rem; color: var(--text); }
+
+.who { grid-area: who; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-variation-settings: 'wdth' 104, 'wght' 680;
+  font-size: 1rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.you {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 6px;
   background: var(--accent-soft);
   color: var(--accent);
-  font-variation-settings: 'wdth' 106, 'wght' 740;
-  font-size: 0.75rem;
+  font-variation-settings: 'wdth' 92, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
-
-.staffText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.staffName { font-variation-settings: 'wght' 650; font-size: 0.9375rem; }
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.email { overflow-wrap: anywhere; }
+.meta :global(.chip) { height: 22px; font-size: 0.625rem; padding: 0 8px; }
 
 .inlineInput {
-  background: none; border: 1px solid transparent; border-radius: 8px;
-  padding: 3px 7px; margin-left: -7px;
-  font-variation-settings: 'wght' 650; font-size: 0.9375rem;
-  min-width: 0; width: 100%;
+  width: 100%;
+  min-width: 0;
+  margin-left: -7px;
+  padding: 3px 7px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text);
+  font-variation-settings: 'wdth' 104, 'wght' 680;
+  font-size: 1rem;
+  line-height: 1.25;
 }
 .inlineInput:hover { border-color: var(--line); }
 .inlineInput:focus { outline: none; border-color: var(--accent); background: var(--surface); }
 
-.staffControls { display: flex; align-items: center; gap: var(--sp-2); flex: none; }
+/* État et passages du jour */
+.stats {
+  grid-area: stats;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  font-variation-settings: 'wght' 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--jade-500); flex: none; }
+.dot[data-state='serving'] { background: var(--accent); }
+.dot[data-state='break'] { background: var(--copper-500); }
+.dot[data-state='away'] { background: var(--ardoise-500); }
+.dot[data-state='off'] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--text-faint); }
+
+.count { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.countNum {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.countLbl { font-size: 0.8125rem; color: var(--text-muted); }
+
+.controls { grid-area: controls; display: flex; align-items: center; gap: 10px; }
 
 .accentPicker {
   appearance: none;
-  width: 30px; height: 30px;
+  width: 28px;
+  height: 28px;
+  flex: none;
   border-radius: 50%;
-  border: 2px solid var(--surface-raised);
+  border: 3px solid var(--ink-700);
   box-shadow: 0 0 0 1px var(--line-strong);
   background: var(--accent);
   color: transparent;
   cursor: pointer;
   font-size: 0;
 }
+.accentPicker:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.accentPicker option { color: var(--text); background: var(--surface-raised); font-size: 0.875rem; }
 
-.addRow {
-  display: flex; gap: var(--sp-2); flex-wrap: wrap;
-  padding: var(--sp-4) var(--sp-5);
-  border-top: 1px solid var(--line);
-  background: var(--surface);
+/* Accès : le sélecteur de rôle à droite. */
+.slatAccess {
+  grid-template-columns: 40px minmax(0, 1fr);
+  grid-template-areas:
+    'tile who'
+    'role role';
 }
-.addRow .input { flex: 2 1 200px; }
-.addRow .select { flex: 1 1 150px; }
+.roleCtl { grid-area: role; min-width: 0; display: flex; }
+.roleCtl :global(.select) { min-height: 44px; }
+.roleCtl :global(.chip) { justify-self: start; }
 
+/* Formulaires d'ajout dans une latte fantôme */
+.addForm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.addForm :global(.input) { flex: 2 1 180px; min-width: 0; min-height: 44px; }
+.addForm :global(.select) { flex: 1 1 150px; min-width: 0; min-height: 44px; }
+.addForm :global(.btn) { flex: 0 0 auto; min-height: 44px; }
+@media (max-width: 479px) {
+  .addForm :global(.input), .addForm :global(.select), .addForm :global(.btn) { flex: 1 1 100%; }
+}
+
+@media (min-width: 760px) {
+  .rang { padding: 20px 20px 20px 48px; gap: 10px; }
+  .rang::before { left: 22px; top: 20px; bottom: 20px; }
+  .slat {
+    grid-template-columns: 40px minmax(0, 1fr) minmax(0, 300px) auto;
+    grid-template-areas: 'tile who stats controls';
+    gap: 16px;
+    padding: 12px 16px 12px 12px;
+  }
+  .slat::before { left: -26px; width: 26px; }
+  .stats {
+    padding-top: 0;
+    border-top: 0;
+    padding-left: 16px;
+    border-left: 1px solid var(--line);
+    align-self: stretch;
+  }
+  .slatAccess {
+    grid-template-columns: 40px minmax(0, 1fr) 220px;
+    grid-template-areas: 'tile who role';
+  }
+  .roleCtl :global(.select) { width: 100%; }
+  .roleCtl { justify-content: flex-end; }
+  .ghost { grid-template-columns: 40px minmax(0, 1fr); grid-template-areas: 'tile form'; }
+  .ghost::before, .pending::before { left: -28px; width: 26px; }
+}
+
+/* Lien d'invitation */
 .inviteResult {
   padding: var(--sp-4) var(--sp-5);
   border-top: 1px solid var(--line);
   background: var(--accent-soft);
-  display: flex; flex-direction: column; gap: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
 }
 .inviteUrl {
-  display: flex; align-items: center; gap: var(--sp-2);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
   border-radius: 10px;
   background: var(--surface-raised);
   min-width: 0;
 }
 .inviteUrl code {
-  flex: 1; min-width: 0;
+  flex: 1;
+  min-width: 0;
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 0.75rem;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.8125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+/* Légende des rôles */
 .roleLegend {
-  padding: var(--sp-4) var(--sp-5);
+  margin: 0;
+  padding: 16px 20px;
   border-top: 1px solid var(--line);
-  display: flex; flex-direction: column; gap: 4px;
   background: var(--surface);
+  display: grid;
+  gap: 10px;
 }
-.roleLegend strong { color: var(--text); font-variation-settings: 'wght' 660; }
+.roleLine { display: grid; gap: 2px; font-size: 0.8125rem; line-height: 1.45; }
+.roleLine dt { font-variation-settings: 'wght' 680; color: var(--text); }
+.roleLine dd { margin: 0; color: var(--text-muted); }
+@media (min-width: 760px) {
+  .roleLegend { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 32px; }
+  .roleLine { grid-template-columns: 120px minmax(0, 1fr); gap: 12px; }
+}

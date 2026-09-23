@@ -10,9 +10,12 @@ export function AccountActions() {
 
   return (
     <div className="stack g3">
+      <p className="t-small t-muted">
+        Vous êtes connecté sur cet appareil. Se déconnecter vous ramène à l’écran de connexion.
+      </p>
       <button
         type="button"
-        className="btn btn--ghost"
+        className="btn btn--ghost btn--block"
         disabled={pending}
         onClick={() => startTransition(async () => {
           await supabaseBrowser().auth.signOut();
@@ -22,7 +25,7 @@ export function AccountActions() {
       >
         {pending ? 'Déconnexion…' : 'Se déconnecter'}
       </button>
-      <p className="t-micro t-faint">
+      <p className="hint">
         Vous resterez connecté sur vos autres appareils. Pour tout déconnecter,
         changez votre mot de passe.
       </p>

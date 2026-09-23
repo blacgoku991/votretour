@@ -3,14 +3,16 @@ import { requireOrgAccess } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { PageHeader, Section, EmptyState } from '@/components/Page';
 import { STAFF_STATUS_LABEL, SOURCE_LABEL } from '@/lib/copy';
-import { formatDateTime, formatDuration, initials } from '@/lib/format';
+import { formatDurationBounded, formatTime } from '@/lib/format';
 import type { EntryStatus } from '@/lib/types';
+import { DayLabel } from './DayLabel';
 import styles from './history.module.css';
 
 export const metadata: Metadata = { title: 'Historique', robots: { index: false } };
 export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 50;
+const TZ = 'Europe/Paris';
 
 const FILTERS = [
   { key: 'tous', label: 'Tous', statuses: null },
@@ -19,6 +21,36 @@ const FILTERS = [
   { key: 'partis', label: 'Partis', statuses: ['cancelled', 'skipped'] },
 ] as const;
 
+/** Puce d'issue : jade Terminé, cuivre Absent, ardoise Parti, brique Retiré. */
+const TONE: Partial<Record<EntryStatus, 'jade' | 'copper' | 'ardoise' | 'brique' | 'signal'>> = {
+  completed: 'jade',
+  absent: 'copper',
+  expired: 'copper',
+  cancelled: 'ardoise',
+  skipped: 'brique',
+  serving: 'signal',
+};
+
+const dayKeyFmt = new Intl.DateTimeFormat('en-CA', {
+  timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+});
+const dayLabelFmt = new Intl.DateTimeFormat('fr-FR', {
+  timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short',
+});
+
+interface Entry {
+  public_id: string; client_name: string | null; status: string; source: string;
+  joined_at: string; service_started_at: string | null; completed_at: string | null;
+  staff_id: string | null; location_id: string;
+}
+
+/**
+ * HISTORIQUE — une chronologie accrochée au rail.
+ *
+ * Séparateurs de jour collants façon panneau de gare ; une ligne dense
+ * par passage (44 px sur ordinateur, deux lignes sur téléphone). Les
+ * durées passent par formatDurationBounded : jamais « 240 h 00 ».
+ */
 export default async function HistoryPage({
   params, searchParams,
 }: {
@@ -50,50 +82,69 @@ export default async function HistoryPage({
       .eq('organization_id', access.organization.organization_id),
   ]);
 
-  const rows = entries ?? [];
+  const rows = (entries ?? []) as Entry[];
   const staffById = new Map((staff ?? []).map((s) => [s.id, s]));
   const locationById = new Map((locations ?? []).map((l) => [l.id, l]));
+
+  // Regroupement par jour (heure de Paris), dans l'ordre de la requête.
+  const days: { key: string; label: string; rows: Entry[] }[] = [];
+  for (const entry of rows) {
+    const date = new Date(entry.joined_at);
+    const key = Number.isNaN(date.getTime()) ? 'inconnu' : dayKeyFmt.format(date);
+    let group = days[days.length - 1];
+    if (!group || group.key !== key) {
+      group = {
+        key,
+        label: key === 'inconnu' ? 'Date inconnue' : dayLabelFmt.format(date),
+        rows: [],
+      };
+      days.push(group);
+    }
+    group.rows.push(entry);
+  }
 
   return (
     <div className={`shell ${styles.page}`}>
       <PageHeader
         title="Historique"
         description="Tous les passages, dans l’ordre d’arrivée. Les prénoms disparaissent au-delà de votre durée de conservation."
-        actions={
-          <div className={styles.filters} role="group" aria-label="Filtrer">
-            {FILTERS.map((f) => (
-              <a key={f.key} href={`/app/${org}/historique?filtre=${f.key}`}
-                className={`${styles.filterBtn} ${f.key === filter.key ? styles.filterBtnActive : ''}`}
-                aria-current={f.key === filter.key ? 'true' : undefined}>
-                {f.label}
-              </a>
-            ))}
-          </div>
-        }
       />
 
-      <Section>
-        {rows.length === 0 ? (
+      <nav className={`seg ${styles.filters}`} aria-label="Filtrer les passages">
+        {FILTERS.map((f) => (
+          <a key={f.key} href={`/app/${org}/historique?filtre=${f.key}`}
+            aria-current={f.key === filter.key ? 'page' : undefined}>
+            {f.label}
+          </a>
+        ))}
+      </nav>
+
+      {rows.length === 0 ? (
+        <Section>
           <EmptyState
-            title="Rien à afficher"
+            title="Aucun passage sur cette période"
             description="Les passages apparaîtront ici dès que des clients auront rejoint votre file."
           />
-        ) : (
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th scope="col">Client</th>
-                  <th scope="col">Arrivée</th>
-                  <th scope="col">Attente</th>
-                  <th scope="col">Prestation</th>
-                  <th scope="col">Professionnel</th>
-                  <th scope="col">Origine</th>
-                  <th scope="col">Issue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((entry) => {
+        </Section>
+      ) : (
+        <div className={styles.timeline}>
+          <div className={styles.head} aria-hidden="true">
+            <span>Heure</span>
+            <span>Client</span>
+            <span>Attente</span>
+            <span>Prestation</span>
+            <span>Professionnel</span>
+            <span>Origine</span>
+            <span className={styles.headIssue}>Issue</span>
+          </div>
+
+          {days.map((day) => (
+            <section key={day.key} className={styles.day} aria-labelledby={`jour-${day.key}`}>
+              <h2 id={`jour-${day.key}`} className={`t-board ${styles.dayHead}`}>
+                <DayLabel dayKey={day.key} date={day.label} />
+              </h2>
+              <ol className={styles.rows}>
+                {day.rows.map((entry) => {
                   const wait = entry.service_started_at
                     ? (new Date(entry.service_started_at).getTime() - new Date(entry.joined_at).getTime()) / 1000
                     : null;
@@ -101,65 +152,73 @@ export default async function HistoryPage({
                     ? (new Date(entry.completed_at).getTime() - new Date(entry.service_started_at).getTime()) / 1000
                     : null;
                   const member = entry.staff_id ? staffById.get(entry.staff_id) : null;
+                  const status = entry.status as EntryStatus;
+                  const tone = TONE[status];
+                  const where = locationById.size > 1 ? locationById.get(entry.location_id)?.name : null;
+                  const waitText = formatDurationBounded(wait);
+                  const serviceText = formatDurationBounded(service);
+                  const sourceText = SOURCE_LABEL[entry.source] ?? entry.source;
+                  // Ligne 2 sur téléphone : seulement ce qui est connu.
+                  const meta = [
+                    waitText !== '—' ? `Attente ${waitText}` : null,
+                    serviceText !== '—' ? `Prestation ${serviceText}` : null,
+                    member?.display_name ?? null,
+                    sourceText,
+                  ].filter(Boolean).join(' · ');
 
                   return (
-                    <tr key={entry.public_id}>
-                      <th scope="row">
-                        <span className={styles.client}>
-                          <span className={styles.avatar}>{initials(entry.client_name)}</span>
-                          <span>
-                            {entry.client_name ?? <em className="t-faint">anonymisé</em>}
-                            {locationById.size > 1 && (
-                              <span className="t-micro t-faint">
-                                {' '}· {locationById.get(entry.location_id)?.name}
-                              </span>
-                            )}
-                          </span>
+                    <li key={entry.public_id} className={styles.row} data-tone={tone}>
+                      <span className={`t-num ${styles.time}`}>{formatTime(entry.joined_at)}</span>
+                      <span className={styles.client}>
+                        {entry.client_name
+                          ? <span className={styles.name}>{entry.client_name}</span>
+                          : <span className={`${styles.name} ${styles.anon}`}>Client</span>}
+                        {where && <span className={styles.where}>{where}</span>}
+                      </span>
+                      <span className={`t-num ${styles.meta}`}>{meta}</span>
+                      <span className={`t-num ${styles.cell}`}>
+                        <span className={styles.k}>Attente </span>{waitText}
+                      </span>
+                      <span className={`t-num ${styles.cell}`}>
+                        <span className={styles.k}>Prestation </span>{serviceText}
+                      </span>
+                      <span className={`${styles.cell} ${styles.cStaff}`}>
+                        <span className={styles.k}>Professionnel </span>{member?.display_name ?? '—'}
+                      </span>
+                      <span className={styles.cell}>
+                        <span className={styles.k}>Origine </span>{sourceText}
+                      </span>
+                      <span className={styles.issue}>
+                        <span className={`${styles.chip} chip`} data-tone={tone}>
+                          {STAFF_STATUS_LABEL[status] ?? entry.status}
                         </span>
-                      </th>
-                      <td className="t-num">{formatDateTime(entry.joined_at)}</td>
-                      <td className="t-num">{formatDuration(wait)}</td>
-                      <td className="t-num">{formatDuration(service)}</td>
-                      <td>{member?.display_name ?? '—'}</td>
-                      <td>{SOURCE_LABEL[entry.source] ?? entry.source}</td>
-                      <td>
-                        <StatusChip status={entry.status as EntryStatus} />
-                      </td>
-                    </tr>
+                      </span>
+                    </li>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Section>
+              </ol>
+            </section>
+          ))}
+        </div>
+      )}
 
       {(pageIndex > 0 || rows.length === PAGE_SIZE) && (
-        <div className={styles.pager}>
-          {pageIndex > 0 && (
+        <nav className={styles.pager} aria-label="Pages">
+          {pageIndex > 0 ? (
             <a className="btn btn--ghost btn--sm"
               href={`/app/${org}/historique?filtre=${filter.key}&page=${pageIndex - 1}`}>
-              Précédent
+              Plus récents
             </a>
-          )}
-          <span className="t-small t-muted">Page {pageIndex + 1}</span>
-          {rows.length === PAGE_SIZE && (
+          ) : <span />}
+          <span className={`t-num ${styles.pageNum}`}>Page {pageIndex + 1}</span>
+          {rows.length === PAGE_SIZE ? (
             <a className="btn btn--ghost btn--sm"
               href={`/app/${org}/historique?filtre=${filter.key}&page=${pageIndex + 1}`}>
-              Suivant
+              Plus anciens
             </a>
-          )}
-        </div>
+          ) : <span />}
+        </nav>
       )}
     </div>
   );
-}
-
-function StatusChip({ status }: { status: EntryStatus }) {
-  const className =
-    status === 'completed' ? 'chip chip--jade'
-    : status === 'absent' || status === 'expired' ? 'chip chip--copper'
-    : status === 'cancelled' || status === 'skipped' ? 'chip chip--brique'
-    : 'chip';
-  return <span className={className}>{STAFF_STATUS_LABEL[status]}</span>;
 }

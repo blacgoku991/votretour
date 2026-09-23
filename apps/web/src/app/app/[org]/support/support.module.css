@@ -1,49 +1,92 @@
-.page { display: flex; flex-direction: column; gap: var(--sp-6); padding-top: var(--sp-5); }
+/* =====================================================================
+   SUPPORT — FAQ accrochée au rail, formulaire sur carte, demandes en
+   liste-rail. Sans effet.
+   ===================================================================== */
 
-.faq { display: flex; flex-direction: column; }
+.page { display: flex; flex-direction: column; gap: var(--sp-8); padding-top: var(--sp-5); }
 
-.faqItem { border-bottom: 1px solid var(--line); }
-.faqItem:last-child { border-bottom: 0; }
+.grid { display: grid; gap: var(--sp-8); min-width: 0; }
+@media (min-width: 1100px) {
+  .grid { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 48px; align-items: start; }
+}
+
+.block { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.head { display: flex; align-items: center; gap: 10px; }
+.head::before { content: ''; width: 14px; height: 2px; border-radius: 2px; background: var(--rail); }
+.desc {
+  margin-top: 8px;
+  padding-left: 24px;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.card { border-radius: 14px; }
+
+/* ---------------------------------------------------------------------
+   Questions fréquentes : l'encoche devient vermillon à l'ouverture
+   --------------------------------------------------------------------- */
+.faq > li { padding: 0; }
+.faq > li:last-child { border-bottom: 1px solid var(--line); }
+.faq.faq > li::before { top: 23px; }
+.faq.faq > li:has(details[open])::before { background: var(--accent); height: 4px; top: 22px; }
+
 .faqItem summary {
-  padding: var(--sp-4) var(--sp-5);
-  cursor: pointer;
-  font-variation-settings: 'wght' 640;
-  font-size: 0.9375rem;
-  list-style: none;
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 48px;
+  padding: 12px 0;
+  cursor: pointer;
+  list-style: none;
+  font-variation-settings: 'wght' 640;
+  font-size: 0.9375rem;
+  line-height: 1.4;
 }
 .faqItem summary::-webkit-details-marker { display: none; }
-/* Une latte en guise de marqueur : elle pivote à l'ouverture. */
-.faqItem summary::before {
+/* Repère d'ouverture : un « + » en deux traits de rail. */
+.plus { position: relative; flex: none; width: 12px; height: 12px; }
+.plus::before,
+.plus::after {
   content: '';
-  width: 12px; height: 3px;
-  border-radius: 2px;
-  background: var(--accent);
-  flex: none;
-  transition: transform var(--dur-2) var(--ease-slat);
+  position: absolute;
+  left: 0;
+  top: 5px;
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--text-muted);
 }
-.faqItem[open] summary::before { transform: rotate(90deg); }
+.plus::after { transform: rotate(90deg); }
+.faqItem[open] .plus::before { background: var(--accent); }
+.faqItem[open] .plus::after { opacity: 0; }
+.faqItem summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 .faqItem p {
-  padding: 0 var(--sp-5) var(--sp-4) calc(var(--sp-5) + 24px);
-  font-size: 0.875rem;
-  color: var(--text-muted);
-  line-height: 1.6;
+  padding: 0 28px 16px 0;
   max-width: 68ch;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text-muted);
 }
 
-.formWrap { padding: var(--sp-5); }
-
-.ticket {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-5);
-  border-bottom: 1px solid var(--line);
+/* ---------------------------------------------------------------------
+   Vos demandes
+   --------------------------------------------------------------------- */
+.tickets > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
-.ticket:last-child { border-bottom: 0; }
+.tickets > li:last-child { border-bottom: 1px solid var(--line); }
+.tickets.tickets > li[data-status='resolved']::before { background: var(--jade-500); }
 .ticketText { min-width: 0; }
 .ticketSubject {
-  font-variation-settings: 'wght' 640; font-size: 0.9375rem;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-variation-settings: 'wght' 640;
+  font-size: 0.9375rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.ticketDate { margin-top: 2px; font-size: 0.8125rem; color: var(--text-muted); }
