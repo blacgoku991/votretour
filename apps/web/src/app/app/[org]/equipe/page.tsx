@@ -1,34 +1,24 @@
 import type { Metadata } from 'next';
 import { requireOrgAccess } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { startOfDayInZone } from '@/lib/day';
 import { TeamManager } from './TeamManager';
 
 export const metadata: Metadata = { title: 'Équipe', robots: { index: false } };
 export const dynamic = 'force-dynamic';
-
-/**
- * Début de la journée à Paris, en ISO UTC (même définition que le
- * compteur « aujourd'hui » de la File : minuit heure locale). Calcul de
- * requête côté serveur, jamais rendu tel quel dans la page.
- */
-function startOfTodayParis(now: Date): string {
-  const day = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(now);
-  const utcMidnight = new Date(`${day}T00:00:00Z`);
-  // Heure affichée à Paris quand il est minuit UTC = décalage (1 ou 2 h).
-  const offsetHours = Number(new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Paris', hour: '2-digit', hourCycle: 'h23',
-  }).format(utcMidnight));
-  return new Date(utcMidnight.getTime() - offsetHours * 3_600_000).toISOString();
-}
 
 export default async function TeamPage({ params }: { params: Promise<{ org: string }> }) {
   const { org } = await params;
   const access = await requireOrgAccess(org);
   const organizationId = access.organization.organization_id;
   const db = supabaseAdmin();
-  const since = startOfTodayParis(new Date());
+  // « Passages du jour » : depuis minuit à l'heure du commerce, comme le
+  // compteur « aujourd'hui » de la File (fuseau du premier établissement,
+  // comme les Statistiques).
+  const { data: firstLocation } = await db.from('locations')
+    .select('timezone').eq('organization_id', organizationId)
+    .order('created_at').limit(1).maybeSingle();
+  const since = startOfDayInZone(new Date(), firstLocation?.timezone ?? 'Europe/Paris').toISOString();
 
   const [{ data: staff }, { data: locations }, { data: members }, { data: quota }, { data: today }, { data: serving }] =
     await Promise.all([

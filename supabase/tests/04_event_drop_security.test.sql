@@ -118,6 +118,18 @@ begin
   end if;
   raise notice '  ok  un seul pass par ticket et par Event';
 
+  -- Numéro de vague : une émission = une vague. Les deux vagues de ce
+  -- test partagent la transaction ; on décale la seconde d'une minute.
+  update public.event_access_passes set issued_at = issued_at + interval '1 minute'
+  where event_id = v_event and queue_entry_id = v_entry2;
+  if public.event_pass_wave(v_event, (select issued_at from public.event_access_passes
+       where event_id = v_event and queue_entry_id = v_entry1)) <> 1
+     or public.event_pass_wave(v_event, (select issued_at from public.event_access_passes
+       where event_id = v_event and queue_entry_id = v_entry2)) <> 2 then
+    raise exception 'ÉCHEC: numéro de vague faux';
+  end if;
+  raise notice '  ok  le numéro de vague d''un pass est compté en base';
+
   -- Validation du premier pass : atomique et à usage unique.
   v_res := public.redeem_event_pass(v_hash, v_owner);
   if v_res ->> 'status' <> 'redeemed' then
@@ -175,6 +187,16 @@ begin
   exception when insufficient_privilege then
     execute 'reset role';
     raise notice '  ok  anon ne peut pas émettre de pass Event';
+  end;
+
+  begin
+    execute 'set local role anon';
+    perform public.event_pass_wave(v_event, now());
+    execute 'reset role';
+    raise exception 'ÉCHEC: anon a pu compter les vagues d''un Event';
+  exception when insufficient_privilege then
+    execute 'reset role';
+    raise notice '  ok  anon ne peut pas compter les vagues d''un Event';
   end;
 end
 $$;

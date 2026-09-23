@@ -42,7 +42,7 @@ export default async function TVPage({
     <div className={`shell ${styles.page}`}>
       <PageHeader
         title="Écran TV"
-        description="La file en grand, au mur de votre salon : qui est au comptoir, combien attendent, et les places à suivre, sans aucun prénom complet. L’aperçu ci-dessous est l’écran réel, en direct."
+        description="La file en grand, au mur de votre salon : qui est au comptoir (le prénom que le client a saisi, pour qu’il se reconnaisse), combien attendent, et les places à suivre en initiales seulement. L’aperçu ci-dessous est l’écran réel, en direct."
         actions={
           <a className="btn btn--signal" href={screenHref}>
             Ouvrir l’écran TV
