@@ -31,6 +31,7 @@ interface Props {
   source: 'qr' | 'nfc' | 'appclip' | 'link';
   vapidPublicKey: string | null;
   activityLabel: string | null;
+  eventId?: string | null;
 }
 
 function phaseFor(ticket: TicketState | null): Phase {
@@ -44,7 +45,7 @@ function phaseFor(ticket: TicketState | null): Phase {
 }
 
 export function ClientExperience({
-  entryPoint, initialTicket, source, vapidPublicKey, activityLabel,
+  entryPoint, initialTicket, source, vapidPublicKey, activityLabel, eventId = null,
 }: Props) {
   const [ticket, setTicket] = useState<TicketState | null>(initialTicket);
   const [waitingCount, setWaitingCount] = useState(entryPoint.queue?.waitingCount ?? 0);
@@ -139,6 +140,7 @@ export function ClientExperience({
             staffId,
             serviceId,
             source,
+            eventId,
           }),
         });
         const payload = (await response.json()) as
@@ -156,7 +158,7 @@ export function ClientExperience({
         setBusy(false);
       }
     });
-  }, [entryPoint.slug, name, staffId, serviceId, source, refetch]);
+  }, [entryPoint.slug, name, staffId, serviceId, source, eventId, refetch]);
 
   const act = useCallback(
     (action: 'leave' | 'returning' | 'present') => {
