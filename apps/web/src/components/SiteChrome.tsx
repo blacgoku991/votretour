@@ -75,7 +75,7 @@ const FOOTER_GROUPS: ReadonlyArray<{ title: string; links: ReadonlyArray<FooterL
 ];
 
 /** Nombre de places dessinées derrière la tête de file (coupées à gauche sur petit écran). */
-const QUEUE_MARKS = 18;
+const QUEUE_MARKS = 26;
 
 /**
  * Pied « fin de file » : le rail court sur toute la largeur, les places
@@ -140,7 +140,7 @@ export function SiteFooter() {
         </div>
 
         <p className={styles.legal}>
-          © {year} Rangvia · Fait pour les commerces sans rendez-vous
+          © {year} Rangvia · Fait pour les commerces sans rendez‑vous
         </p>
       </div>
     </footer>

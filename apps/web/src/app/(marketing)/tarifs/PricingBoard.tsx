@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { FlapText } from '@/components/FlapNumber';
+import { FlapNumber, FlapText } from '@/components/FlapNumber';
 import styles from '../../marketing.module.css';
 
 /**
@@ -71,6 +71,16 @@ export function PricingBoard({ plans }: { plans: PublicPlan[] }) {
   const [period, setPeriod] = useState<Period>('month');
 
   const bestOffer = Math.max(0, ...plans.map(monthsOffered));
+  // Une seule largeur de prix pour TOUT le tableau (toutes offres, deux
+  // périodes) : « € /MOIS HT » tombe à la même abscisse sur chaque ligne,
+  // et le prix ne change pas de largeur quand il tombe.
+  const boardCells = Math.max(
+    1,
+    ...plans.flatMap((p) => [
+      priceParts(p.price_month_cents, p.currency).amount.length,
+      priceParts(p.price_year_cents, p.currency).amount.length,
+    ]),
+  );
 
   return (
     <div className={styles.board}>
@@ -97,13 +107,6 @@ export function PricingBoard({ plans }: { plans: PublicPlan[] }) {
           const price = priceParts(cents, plan.currency);
           const yearly = priceParts(plan.price_year_cents, plan.currency);
           const offered = monthsOffered(plan);
-          // Une ligne garde le même nombre de cases pour les deux périodes :
-          // le prix ne change pas de largeur quand il tombe (19 → 190 : la
-          // case vide de gauche reçoit le chiffre des centaines).
-          const cells = Math.max(
-            priceParts(plan.price_month_cents, plan.currency).amount.length,
-            yearly.amount.length,
-          );
           const unit = period === 'month' ? '/mois HT' : '/an HT';
           const spoken = `${price.full} ${period === 'month' ? 'par mois' : 'par an'}, hors taxes`;
           return (
@@ -113,16 +116,20 @@ export function PricingBoard({ plans }: { plans: PublicPlan[] }) {
                   <span className="t-board">{plan.name}</span>
                   {featured && <span className={`chip chip--signal ${styles.planChip}`}>Le plus choisi</span>}
                 </h2>
-                <p className={styles.price}>
-                  <FlapText
-                    static
-                    fixed
-                    tile
-                    text={price.amount.padStart(cells, ' ')}
-                    label={spoken}
-                    size="2.5rem"
-                    stagger={36}
-                  />
+                <p
+                  className={styles.price}
+                  style={{ ['--cells' as string]: boardCells } as React.CSSProperties}
+                >
+                  {/* Chiffres calés à droite dans une colonne de largeur fixe :
+                      aucune tuile vide. Prix entier : cellules comptées depuis
+                      la droite (19 → 190 : les unités restent les unités). */}
+                  <span className={styles.priceDigits}>
+                    {cents % 100 === 0 ? (
+                      <FlapNumber static tile value={cents / 100} label={spoken} size="1em" />
+                    ) : (
+                      <FlapText static fixed tile text={price.amount} label={spoken} size="1em" stagger={36} />
+                    )}
+                  </span>
                   <span className={styles.priceUnit} aria-hidden="true">
                     <span className={styles.priceSymbol}>{price.symbol}</span>
                     <span className={styles.pricePer}>{unit}</span>

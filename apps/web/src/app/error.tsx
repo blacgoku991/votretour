@@ -9,8 +9,8 @@ import styles from './status.module.css';
 /** Une place a glissé de la file : le reste tient, rien n'est perdu. */
 const SLATS: FloorSlat[] = [
   { id: 'a', state: 'wait' },
-  { id: 'b', state: 'fallen' },
-  { id: 'c', state: 'wait' },
+  { id: 'b', state: 'wait' },
+  { id: 'c', state: 'fallen' },
 ];
 
 /**
@@ -43,7 +43,7 @@ export default function ErrorScreen({
 
         <div className={`shell ${styles.body}`}>
           <div className={styles.text}>
-            <p className="t-label">Incident</p>
+            <p className="t-kicker"><span className="t-kicker__num">500</span> Incident</p>
             <h1 className={`t-display ${styles.title}`}>Quelque chose a coincé.</h1>
             <p className={styles.lead}>
               Votre place n&apos;est pas perdue : les positions sont enregistrées côté

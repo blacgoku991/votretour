@@ -14,11 +14,11 @@ export interface TocItem {
  * en cours de lecture devient la latte vermillon.
  *
  * Un seul IntersectionObserver, bande de lecture à 40 % du haut de l'écran
- * (rootMargin '-40% 0px -55% 0px'). Rien n'est actif au rendu serveur ;
- * l'état n'est mis à jour qu'au changement de section, jamais par image.
+ * (rootMargin '-40% 0px -55% 0px'). En haut de page, la première entrée
+ * est active (la section 01 n'a pas encore atteint la bande) ; l'état n'est mis à jour qu'au changement de section, jamais par image.
  */
 export function LegalToc({ items }: { items: TocItem[] }) {
-  const [active, setActive] = useState<string | null>(null);
+  const [active, setActive] = useState<string | null>(items[0]?.id ?? null);
 
   useEffect(() => {
     if (typeof IntersectionObserver === 'undefined') return;

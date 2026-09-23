@@ -22,14 +22,19 @@
   border-radius: 8px;
 }
 
-/* Le bloc (scène + texte) est centré dans la hauteur restante : pas de
-   moitié basse vide sur téléphone. */
+/* Téléphone : le bloc part du haut, à distance mesurée du Wordmark (le
+   centrage laissait ~120 px vides au-dessus et ~170 px dessous).
+   Ordinateur : centré dans la hauteur restante. */
 .stage {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding-bottom: var(--site-header-h);
+  justify-content: flex-start;
+  padding-top: var(--sp-5);
+  padding-bottom: var(--sp-9);
+}
+@media (min-width: 1024px) {
+  .stage { justify-content: center; padding-top: 0; padding-bottom: var(--site-header-h); }
 }
 
 /* Mobile : la scène en bandeau pleine largeur, au-dessus du texte. */

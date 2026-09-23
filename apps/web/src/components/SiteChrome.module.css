@@ -12,7 +12,9 @@
   top: 0;
   z-index: 50;
   height: var(--site-header-h);
-  background: color-mix(in oklab, var(--surface) 96%, transparent);
+  /* Opaque : à 96 %, les grands titres clairs transparaissaient en fantôme
+     derrière le Wordmark et les liens (un « verre » raté). */
+  background: var(--surface);
 }
 /* Le filet bas : un calque, pour ne rien ajouter à la hauteur. */
 .header::after {
@@ -62,7 +64,6 @@
   font-variation-settings: 'wdth' 100, 'wght' 580;
   color: var(--text-muted);
   white-space: nowrap;
-  transition: color var(--dur-1) var(--ease-out);
 }
 /* La latte : 14 × 2 px sous le libellé, vermillon. */
 .navLink::after {
@@ -102,10 +103,17 @@
   .loginText { display: none; }
 }
 .open { white-space: nowrap; }
+/* Mobile : les deux seules actions de l'en-tête gardent une cible de
+   44 px (l'en-tête de 56 px le permet sans changer sa hauteur). */
+@media (max-width: 759px) {
+  .login, .open { min-height: 44px; }
+}
 
 @media (prefers-reduced-motion: no-preference) {
   .header::after { transition: opacity var(--dur-2) var(--ease-out); }
+  .navLink { transition: color var(--dur-1) var(--ease-out); }
   .navLink::after { transition: transform 160ms var(--ease-out); }
+  .columnLink { transition: color var(--dur-1) var(--ease-out); }
 }
 
 /* ---------------------------------------------------------------------
@@ -114,6 +122,8 @@
 .footer {
   margin-top: auto;
   background: var(--floor);
+  /* Filet : sépare le pied d'une bande sur le même sol (fin de /tarifs). */
+  border-top: 1px solid var(--line);
   padding-top: var(--sp-9);
   padding-bottom: var(--sp-7);
 }
@@ -142,32 +152,35 @@
 .queue {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 12px;
   height: 44px;
   padding-top: 14px;
   box-sizing: content-box;
   overflow: clip;
 }
-/* Une place : latte debout de 8 × 44, accrochée au rail par son encoche.
-   Elles s'estompent en s'éloignant de la tête. */
+/* Une place : mini-latte horizontale (28 × 10, comme les lattes du
+   produit), pendue au rail par son encoche verticale. Elles s'estompent en
+   s'éloignant de la tête. */
+.queue { align-items: center; }
 .mark {
   position: relative;
   flex: none;
-  width: 8px;
-  height: 44px;
-  border-radius: 4px;
+  width: 28px;
+  height: 10px;
+  border-radius: var(--r-slat);
   background: var(--slat);
   box-shadow: 0 2px 0 var(--slat-edge);
-  opacity: max(0.12, calc(0.95 - var(--i, 0) * 0.07));
+  opacity: max(0.2, calc(0.95 - var(--i, 0) * 0.04));
 }
-/* Son encoche : du rail jusqu'à la place. */
+/* Son encoche : du rail (14 px au-dessus de la file, + 17 px jusqu'au
+   milieu de la rangée) jusqu'à la place. */
 .mark::before {
   content: '';
   position: absolute;
-  left: 3px;
-  top: -14px;
+  left: 6px;
+  top: -31px;
   width: 2px;
-  height: 14px;
+  height: 31px;
   background: var(--rail);
 }
 
@@ -249,7 +262,6 @@
   min-height: 36px;
   font-size: 0.9375rem;
   color: var(--text-muted);
-  transition: color var(--dur-1) var(--ease-out);
 }
 .columnLink:hover { color: var(--text); }
 

@@ -94,6 +94,14 @@
   gap: 10px;
   line-height: 1;
 }
+.priceDigits {
+  flex: none;
+  display: inline-flex;
+  justify-content: flex-end;
+  font-size: 2.5rem;
+  /* --cells tuiles de 0.74em, espacées de 0.08em. */
+  width: calc(var(--cells, 4) * 0.82em - 0.08em);
+}
 .priceUnit {
   display: flex;
   flex-direction: column;
@@ -159,7 +167,12 @@
   border-radius: 2px;
   background: var(--rail);
 }
-@media (min-width: 1024px) {
+@media (min-width: 1024px) and (max-width: 1339px) {
+  /* Trop étroit pour une seule ligne « · » : colonnes à tirets, jamais un
+     séparateur orphelin en fin de ligne. */
+  .limits { grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr)); }
+}
+@media (min-width: 1340px) {
   .limits { display: flex; flex-wrap: wrap; gap: 4px 0; }
   .limits > li { padding-left: 0; white-space: nowrap; }
   .limits > li::before { display: none; }
@@ -311,6 +324,7 @@
 @media (prefers-reduced-motion: no-preference) {
   .faqItem::after { transition: transform var(--dur-2) var(--ease-out); }
   .faqIcon::after { transition: transform var(--dur-2) var(--ease-out); }
+  .tocLink { transition: color var(--dur-1) var(--ease-out); }
   .faqItem[open] .faqA { animation: faq-in var(--dur-2) var(--ease-out) both; }
 }
 @keyframes faq-in {
@@ -331,7 +345,7 @@
   position: relative;
   display: grid;
   gap: var(--sp-6);
-  padding-block: var(--sp-8) var(--sp-10);
+  padding-block: var(--sp-8);
 }
 @media (min-width: 900px) {
   .final { margin-top: var(--sp-11); }
@@ -339,7 +353,7 @@
     grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
     align-items: center;
     column-gap: var(--sp-9);
-    padding-block: var(--sp-11);
+    padding-block: var(--sp-10) var(--sp-9);
   }
 }
 .finalText { display: flex; flex-direction: column; align-items: flex-start; }
@@ -443,7 +457,6 @@
   font-size: 0.9375rem;
   line-height: 1.35;
   color: var(--text-muted);
-  transition: color var(--dur-1) var(--ease-out);
 }
 .tocLink:hover { color: var(--text); }
 .tocNum {
