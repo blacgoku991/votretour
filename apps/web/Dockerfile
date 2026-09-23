@@ -46,7 +46,8 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0
 
 # L'application ne tourne pas en root.
-RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001\nRUN mkdir -p /app/data/uploads && chown -R nextjs:nodejs /app/data
+RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
+RUN mkdir -p /app/data/uploads && chown -R nextjs:nodejs /app/data
 
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
