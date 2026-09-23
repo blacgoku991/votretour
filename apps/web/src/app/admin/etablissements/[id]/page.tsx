@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { formatDateTime, formatNumber } from '@/lib/format';
 import { ACTIVITY_LABEL } from '@/lib/copy';
-import { OrganizationControlPanel } from './OrganizationControlPanel';
+import { OrganizationControlPanelV2 } from './OrganizationControlPanelV2';
 import styles from '../../admin.module.css';
+import v2 from '../../admin-v2.module.css';
 
 export const metadata: Metadata = { title: 'Gérer établissement', robots: { index: false } };
 export const dynamic = 'force-dynamic';
@@ -31,15 +33,26 @@ export default async function OrganizationDetailPage({
     { data: staff },
     { data: plates },
     { data: subscription },
+    { data: orgSettings },
     { count: activeEntries },
     { count: completed7d },
     { count: notifications7d },
   ] = await Promise.all([
-    db.from('locations').select('id, name, city, is_active').eq('organization_id', id).order('created_at'),
+    db.from('locations').select(`
+      id, name, slug, address_line1, address_line2, postal_code, city,
+      country_code, phone, timezone, google_review_url, maps_url,
+      logo_url, cover_url, is_active
+    `).eq('organization_id', id).order('created_at'),
     db.from('queues').select('id, name, status, location_id').eq('organization_id', id).order('created_at'),
     db.from('staff').select('id, display_name, is_active, is_on_break').eq('organization_id', id).order('created_at'),
     db.from('plates').select('id, label, code, is_active, scan_count').eq('organization_id', id).order('created_at'),
     db.from('subscriptions').select('status, current_period_end, stripe_subscription_id, plans(name)').eq('organization_id', id).maybeSingle(),
+    db.from('organization_settings').select(`
+      default_locale, data_retention_days, ask_client_name, client_name_required,
+      allow_client_leave, show_people_ahead, show_estimated_wait,
+      notify_ahead_threshold, send_completion_review, brand_accent,
+      support_email, privacy_url, terms_url
+    `).eq('organization_id', id).maybeSingle(),
     db.from('queue_entries').select('id', { count: 'exact', head: true })
       .eq('organization_id', id).in('status', ['waiting','notified','returning','present','next','serving']),
     db.from('queue_entries').select('id', { count: 'exact', head: true })
@@ -70,9 +83,18 @@ export default async function OrganizationDetailPage({
             </p>
           </div>
         </div>
-        <span className={org.status === 'active' ? 'chip chip--jade' : 'chip chip--brique'}>
-          {org.status === 'active' ? 'Active' : 'Suspendue'}
-        </span>
+
+        <div className={v2.detailToolbar}>
+          <Link className="btn btn--ghost btn--sm" href={'/app/' + org.slug + '/file'}>
+            Espace commerce
+          </Link>
+          <Link className="btn btn--signal btn--sm" href={'/ecran/' + org.slug} target="_blank">
+            Ouvrir écran TV
+          </Link>
+          <span className={org.status === 'active' ? 'chip chip--jade' : 'chip chip--brique'}>
+            {org.status === 'active' ? 'Active' : 'Suspendue'}
+          </span>
+        </div>
       </header>
 
       <div className={styles.detailStats}>
@@ -84,48 +106,93 @@ export default async function OrganizationDetailPage({
         <DetailStat label="Plaques" value={formatNumber(plates?.length ?? 0)} />
       </div>
 
+      <section className={styles.adminCard}>
+        <div className={styles.adminCardHead}>
+          <div>
+            <span className={styles.cardKicker}>CONTROL CENTER</span>
+            <h2>Configuration complète</h2>
+          </div>
+        </div>
+
+        <OrganizationControlPanelV2
+          organization={{
+            id: org.id,
+            name: org.name,
+            activity: org.activity,
+            status: org.status,
+            logoUrl: org.logo_url,
+            suspendedReason: org.suspended_reason,
+          }}
+          settings={{
+            defaultLocale: orgSettings?.default_locale ?? 'fr',
+            dataRetentionDays: orgSettings?.data_retention_days ?? 30,
+            askClientName: orgSettings?.ask_client_name ?? true,
+            clientNameRequired: orgSettings?.client_name_required ?? false,
+            allowClientLeave: orgSettings?.allow_client_leave ?? true,
+            showPeopleAhead: orgSettings?.show_people_ahead ?? true,
+            showEstimatedWait: orgSettings?.show_estimated_wait ?? false,
+            notifyAheadThreshold: orgSettings?.notify_ahead_threshold ?? 2,
+            sendCompletionReview: orgSettings?.send_completion_review ?? true,
+            brandAccent: orgSettings?.brand_accent ?? 'signal',
+            supportEmail: orgSettings?.support_email ?? null,
+            privacyUrl: orgSettings?.privacy_url ?? null,
+            termsUrl: orgSettings?.terms_url ?? null,
+          }}
+          locations={(locations ?? []).map((location) => ({
+            id: location.id,
+            name: location.name,
+            slug: location.slug,
+            addressLine1: location.address_line1,
+            addressLine2: location.address_line2,
+            postalCode: location.postal_code,
+            city: location.city,
+            countryCode: location.country_code,
+            phone: location.phone,
+            timezone: location.timezone,
+            googleReviewUrl: location.google_review_url,
+            mapsUrl: location.maps_url,
+            logoUrl: location.logo_url,
+            coverUrl: location.cover_url,
+            isActive: location.is_active,
+          }))}
+          activeEntries={activeEntries ?? 0}
+          subscription={{
+            status: subscription?.status ?? null,
+            planName: plan?.name ?? null,
+            stripeSubscriptionId: subscription?.stripe_subscription_id ?? null,
+            periodEnd: subscription?.current_period_end ?? null,
+          }}
+        />
+      </section>
+
       <div className={styles.detailGrid}>
         <section className={styles.adminCard}>
           <div className={styles.adminCardHead}>
             <div>
-              <span className={styles.cardKicker}>CONTRÔLE</span>
-              <h2>Paramètres organisation</h2>
+              <span className={styles.cardKicker}>EXPLOITATION</span>
+              <h2>Files & équipe</h2>
             </div>
           </div>
-          <OrganizationControlPanel
-            organization={{
-              id: org.id,
-              name: org.name,
-              activity: org.activity,
-              status: org.status,
-              suspendedReason: org.suspended_reason,
-            }}
-            activeEntries={activeEntries ?? 0}
-            subscription={{
-              status: subscription?.status ?? null,
-              planName: plan?.name ?? null,
-              stripeSubscriptionId: subscription?.stripe_subscription_id ?? null,
-              periodEnd: subscription?.current_period_end ?? null,
-            }}
-          />
+          <div className={styles.resourceList}>
+            <Resource label="Files" value={queues?.length ?? 0}
+              detail={(queues ?? []).map((q) => `${q.name} (${q.status})`).join(' · ') || 'Aucune'} />
+            <Resource label="Professionnels" value={staff?.length ?? 0}
+              detail={(staff ?? []).map((s) => s.display_name).join(' · ') || 'Aucun'} />
+          </div>
         </section>
 
         <section className={styles.adminCard}>
           <div className={styles.adminCardHead}>
             <div>
-              <span className={styles.cardKicker}>STRUCTURE</span>
-              <h2>Ressources</h2>
+              <span className={styles.cardKicker}>HARDWARE</span>
+              <h2>Plaques & accès</h2>
             </div>
           </div>
           <div className={styles.resourceList}>
-            <Resource label="Établissements" value={locations?.length ?? 0}
-              detail={(locations ?? []).map((l) => l.name).join(' · ') || 'Aucun'} />
-            <Resource label="Files" value={queues?.length ?? 0}
-              detail={(queues ?? []).map((q) => `${q.name} (${q.status})`).join(' · ') || 'Aucune'} />
-            <Resource label="Professionnels" value={staff?.length ?? 0}
-              detail={(staff ?? []).map((s) => s.display_name).join(' · ') || 'Aucun'} />
             <Resource label="Plaques" value={plates?.length ?? 0}
               detail={(plates ?? []).map((p) => `${p.label} · ${p.scan_count} scans`).join(' · ') || 'Aucune'} />
+            <Resource label="Établissements" value={locations?.length ?? 0}
+              detail={(locations ?? []).map((l) => l.name).join(' · ') || 'Aucun'} />
           </div>
         </section>
       </div>

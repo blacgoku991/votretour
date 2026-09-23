@@ -1,11 +1,13 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { PageHeader, Section, EmptyState } from '@/components/Page';
-import { formatDate, formatNumber, relativeTime } from '@/lib/format';
+import { formatDate, formatNumber } from '@/lib/format';
 import { ACTIVITY_LABEL } from '@/lib/copy';
 import { OrganizationActions } from './OrganizationActions';
-import { CreateOrganizationButton } from './CreateOrganizationButton';
+import { CreateOrganizationV2 } from './CreateOrganizationV2';
 import styles from '../admin.module.css';
+import v2 from '../admin-v2.module.css';
 
 export const metadata: Metadata = { title: 'Établissements', robots: { index: false } };
 export const dynamic = 'force-dynamic';
@@ -20,7 +22,7 @@ export default async function AdminOrganizationsPage({
 
   let query = db
     .from('organizations')
-    .select('id, name, slug, activity, status, created_at, suspended_reason')
+    .select('id, name, slug, activity, logo_url, status, created_at, suspended_reason')
     .order('created_at', { ascending: false })
     .limit(200);
 
@@ -53,26 +55,23 @@ export default async function AdminOrganizationsPage({
   );
 
   return (
-    <div className={`shell ${styles.page}`}>
+    <div className={styles.page}>
       <PageHeader
         title="Établissements"
-        description={`${formatNumber(organizations?.length ?? 0)} organisations`}
-        actions={
-          <div className="row g2 wrap">
-            <CreateOrganizationButton />
-            <form className="row g2" method="get">
-            <input className="input" name="q" defaultValue={q ?? ''}
-              placeholder="Rechercher" aria-label="Rechercher une organisation" />
-            <select className="select" name="etat" defaultValue={etat ?? ''} aria-label="État">
-              <option value="">Tous</option>
-              <option value="actifs">Actifs</option>
-              <option value="suspendus">Suspendus</option>
-            </select>
-              <button type="submit" className="btn btn--solid btn--sm">Filtrer</button>
-            </form>
-          </div>
-        }
+        description={`${formatNumber(organizations?.length ?? 0)} organisations · identité, exploitation et sécurité`}
+        actions={<CreateOrganizationV2 />}
       />
+
+      <form className={styles.controlFilters} method="get">
+        <input className="input" name="q" defaultValue={q ?? ''}
+          placeholder="Rechercher une organisation" aria-label="Rechercher une organisation" />
+        <select className="select" name="etat" defaultValue={etat ?? ''} aria-label="État">
+          <option value="">Tous les états</option>
+          <option value="actifs">Actifs</option>
+          <option value="suspendus">Suspendus</option>
+        </select>
+        <button type="submit" className="btn btn--solid btn--sm">Filtrer</button>
+      </form>
 
       <Section>
         {(organizations ?? []).length === 0 ? (
@@ -85,7 +84,7 @@ export default async function AdminOrganizationsPage({
                   <th scope="col">Organisation</th>
                   <th scope="col">Activité</th>
                   <th scope="col">Offre</th>
-                  <th scope="col">Établissements</th>
+                  <th scope="col">Sites</th>
                   <th scope="col">Clients (7 j)</th>
                   <th scope="col">Inscription</th>
                   <th scope="col">État</th>
@@ -99,8 +98,17 @@ export default async function AdminOrganizationsPage({
                   return (
                     <tr key={org.id}>
                       <th scope="row" className={styles.orgName}>
-                        {org.name}
-                        <span className="t-micro t-faint"> /{org.slug}</span>
+                        <Link href={'/admin/etablissements/' + org.id} className={v2.orgIdentity}>
+                          <span className={v2.orgLogo}>
+                            {org.logo_url
+                              ? <img src={org.logo_url} alt="" />
+                              : org.name.slice(0, 2).toUpperCase()}
+                          </span>
+                          <span className={v2.orgIdentityText}>
+                            <strong>{org.name}</strong>
+                            <span>/{org.slug}</span>
+                          </span>
+                        </Link>
                       </th>
                       <td>{ACTIVITY_LABEL[org.activity] ?? org.activity}</td>
                       <td>

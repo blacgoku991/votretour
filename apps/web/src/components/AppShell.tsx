@@ -31,7 +31,7 @@ export function buildNav(orgSlug: string): NavItem[] {
     { href: `${base}/file`,          label: 'File',          short: 'File',    icon: 'rang', primary: true },
     { href: `${base}/equipe`,        label: 'Équipe',        short: 'Équipe',  icon: 'team', primary: true },
     { href: `${base}/statistiques`,  label: 'Statistiques',  short: 'Stats',   icon: 'chart', primary: true },
-    { href: `${base}/ecran`,         label: 'Écran TV',      short: 'TV',      icon: 'screen', primary: true },
+    { href: `/ecran/${orgSlug}`,      label: 'Écran TV',      short: 'TV',      icon: 'screen', primary: true },
     { href: `${base}/evenements`,    label: 'Événements',    short: 'Events',  icon: 'ticket' },
     { href: `${base}/historique`,    label: 'Historique',    short: 'Historique', icon: 'history' },
     { href: `${base}/notifications`, label: 'Notifications', short: 'Notifs',  icon: 'bell' },
