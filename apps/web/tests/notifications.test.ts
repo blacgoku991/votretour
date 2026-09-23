@@ -16,12 +16,12 @@ describe('textes de notification', () => {
 
   it("annonce qu'il ne reste qu'une personne et invite à revenir", () => {
     const copy = notificationCopy('ahead_one', { locationName: 'Barber House', peopleAhead: 1 });
-    expect(copy.body).toBe("Plus qu'une personne devant vous. Commencez à revenir.");
+    expect(copy.body).toBe("Plus qu’une personne devant vous. Commencez à revenir.");
   });
 
   it("annonce le tour du client", () => {
     const copy = notificationCopy('your_turn', { locationName: 'Barber House' });
-    expect(copy.title).toBe("C'est votre tour");
+    expect(copy.title).toBe("C’est votre tour");
     expect(copy.body).toContain('Présentez-vous maintenant');
   });
 
@@ -36,8 +36,8 @@ describe('affichage de la position', () => {
   it("n'affiche jamais de numéro de ticket, seulement des personnes", () => {
     expect(peopleAheadLabel(4)).toBe('4 personnes devant vous');
     expect(peopleAheadLabel(1)).toBe('1 personne devant vous');
-    expect(peopleAheadLabel(0)).toBe("C'est votre tour");
-    expect(peopleAheadLabel(-3)).toBe("C'est votre tour");
+    expect(peopleAheadLabel(0)).toBe("C’est votre tour");
+    expect(peopleAheadLabel(-3)).toBe("C’est votre tour");
   });
 
   it('accorde le singulier', () => {
@@ -54,7 +54,7 @@ describe('affichage de la position', () => {
  */
 describe('charge utile APNs', () => {
   const base = {
-    title: "C'est votre tour",
+    title: "C’est votre tour",
     body: 'Présentez-vous maintenant chez Barber House.',
     targetContentId: 'https://votretour.app/e/barber-house',
   };

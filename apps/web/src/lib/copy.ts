@@ -16,7 +16,7 @@ export const CLIENT_STATUS_LABEL: Record<EntryStatus, string> = {
   returning: 'Vous revenez',
   present: 'Vous êtes sur place',
   next: 'Vous êtes le prochain',
-  serving: "C'est votre tour",
+  serving: "C’est votre tour",
   completed: 'Visite terminée',
   absent: 'Vous avez été noté absent',
   skipped: 'Vous avez été retiré de la file',
@@ -49,7 +49,7 @@ export const QUEUE_STATUS_LABEL: Record<QueueStatus, string> = {
  * estimé : juste le nombre de personnes devant lui.
  */
 export function peopleAheadLabel(count: number): string {
-  if (count <= 0) return "C'est votre tour";
+  if (count <= 0) return "C’est votre tour";
   if (count === 1) return '1 personne devant vous';
   return `${count} personnes devant vous`;
 }
@@ -79,17 +79,17 @@ export function notificationCopy(
     case 'ahead_one':
       return {
         title: context.locationName,
-        body: "Plus qu'une personne devant vous. Commencez à revenir.",
+        body: "Plus qu’une personne devant vous. Commencez à revenir.",
       };
     case 'your_turn':
       return {
-        title: "C'est votre tour",
+        title: "C’est votre tour",
         body: `Présentez-vous maintenant chez ${context.locationName}.`,
       };
     case 'visit_completed':
       return {
         title: 'Merci pour votre visite',
-        body: `Merci d'être passé chez ${context.locationName}.`,
+        body: `Merci d’être passé chez ${context.locationName}.`,
       };
     case 'removed':
       return {
