@@ -52,6 +52,7 @@ export interface TvDeviceContext {
   queueName: string;
   eventId: string | null;
   event: {
+    id: string;
     name: string;
     status: string;
     heroTitle: string | null;
@@ -78,7 +79,7 @@ export async function getTvDeviceByToken(rawToken: string | null | undefined): P
       locations(name, slug, city),
       queues(name),
       event_campaigns(
-        name, status, hero_title, logo_url, cover_url,
+        id, name, status, hero_title, logo_url, cover_url,
         accent_hex, rules_text, qr_label
       )
     `)
@@ -120,6 +121,7 @@ export async function getTvDeviceByToken(rawToken: string | null | undefined): P
     queueName: queue.name,
     eventId: row.event_id ?? null,
     event: event ? {
+      id: event.id,
       name: event.name,
       status: event.status,
       heroTitle: event.hero_title ?? null,
