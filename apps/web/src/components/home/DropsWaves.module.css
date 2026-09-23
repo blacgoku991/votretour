@@ -96,7 +96,6 @@
 .entry {
   position: relative;
   margin-left: -22px;
-  margin-bottom: 64px;
   padding-left: 18px;
   color: var(--accent);
 }
@@ -112,6 +111,12 @@
   background: var(--accent);
 }
 
+/* Course réservée : la vague 1 avancée de 24 px garde 8 px au moins
+   entre son contour (7 px) et la barrière 1 ; le bras levé (≈ 98 px de
+   haut, 24 de large) ne touche jamais le libellé « Entrée ». */
+.barrier[data-n='1'] { margin-bottom: 22px; }
+.entry { margin-bottom: 112px; }
+
 /* État ouvert : bras levé, vague 1 qui avance vers l'entrée. */
 .waves[data-open='1'] .barrier[data-n='1'] .arm { transform: rotate(-78deg); }
 .waves[data-open='1'] .group[data-wave='1'] { transform: translateY(-24px); }
@@ -120,12 +125,22 @@
 .waves[data-open='1'] [data-wave='1'] [data-l='wait'] { opacity: 0; }
 .waves[data-open='1'] [data-wave='1'] [data-l='go'] { opacity: 1; }
 
+/* Modes statiques (sans JavaScript, mouvement réduit) : l'état final
+   directement, dès le rendu serveur (§5.12). */
+@media (scripting: none), (prefers-reduced-motion: reduce) {
+  .waves .barrier[data-n='1'] .arm { transform: rotate(-78deg); }
+  .waves .group[data-wave='1'] { transform: translateY(-24px); }
+  .waves .outlineOn { opacity: 1; }
+  .waves [data-wave='1'] .outline { opacity: 0; }
+  .waves [data-wave='1'] [data-l='wait'] { opacity: 0; }
+  .waves [data-wave='1'] [data-l='go'] { opacity: 1; }
+}
+
 /* ------------------------------------------------ Horizontal (≥ 720) */
 @media (min-width: 720px) {
   /* Place au-dessus pour les bras levés, au-dessous pour les étiquettes. */
   .waves { padding: 76px 0 34px; }
   .track {
-    width: fit-content;
     flex-direction: row;
     align-items: flex-end;
     gap: 10px;
@@ -140,6 +155,9 @@
     height: 2px;
   }
   .group::before { display: none; }
+  /* La file occupe toute la largeur : l'écart se reporte entre les
+     vagues, chaque barrière reste collée à son groupe. */
+  .group:is([data-wave='2'], [data-wave='1']) { margin-left: auto; }
   /* Étiquettes sous le rail : les bras levés montent, ils ne les croisent jamais. */
   .label {
     left: -7px;
@@ -157,7 +175,12 @@
     padding-bottom: 6px;
   }
   .entry::before { display: none; }
+  /* Horizontal : 7 (contour) + 24 (course) + 8 (marge) − 10 (gap). */
+  .barrier[data-n='1'] { margin-bottom: 0; margin-left: 29px; }
   .waves[data-open='1'] .group[data-wave='1'] { transform: translateX(24px); }
+}
+@media (min-width: 720px) and (scripting: none), (min-width: 720px) and (prefers-reduced-motion: reduce) {
+  .waves .group[data-wave='1'] { transform: translateX(24px); }
 }
 
 @media (prefers-reduced-motion: no-preference) {

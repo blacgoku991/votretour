@@ -52,10 +52,13 @@
 }
 @media (min-width: 1024px) {
   .clipInner {
-    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
     align-items: center;
     column-gap: 48px;
   }
+  /* Le téléphone prend sa place dans la colonne (échelle fixe, non animée). */
+  .clipVisual { padding-block: 56px 84px; }
+  .clipVisual > * { scale: 1.2; }
 }
 
 /* ---------------------------------------------- Tableau des départs */
@@ -94,9 +97,10 @@
   .dropsPass { padding: 0 24px 0 0; }
 }
 @media (min-width: 1024px) {
-  /* La file des vagues finit à l'entrée, sous le pass : ce qu'on y reçoit. */
-  .dropsWaves { display: flex; justify-content: flex-end; padding-right: 24px; }
-  .dropsInner { row-gap: 8px; }
+  /* Le rail part sous le texte et finit à l'entrée, sous le pass : ce
+     qu'on y reçoit. Les vagues se répartissent sur toute la largeur. */
+  .dropsWaves { padding-right: 24px; }
+  .dropsInner { row-gap: 24px; }
 }
 
 /* ------------------------------------------------------------ Offres */

@@ -121,7 +121,8 @@
   gap: 8px;
   padding-top: 4px;
 }
-.countLabel { font-size: 0.625rem; }
+.countLabel { font-size: 0.5625rem; text-align: center; text-wrap: balance; }
+@media (min-width: 720px) { .countLabel { font-size: 0.625rem; } }
 .rang {
   position: relative;
   display: flex;

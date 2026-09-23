@@ -78,7 +78,7 @@
   --volet-size: 5.5rem;
   --hud-x: 16px;
   --hud-y: 36px;
-  --poster-tx: calc(130px - 50vw);
+  --poster-tx: calc(146px - 50vw);
 
   position: sticky;
   top: var(--site-header-h);
@@ -159,6 +159,17 @@
   margin-top: calc(var(--pitch) * 0.5);
 }
 .seuil { opacity: 0; }
+/* Sous 1024 px, les cartes du HUD (notification, panneau pro, Merci)
+   recouvrent le sol : ses numéros s'estompent pour ne pas dépasser en
+   fragments autour d'elles. */
+@media (max-width: 1023px) {
+  .stage:is([data-notif='1'], [data-pro='on'], [data-pro='pressed'], [data-merci='1']) .floor :global(.floorNum) {
+    opacity: 0;
+  }
+}
+@media (max-width: 1023px) and (prefers-reduced-motion: no-preference) {
+  .floor :global(.floorNum) { transition: opacity var(--dur-2) var(--ease-out); }
+}
 /* La flaque est posée au sol DERRIÈRE le seuil (côté fond), pas sous
    la tête de file : on la voit entre les poteaux. */
 .stage .spill {
@@ -380,6 +391,10 @@
 .merciTitle { font-size: 1.375rem; }
 .merciPlace { margin-top: 6px; font-size: 0.875rem; color: var(--text-muted); }
 .merciBtn { white-space: nowrap; }
+/* Aucune ombre floue dans la scène (§5.15) : la tranche ::after de
+   btn--key porte seule l'épaisseur. */
+.stage .proKey,
+.stage .merciBtn { box-shadow: none; }
 
 /* Notification : entre depuis le bas (mobile). */
 .notifWrap {
@@ -794,6 +809,13 @@
   .slot:is([data-slot='s0'], [data-slot='s1'], [data-slot='s2'], [data-slot='vous']) :is(:global(.slot3d__face), :global(.slot3d__edge)) {
     animation: slat-unfold var(--dur-4) var(--ease-slat) calc(var(--i, 0) * 60ms + 200ms) backwards;
   }
+  /* « Il prend sa place » : à l'entrée dans self, la latte se déplie.
+     Même nom d'animation pour self, kept, back, turn et passed : le
+     passage de self à kept ne la rejoue donc pas. Le retour à ghost
+     (en remontant) reste instantané. */
+  .slot[data-slot='vous']:is([data-state='self'], [data-state='kept'], [data-state='back'], [data-state='turn'], [data-state='passed']) :is(:global(.slot3d__face), :global(.slot3d__edge)) {
+    animation: slat-unfold-self var(--dur-4) var(--ease-slat) both;
+  }
   .slot :global(.slot3d__face) { transform-origin: 0 50%; }
   .slot :global(.slot3d__edge) { transform-origin: 0 0; }
 }
@@ -824,7 +846,14 @@
   80% { opacity: 1; }
   100% { transform: translateZ(0.8px) translateY(calc(-6 * var(--pitch))); opacity: 0; }
 }
+@keyframes slat-unfold-self {
+  from { scale: 0 1; }
+  to { scale: 1 1; }
+}
 @keyframes slat-unfold {
   from { scale: 0 1; }
   to { scale: 1 1; }
 }
+
+/* Héros : étiquette sur deux lignes en mobile, lignes aérées. */
+.heroLabel { line-height: 1.5; }

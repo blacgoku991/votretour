@@ -360,8 +360,8 @@ export function Story(): React.JSX.Element {
       {/* ============================ HÉROS ============================ */}
       <div className={styles.hero}>
         <div className={styles.heroInner}>
-          <p className="t-label">
-            File d&apos;attente virtuelle ·&nbsp;barbiers, garages, ongleries, réparateurs
+          <p className={`t-label ${styles.heroLabel}`}>
+            File d&apos;attente virtuelle&nbsp;· barbiers, garages, ongleries, réparateurs
           </p>
           <h1 className={`t-hero ${styles.title}`}>Vos clients n&apos;attendent plus debout.</h1>
           <p className={`t-lead ${styles.lead}`}>
@@ -377,8 +377,10 @@ export function Story(): React.JSX.Element {
             </a>
           </div>
           <p className={`t-micro t-muted ${styles.micro}`}>
-            <span>Sans compte client</span> <span>·&nbsp;Sans application à installer</span>{' '}
-            <span>·&nbsp;Sans SMS payant</span>
+            {/* Le « · » reste collé au mot qui le précède : jamais en tête de ligne. */}
+            <span>Sans compte client&nbsp;·</span>{' '}
+            <span>Sans application à installer&nbsp;·</span>{' '}
+            <span>Sans SMS payant</span>
           </p>
         </div>
         <p className={styles.scrollHint} data-story-hint="">

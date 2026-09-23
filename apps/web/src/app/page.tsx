@@ -99,7 +99,7 @@ export default async function HomePage() {
             <div className={styles.clipText}>
               <p className="t-label">Sur iPhone</p>
               <h2 id="clip-titre" className={`t-display ${styles.h2}`}>
-                Rien à installer. Vraiment.
+                <span className={styles.nowrap}>Rien à installer.</span> Vraiment.
               </h2>
               <p className={`t-body t-muted ${styles.body}`}>
                 Votre client approche son iPhone de la plaque : l&apos;App Clip s&apos;ouvre en une
@@ -190,10 +190,11 @@ export default async function HomePage() {
                       </p>
                     </div>
                     <p className={`t-body t-muted ${styles.planVolumes}`}>
+                      {/* « · » collé au volume qui le précède : jamais en tête de ligne. */}
                       {volume(plan.max_locations, 'établissement', 'établissements', 'Établissements illimités')}
-                      {' ·\u00a0'}
+                      {'\u00a0· '}
                       {volume(plan.max_staff, 'professionnel', 'professionnels', 'Professionnels illimités')}
-                      {' ·\u00a0'}
+                      {'\u00a0· '}
                       {volume(plan.max_plates, 'plaque', 'plaques', 'Plaques illimitées')}
                     </p>
                     <Link
