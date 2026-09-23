@@ -13,6 +13,7 @@ const GROUPS = [
       { href: '/admin', label: 'Vue d’ensemble', icon: '◈' },
       { href: '/admin/etablissements', label: 'Établissements', icon: '▦' },
       { href: '/admin/evenements', label: 'Événements', icon: '◫' },
+      { href: '/admin/ecrans', label: 'Écrans TV', icon: '▣' },
       { href: '/admin/plaques', label: 'Plaques & NFC', icon: '⌁' },
     ],
   },
@@ -26,6 +27,7 @@ const GROUPS = [
   {
     label: 'Système',
     items: [
+      { href: '/admin/notifications', label: 'Notifications', icon: '◌' },
       { href: '/admin/erreurs', label: 'Incidents', icon: '!' },
       { href: '/admin/journal', label: 'Journal d’audit', icon: '≡' },
     ],
