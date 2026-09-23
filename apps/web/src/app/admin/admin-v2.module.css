@@ -538,3 +538,56 @@
   height:100%;
   object-fit:cover;
 }
+
+.pairingResult {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 170px;
+  gap: 18px;
+  align-items: center;
+  padding-top: 14px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(255,255,255,.07);
+}
+
+.pairingQr {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  padding: 10px;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.pairingQr img {
+  width: 150px;
+  height: 150px;
+  object-fit: contain;
+}
+
+.pairingQr span {
+  color: #11151b;
+  font-size: 9px;
+  font-weight: 760;
+  text-align: center;
+  line-height: 1.35;
+}
+
+.deviceOffline {
+  color: #8f98a5;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.deviceCard[data-status='revoked'] {
+  opacity: .58;
+}
+
+@media (max-width: 720px) {
+  .pairingResult {
+    grid-template-columns: 1fr;
+  }
+
+  .pairingQr {
+    width: fit-content;
+  }
+}
