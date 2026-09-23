@@ -22,9 +22,11 @@ export function ImageUploadField({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const upload = async (file: File) => {
+    if (uploading) return;
     setUploading(true);
     setError(null);
 
@@ -53,8 +55,15 @@ export function ImageUploadField({
       setError(uploadError instanceof Error ? uploadError.message : 'Upload impossible.');
     } finally {
       setUploading(false);
+      setDragging(false);
       if (inputRef.current) inputRef.current.value = '';
     }
+  };
+
+  const acceptDrop = (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) return;
+    void upload(file);
   };
 
   return (
@@ -68,10 +77,49 @@ export function ImageUploadField({
         )}
       </div>
 
-      <div className={styles.body}>
-        <div className={[styles.preview, purpose.includes('cover') ? styles.coverPreview : ''].join(' ')}>
-          {value ? <img src={value} alt="" /> : <span>Image</span>}
-        </div>
+      <div
+        className={[
+          styles.body,
+          styles.dropZone,
+          dragging ? styles.dragging : '',
+          uploading ? styles.uploading : '',
+        ].join(' ')}
+        onDragEnter={(event) => {
+          event.preventDefault();
+          if (!uploading) setDragging(true);
+        }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+          if (!uploading) setDragging(true);
+        }}
+        onDragLeave={(event) => {
+          event.preventDefault();
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setDragging(false);
+          }
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragging(false);
+          acceptDrop(event.dataTransfer.files);
+        }}
+      >
+        <button
+          type="button"
+          className={[
+            styles.preview,
+            purpose.includes('cover') ? styles.coverPreview : '',
+          ].join(' ')}
+          disabled={uploading}
+          onClick={() => inputRef.current?.click()}
+          aria-label={value ? 'Changer cette image' : 'Ajouter une image'}
+        >
+          {value ? <img src={value} alt="" /> : (
+            <span>{uploading ? 'Envoi…' : dragging ? 'Déposez' : 'Image'}</span>
+          )}
+          {dragging && <i className={styles.dropOverlay}>Déposer ici</i>}
+        </button>
 
         <div className={styles.controls}>
           <input
@@ -79,20 +127,21 @@ export function ImageUploadField({
             className={styles.hidden}
             type="file"
             accept="image/jpeg,image/png,image/webp"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void upload(file);
-            }}
+            capture={undefined}
+            onChange={(event) => acceptDrop(event.target.files)}
           />
 
-          <button
-            type="button"
-            className="btn btn--ghost btn--sm"
-            disabled={uploading}
-            onClick={() => inputRef.current?.click()}
-          >
-            {uploading ? 'Envoi…' : value ? 'Changer l’image' : 'Choisir une image'}
-          </button>
+          <div className={styles.buttonRow}>
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              disabled={uploading}
+              onClick={() => inputRef.current?.click()}
+            >
+              {uploading ? 'Envoi…' : value ? 'Changer l’image' : 'Choisir une image'}
+            </button>
+            <span className={styles.dropHint}>ou glisser-déposer</span>
+          </div>
 
           <input
             className="input"
@@ -102,7 +151,9 @@ export function ImageUploadField({
             inputMode="url"
           />
 
-          <small>{helper ?? 'JPG, PNG ou WebP · 8 Mo max.'}</small>
+          <small>
+            {helper ?? 'Photo iPhone/Android ou fichier PC · JPG, PNG, WebP · 8 Mo max.'}
+          </small>
         </div>
       </div>
 
