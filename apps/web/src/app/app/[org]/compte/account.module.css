@@ -15,6 +15,13 @@
 
 .card { border-radius: 14px; min-width: 0; }
 
+/* « Se déconnecter » : action secondaire, largeur du libellé ; pleine
+   largeur au téléphone seulement. */
+.signOut { align-self: flex-start; }
+@media (max-width: 479px) {
+  .signOut { align-self: stretch; width: 100%; }
+}
+
 .who {
   display: flex;
   align-items: center;

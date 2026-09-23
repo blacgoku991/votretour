@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
 import { supabaseBrowser } from '@/lib/supabase/browser';
+import styles from './account.module.css';
 
 export function AccountActions() {
   const router = useRouter();
@@ -15,7 +16,7 @@ export function AccountActions() {
       </p>
       <button
         type="button"
-        className="btn btn--ghost btn--block"
+        className={`btn btn--ghost ${styles.signOut}`}
         disabled={pending}
         onClick={() => startTransition(async () => {
           await supabaseBrowser().auth.signOut();

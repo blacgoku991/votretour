@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageHeader, Section, SettingRow, Toggle, SaveBar } from '@/components/Page';
 import { TimeField } from '@/components/TimeField';
@@ -82,17 +82,16 @@ export function SettingsManager({
   });
   const [placeDirty, setPlaceDirty] = useState(false);
 
-  const [days, setDays] = useState(
-    WEEKDAYS.map((_, index) => {
-      const existing = hours.find((h) => h.weekday === index);
-      return {
-        weekday: index,
-        isClosed: existing?.is_closed ?? index === 6,
-        opensAt: existing?.opens_at?.slice(0, 5) ?? '09:00',
-        closesAt: existing?.closes_at?.slice(0, 5) ?? '19:00',
-      };
-    }),
-  );
+  const initialDays = () => WEEKDAYS.map((_, index) => {
+    const existing = hours.find((h) => h.weekday === index);
+    return {
+      weekday: index,
+      isClosed: existing?.is_closed ?? index === 6,
+      opensAt: existing?.opens_at?.slice(0, 5) ?? '09:00',
+      closesAt: existing?.closes_at?.slice(0, 5) ?? '19:00',
+    };
+  });
+  const [days, setDays] = useState(initialDays);
   const [hoursDirty, setHoursDirty] = useState(false);
   const [newService, setNewService] = useState({ name: '', duration: '' });
 
@@ -107,6 +106,14 @@ export function SettingsManager({
       router.refresh();
     });
   };
+
+  // « Enregistré » s'efface de lui-même : la barre collante ne reste
+  // affichée que tant qu'il y a quelque chose à dire.
+  useEffect(() => {
+    if (!saved) return;
+    const timer = window.setTimeout(() => setSaved(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [saved]);
 
   const patchPlace = (field: keyof typeof place, value: string) => {
     setPlace((p) => ({ ...p, [field]: value }));
@@ -229,32 +236,6 @@ export function SettingsManager({
               )}
             </Section>
           </div>
-
-          <SaveBar
-            dirty={placeDirty} pending={pending} saved={saved} error={error}
-            onReset={() => {
-              setPlace({
-                name: currentLocation.name,
-                addressLine1: currentLocation.address_line1 ?? '',
-                postalCode: currentLocation.postal_code ?? '',
-                city: currentLocation.city ?? '',
-                phone: currentLocation.phone ?? '',
-                mapsUrl: currentLocation.maps_url ?? '',
-                googleReviewUrl: currentLocation.google_review_url ?? '',
-              });
-              setPlaceDirty(false);
-            }}
-            onSave={() => run(() => updateLocation({
-              organizationId, locationId: currentLocation.id,
-              name: place.name.trim(),
-              addressLine1: place.addressLine1.trim() || null,
-              postalCode: place.postalCode.trim() || null,
-              city: place.city.trim() || null,
-              phone: place.phone.trim() || null,
-              mapsUrl: place.mapsUrl.trim() || null,
-              googleReviewUrl: place.googleReviewUrl.trim() || null,
-            }), () => setPlaceDirty(false))}
-          />
 
           {/* ---------------- File ---------------- */}
           {queue && (
@@ -441,19 +422,11 @@ export function SettingsManager({
               {canManage && (
                 <p className={styles.hoursNote}>
                   La copie du lundi ne rouvre aucun jour fermé, et rien n’est enregistré avant
-                  « Enregistrer ».
+                  « Enregistrer », dans la barre en bas de l’écran.
                 </p>
               )}
             </Section>
           </div>
-
-          <SaveBar
-            dirty={hoursDirty} pending={pending} saved={saved}
-            onSave={() => run(
-              () => updateOpeningHours({ organizationId, locationId: currentLocation.id, days }),
-              () => setHoursDirty(false),
-            )}
-          />
 
           {/* ---------------- Prestations ---------------- */}
           <div id="prestations" className={styles.anchor}>
@@ -572,6 +545,56 @@ export function SettingsManager({
               </Section>
             </div>
           )}
+
+          {/* Une seule barre, collante sur toute la page tant qu'un formulaire
+              (établissement, avis Google, horaires) a des modifications. */}
+          <div className={styles.saveDock}>
+            <SaveBar
+              dirty={placeDirty || hoursDirty} pending={pending} saved={saved} error={error}
+              onReset={() => {
+                if (placeDirty) {
+                  setPlace({
+                    name: currentLocation.name,
+                    addressLine1: currentLocation.address_line1 ?? '',
+                    postalCode: currentLocation.postal_code ?? '',
+                    city: currentLocation.city ?? '',
+                    phone: currentLocation.phone ?? '',
+                    mapsUrl: currentLocation.maps_url ?? '',
+                    googleReviewUrl: currentLocation.google_review_url ?? '',
+                  });
+                  setPlaceDirty(false);
+                }
+                if (hoursDirty) {
+                  setDays(initialDays());
+                  setHoursDirty(false);
+                }
+              }}
+              onSave={() => run(async () => {
+                if (placeDirty) {
+                  const result = await updateLocation({
+                    organizationId, locationId: currentLocation.id,
+                    name: place.name.trim(),
+                    addressLine1: place.addressLine1.trim() || null,
+                    postalCode: place.postalCode.trim() || null,
+                    city: place.city.trim() || null,
+                    phone: place.phone.trim() || null,
+                    mapsUrl: place.mapsUrl.trim() || null,
+                    googleReviewUrl: place.googleReviewUrl.trim() || null,
+                  });
+                  if (!result.ok) return result;
+                  setPlaceDirty(false);
+                }
+                if (hoursDirty) {
+                  const result = await updateOpeningHours({
+                    organizationId, locationId: currentLocation.id, days,
+                  });
+                  if (!result.ok) return result;
+                  setHoursDirty(false);
+                }
+                return { ok: true };
+              })}
+            />
+          </div>
         </div>
       </div>
     </div>

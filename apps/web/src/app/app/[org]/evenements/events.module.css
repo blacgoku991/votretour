@@ -1,6 +1,5 @@
 /* =====================================================================
-   ÉVÉNEMENTS / DROP — « Contrôlez le flux, pas la foule. »
-   En-tête plat posé sur un rail avec sa barrière, formulaire en lignes
+   ÉVÉNEMENTS — en-tête commun (PageHeader), formulaire en lignes
    et aperçu vivant des vagues, puis la liste des événements en lignes
    accrochées au rail. Aucun dégradé, aucun emoji.
    On n'anime que transform et opacity.
@@ -13,123 +12,18 @@
   padding-top: var(--sp-5);
   padding-bottom: var(--sp-9);
 }
-@media (min-width: 900px) {
-  .page { padding-top: 0; gap: var(--sp-8); }
-}
 
 /* ---------------------------------------------------------------------
-   En-tête : texte, puis un pied posé sur le rail (bouton + barrière)
+   En-tête : PageHeader commun (titre de rubrique, comme les autres pages)
    --------------------------------------------------------------------- */
-/* Téléphone : texte, bouton pleine largeur, puis la rangée du rail où
-   l'état du flux fait face à la barrière. À partir de 720 px, le bouton
-   rejoint le rail, et l'état passe dessous. */
-.hero {
-  --barrier-w: 150px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    'text text'
-    'action action'
-    'state barrier';
-  align-items: end;
-  column-gap: var(--sp-4);
-}
-.heroText {
-  grid-area: text;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding-bottom: var(--sp-6);
-}
-.heroTitle { max-width: 15ch; }
-.heroLead { margin-top: calc(var(--gap-title) - 14px); }
-
-.heroAction {
-  grid-area: action;
-  padding-bottom: var(--sp-6);
-}
-.heroAction > :global(.btn) {
-  width: 100%;
-  white-space: nowrap;
-}
-
-/* Le rail horizontal qui ferme l'en-tête, sous la barrière. */
-.hero::after {
-  content: '';
-  grid-column: 1 / -1;
-  grid-row: 3;
-  align-self: end;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--rail);
-}
-
-/* La barrière est posée sur ce rail, qui sert de sol (le dessin ne trace
-   pas le sien). Le pied du boîtier et de la fourche (y = 96 sur 100, soit
-   2 % de la largeur au-dessus du bas du dessin) est descendu en translate
-   jusqu'au milieu du trait de 2 px. */
-.heroBarrier {
-  grid-area: barrier;
-  justify-self: end;
-  position: relative;
-  z-index: 1;
-  width: var(--barrier-w);
-  translate: 0 calc(var(--barrier-w) * 0.02 - 1px);
-}
-/* Bras levé : sous 1024 px, la barrière partage sa rangée avec le bouton ;
-   on lui réserve la hauteur du bras dressé pour qu'il ne passe jamais
-   devant le texte. */
-.heroBarrier[data-raised='1'] { padding-top: calc(var(--barrier-w) * 0.62); }
-@media (min-width: 1024px) {
-  .heroBarrier[data-raised='1'] { padding-top: 0; }
-}
-
-.heroState {
-  grid-area: state;
-  justify-self: start;
+/* État du flux, à droite de « Vos événements ». */
+.flowState {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding-bottom: 16px;
-  line-height: 1.35;
+  margin-left: auto;
+  white-space: nowrap;
   color: var(--text-muted);
-}
-.heroState { white-space: nowrap; }
-.stateShort { display: none; }
-@media (max-width: 479px) {
-  .stateLong { display: none; }
-  .stateShort { display: inline; }
-}
-
-@media (min-width: 720px) {
-  .hero {
-    --barrier-w: 240px;
-    grid-template-areas:
-      'text text'
-      'action barrier'
-      'state state';
-  }
-  .hero::after { grid-row: 2; }
-  .heroAction { padding-bottom: 14px; }
-  .heroAction > :global(.btn) { width: auto; }
-  .heroState {
-    justify-self: end;
-    padding-bottom: 0;
-    margin-top: 12px;
-  }
-}
-@media (min-width: 1024px) {
-  .hero {
-    --barrier-w: 300px;
-    grid-template-areas:
-      'text barrier'
-      'action barrier'
-      'state state';
-  }
-  .heroText { padding-bottom: var(--sp-7); }
-}
-@media (max-width: 379px) {
-  .hero { --barrier-w: 118px; }
 }
 
 .btnIcon {
@@ -273,9 +167,10 @@
   padding: var(--sp-5);
   border-top: 1px solid var(--line);
 }
-.formFoot > :global(.btn) { width: 100%; }
-@media (min-width: 640px) {
-  .formFoot > :global(.btn) { width: auto; min-width: 240px; }
+/* Pleine largeur au téléphone seulement ; au-delà, largeur du libellé. */
+.formFoot > :global(.btn) { min-width: 240px; }
+@media (max-width: 479px) {
+  .formFoot > :global(.btn) { width: 100%; min-width: 0; }
 }
 
 /* ---------------------------------------------------------------------

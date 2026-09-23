@@ -161,9 +161,9 @@ export default async function BillingPage({
       {!billingEnabled && (
         <div className="banner banner--warn">
           <span>
-            Stripe n’est pas configuré sur cette installation : toutes les organisations
-            fonctionnent en période d’essai. Voir SETUP.md, section Stripe, pour activer
-            la facturation.
+            {access.user.isPlatformAdmin
+              ? 'Stripe n’est pas configuré sur cette installation : toutes les organisations fonctionnent en période d’essai. Voir SETUP.md, section Stripe, pour activer la facturation.'
+              : 'La facturation en ligne n’est pas encore activée : votre période d’essai continue, sans rien à payer.'}
           </span>
         </div>
       )}

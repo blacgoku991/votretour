@@ -46,6 +46,10 @@ const STATUS_LABEL: Record<string, string> = {
  * nom de votre établissement et avec votre seuil « Prévenir à partir
  * de » : chaque message est accroché à la place du rail d'où il part.
  */
+/** Apostrophes typographiques pour l'affichage (les modèles utilisent « ' »). */
+const typo = (text: string) => text.replace(/'/g, '’');
+const typoCopy = (copy: { title: string; body: string }) => ({ title: typo(copy.title), body: typo(copy.body) });
+
 export default async function NotificationsPage({ params }: { params: Promise<{ org: string }> }) {
   const { org } = await params;
   const access = await requireOrgAccess(org);
@@ -92,13 +96,13 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
   if (threshold >= 2) {
     preview.push({
       key: 'ahead_two', pos: String(threshold), posLabel: 'devant',
-      copy: notificationCopy('ahead_two', { locationName, peopleAhead: threshold }),
+      copy: typoCopy(notificationCopy('ahead_two', { locationName, peopleAhead: threshold })),
     });
   }
   preview.push(
-    { key: 'ahead_one', pos: '1', posLabel: 'devant', copy: notificationCopy('ahead_one', { locationName }) },
-    { key: 'your_turn', pos: '0', posLabel: 'à vous', copy: notificationCopy('your_turn', { locationName }) },
-    { key: 'visit_completed', pos: '✓', posLabel: 'servi', copy: notificationCopy('visit_completed', { locationName }) },
+    { key: 'ahead_one', pos: '1', posLabel: 'devant', copy: typoCopy(notificationCopy('ahead_one', { locationName })) },
+    { key: 'your_turn', pos: '0', posLabel: 'à vous', copy: typoCopy(notificationCopy('your_turn', { locationName })) },
+    { key: 'visit_completed', pos: '✓', posLabel: 'servi', copy: typoCopy(notificationCopy('visit_completed', { locationName })) },
   );
 
   return (
@@ -171,8 +175,12 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
                 {!integrations.apns && !integrations.webPush
                   ? "Aucun canal de notification n’est configuré sur cette installation. Les clients suivent leur position à l’écran, en temps réel, mais ils ne seront pas prévenus s’ils quittent la page."
                   : !integrations.apns
-                    ? "APNs n’est pas configuré : les App Clips iPhone ne peuvent pas recevoir de notification. Voir SETUP.md, section Apple."
-                    : "Web Push n’est pas configuré : les clients Android ne peuvent pas être prévenus. Générez une paire de clés VAPID (npm run keys:vapid)."}
+                    ? (access.user.isPlatformAdmin
+                      ? "APNs n’est pas configuré : les App Clips iPhone ne peuvent pas recevoir de notification. Voir SETUP.md, section Apple."
+                      : "Les notifications iPhone ne sont pas encore disponibles : vos clients sur iPhone suivent leur position à l’écran, en temps réel.")
+                    : (access.user.isPlatformAdmin
+                      ? "Web Push n’est pas configuré : les clients Android ne peuvent pas être prévenus. Générez une paire de clés VAPID (npm run keys:vapid)."
+                      : "Les notifications Android ne sont pas encore disponibles : vos clients sur Android suivent leur position à l’écran, en temps réel.")}
               </span>
             </div>
           )}
@@ -226,7 +234,7 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
                         : `Non envoyée : ${row.error ?? 'aucun destinataire'}`}
                     {row.channel && <> · {CHANNEL_LABEL[row.channel] ?? row.channel}</>}
                   </p>
-                  {row.body && <p className={styles.logBody}>« {row.body} »</p>}
+                  {row.body && <p className={styles.logBody}>« {typo(row.body)} »</p>}
                 </div>
                 <span className={`t-num ${styles.logTime}`}>{formatDateTime(row.created_at)}</span>
               </li>

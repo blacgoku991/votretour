@@ -23,6 +23,12 @@
 
 .card { border-radius: 14px; }
 
+/* « Envoyer » : largeur du libellé ; pleine largeur au téléphone seulement. */
+.submit { align-self: flex-start; min-width: 240px; }
+@media (max-width: 479px) {
+  .submit { align-self: stretch; width: 100%; min-width: 0; }
+}
+
 /* ---------------------------------------------------------------------
    Questions fréquentes : l'encoche devient vermillon à l'ouverture
    --------------------------------------------------------------------- */

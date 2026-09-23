@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { createSupportTicket } from '@/server/actions/support';
 import { useRouter } from 'next/navigation';
+import styles from './support.module.css';
 
 export function SupportForm({ organizationId }: { organizationId: string }) {
   const router = useRouter();
@@ -72,7 +73,7 @@ export function SupportForm({ organizationId }: { organizationId: string }) {
 
       {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
 
-      <button type="submit" className="btn btn--signal btn--lg btn--block" disabled={pending}>
+      <button type="submit" className={`btn btn--signal btn--lg ${styles.submit}`} disabled={pending}>
         {pending ? 'Envoi…' : 'Envoyer'}
       </button>
     </form>

@@ -4,6 +4,7 @@ import { useId, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { callEventWave, changeEventState, createEventCampaign } from '@/server/actions/events';
 import { FlapNumber, FlapText } from '@/components/FlapNumber';
+import { PageHeader } from '@/components/Page';
 import { Barrier } from './Barrier';
 import { WavePreview } from './WavePreview';
 import styles from './events.module.css';
@@ -131,53 +132,34 @@ export function EventsPanel({
 
   return (
     <div className={`shell ${styles.page}`}>
-      <header className={styles.hero}>
-        <div className={styles.heroText}>
-          <p className="t-label">Rangvia Event / Drop</p>
-          <h1 className={`t-display ${styles.heroTitle}`}>Contrôlez le flux, pas la foule.</h1>
-          <p className={`t-lead ${styles.heroLead}`}>
-            File virtuelle, vagues d’accès, QR dynamiques à usage unique et bouton Stock épuisé.
-          </p>
-        </div>
-        {canConfigure && (
-          <div className={styles.heroAction}>
-            {formOpen ? (
-              <button
-                className="btn btn--ghost"
-                type="button"
-                aria-expanded="true"
-                aria-controls={formId}
-                onClick={() => setOpenCreate(false)}
-              >
-                <CloseIcon />
-                Fermer le formulaire
-              </button>
-            ) : (
-              <button
-                className="btn btn--signal"
-                type="button"
-                aria-expanded="false"
-                onClick={() => setOpenCreate(true)}
-              >
-                <PlusIcon />
-                Nouvel événement
-              </button>
-            )}
-          </div>
-        )}
-        <div className={styles.heroBarrier} data-raised={anyLive ? '1' : undefined}>
-          <Barrier raised={anyLive} lift ground={false} fork />
-        </div>
-        <p className={`t-label ${styles.heroState}`}>
-          <span className={`pip ${anyLive ? 'pip--live' : ''}`} />
-          {anyLive ? (
-            <>
-              <span className={styles.stateLong}>Flux ouvert · en direct</span>
-              <span className={styles.stateShort}>Flux ouvert</span>
-            </>
-          ) : 'Flux fermé'}
-        </p>
-      </header>
+      <PageHeader
+        title="Événements"
+        description="File virtuelle, vagues d’accès, QR à usage unique et bouton Stock épuisé : vous ouvrez l’entrée au rythme que vous choisissez."
+        actions={canConfigure ? (
+          formOpen ? (
+            <button
+              className="btn btn--ghost"
+              type="button"
+              aria-expanded="true"
+              aria-controls={formId}
+              onClick={() => setOpenCreate(false)}
+            >
+              <CloseIcon />
+              Fermer le formulaire
+            </button>
+          ) : (
+            <button
+              className="btn btn--signal"
+              type="button"
+              aria-expanded="false"
+              onClick={() => setOpenCreate(true)}
+            >
+              <PlusIcon />
+              Nouvel événement
+            </button>
+          )
+        ) : undefined}
+      />
 
       {flash && <div className="banner" role="status"><span>{flash}</span></div>}
       {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
@@ -209,7 +191,7 @@ export function EventsPanel({
             }}
           >
             <div className={styles.formHead}>
-              <h2 id={`${formId}-titre`} className="t-title">Créer un Event / Drop</h2>
+              <h2 id={`${formId}-titre`} className="t-title">Créer un événement</h2>
               <p className="t-small t-muted">
                 Les inscriptions restent ouvertes tant que vous ne décidez pas de fermer.
               </p>
@@ -317,6 +299,12 @@ export function EventsPanel({
           {events.length > 0 && (
             <span className={`t-label ${styles.listCount}`}>{events.length}</span>
           )}
+          {events.length > 0 && (
+            <p className={`t-label ${styles.flowState}`}>
+              <span className={`pip ${anyLive ? 'pip--live' : ''}`} />
+              {anyLive ? 'Flux ouvert' : 'Flux fermé'}
+            </p>
+          )}
         </div>
 
         {events.length === 0 ? (
@@ -325,8 +313,12 @@ export function EventsPanel({
               <Barrier ground={false} />
             </div>
             <div className={styles.emptyText}>
-              <h3 className="t-title">Aucun événement</h3>
-              <p className="t-body t-muted">Créez votre premier drop, pop-up ou lancement limité.</p>
+              <p className="t-label">Aucun événement</p>
+              <h3 className="t-title">Contrôlez le flux, pas la foule.</h3>
+              <p className="t-body t-muted">
+                Créez votre premier drop, pop-up ou lancement limité : vos clients attendent en ligne,
+                vous les faites entrer par vagues.
+              </p>
             </div>
           </div>
         ) : (
