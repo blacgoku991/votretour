@@ -38,6 +38,11 @@ describe('formatage', () => {
     expect(initials('Sofia')).toBe('S');
     expect(initials(null)).toBe('?');
     expect(initials('  ')).toBe('?');
+    expect(initials('Garage 92')).toBe('G');
+    expect(initials('Garage 92 — Nanterre')).toBe('G');
+    expect(initials('Barber House — Paris 11')).toBe('BH');
+    expect(initials('3 Frères Coiffure')).toBe('FC');
+    expect(initials('42')).toBe('4');
   });
 
   it('couvre les sept jours de la semaine, lundi en premier', () => {

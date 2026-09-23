@@ -96,7 +96,12 @@ export const WEEKDAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Sam
 /** Initiales pour les pastilles d'équipe. */
 export function initials(name: string | null | undefined): string {
   if (!name) return '?';
-  const parts = name.trim().split(/\s+/).slice(0, 2);
+  // « Garage 92 — Nanterre » : on garde le nom avant le tiret, et seuls
+  // les mots qui commencent par une lettre comptent (sinon « G9 »).
+  const base = name.split(/\s[—–-]\s/)[0] ?? name;
+  const words = base.trim().split(/\s+/).filter(Boolean);
+  const lettered = words.filter((w) => /^\p{L}/u.test(w));
+  const parts = (lettered.length > 0 ? lettered : words).slice(0, 2);
   return parts.map((p) => p.charAt(0).toUpperCase()).join('') || '?';
 }
 
