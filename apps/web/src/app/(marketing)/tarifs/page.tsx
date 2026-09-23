@@ -8,7 +8,9 @@ export const metadata: Metadata = {
   title: 'Tarifs',
   description: "Des offres simples pour une file d'attente virtuelle : App Clip iPhone, QR code, plaque NFC et avis Google inclus.",
 };
-export const revalidate = 3600;
+// Les offres sont lues avec le client serveur privilégié : rendu au runtime
+// pour ne jamais injecter SUPABASE_SERVICE_ROLE_KEY pendant le build Docker.
+export const dynamic = 'force-dynamic';
 
 export default async function PricingPage() {
   const { data: plans } = await supabaseAdmin()
