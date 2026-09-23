@@ -66,15 +66,19 @@
 
 .codeField:focus-within {
   outline: 2px solid var(--accent);
-  outline-offset: 16px;
+  outline-offset: 8px;
 }
 
-/* La case suivante : un trait vermillon sous la cellule à remplir. */
+/* La case suivante : un trait vermillon sous la cellule à remplir.
+   Pas mesuré : une cellule tuile fait 0,74em et la rangée des six
+   cellules n'a pas d'écart. Le trait glisse en transform, pas en left. */
 .codeCursor {
+  --code-pitch: 0.74em;
   position: absolute;
-  left: calc(var(--i, 0) * 0.82em);
+  left: 0;
   top: calc(100% + 0.06em);
-  width: 0.74em;
+  width: var(--code-pitch);
+  transform: translateX(calc(var(--i, 0) * var(--code-pitch)));
   height: 4px;
   border-radius: 2px;
   background: var(--accent);
@@ -84,7 +88,7 @@
 .codeField:focus-within .codeCursor { opacity: 1; }
 .codeField[data-length='6'] .codeCursor { opacity: 0; }
 @media (prefers-reduced-motion: no-preference) {
-  .codeCursor { transition: transform var(--dur-2) var(--ease-slat), left var(--dur-2) var(--ease-slat), opacity var(--dur-1) var(--ease-out); }
+  .codeCursor { transition: transform var(--dur-2) var(--ease-slat), opacity var(--dur-1) var(--ease-out); }
 }
 
 /* Le vrai champ, transparent, par-dessus les cellules. */

@@ -196,7 +196,7 @@ export function EventPassCard({
                   <div className={styles.timerMain}>
                     <span className="t-label">{inGrace ? 'Dernier délai' : 'Présentez-vous dans'}</span>
                     <span className={styles.countdown}>
-                      <FlapText static fixed text={countdown} label={remaining === null ? 'Calcul du temps restant' : `${countdown} restantes`} size="3rem" />
+                      <FlapText static fixed tile text={countdown} label={remaining === null ? 'Calcul du temps restant' : `${countdown} restantes`} size="3rem" />
                     </span>
                   </div>
                   <p className={styles.until}>

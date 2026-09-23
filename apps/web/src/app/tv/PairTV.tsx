@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { FlapText } from '@/components/FlapNumber';
 import { FloorScene } from '@/components/objects/FloorScene';
 import { Wordmark } from '@/components/Wordmark';
@@ -18,10 +18,17 @@ export function PairTV({ initialCode = '' }: { initialCode?: string }) {
   const [code, setCode] = useState(initialCode.replace(/\D/g, '').slice(0, 6));
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Mise au point d'office seulement avec un pointeur fin (télécommande,
+  // souris) : sur un écran tactile, elle ouvrirait le clavier d'emblée.
+  useEffect(() => {
+    if (window.matchMedia('(pointer: fine)').matches) inputRef.current?.focus({ preventScroll: true });
+  }, []);
 
   const submit = () => {
     if (!/^\d{6}$/.test(code)) {
-      setError('Saisissez le code à 6 chiffres affiché dans le super-admin.');
+      setError('Saisissez le code à 6 chiffres fourni par Rangvia.');
       return;
     }
 
@@ -55,7 +62,7 @@ export function PairTV({ initialCode = '' }: { initialCode?: string }) {
           <span className="t-label">Rangvia Display</span>
           <h1 id="pair-title" className={`t-display ${styles.pairTitle}`}>Connecter cet écran</h1>
           <p className={styles.pairLead}>
-            Saisissez le code affiché dans Rangvia › Écrans TV. L’écran affichera ensuite la file
+            Saisissez le code à 6 chiffres fourni par Rangvia. L’écran affichera ensuite la file
             de l’établissement, en grand.
           </p>
         </div>
@@ -84,7 +91,7 @@ export function PairTV({ initialCode = '' }: { initialCode?: string }) {
               inputMode="numeric"
               autoComplete="one-time-code"
               maxLength={6}
-              autoFocus
+              ref={inputRef}
               aria-label="Code d’appairage à 6 chiffres"
               onKeyDown={(event) => {
                 if (event.key === 'Enter') submit();
@@ -110,7 +117,7 @@ export function PairTV({ initialCode = '' }: { initialCode?: string }) {
             {pending ? 'Connexion…' : 'Associer cet écran'}
           </button>
           <p className={styles.pairNote}>
-            L’écran reste appairé après redémarrage. Le super-admin peut le révoquer à distance.
+            L’écran reste appairé après redémarrage. Rangvia peut le révoquer à distance.
           </p>
         </div>
       </section>

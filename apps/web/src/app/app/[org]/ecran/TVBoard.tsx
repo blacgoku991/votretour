@@ -67,6 +67,18 @@ function useClock(): string | null {
   return time;
 }
 
+/** Vrai quand la page est déjà en plein écran (le bouton devient inutile). */
+function useIsFullscreen(): boolean {
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    const sync = () => setFull(Boolean(document.fullscreenElement));
+    sync();
+    document.addEventListener('fullscreenchange', sync);
+    return () => document.removeEventListener('fullscreenchange', sync);
+  }, []);
+  return full;
+}
+
 /** Lattes « À suivre » : Passage de la tête, avance d'un cran, arrivées qui se déplient. */
 function useQueueSlats(items: TvQueueItem[]): TvSlat[] {
   const reduced = useReducedMotion();
@@ -126,6 +138,7 @@ export function TVBoard({
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [eventTheme, setEventTheme] = useState<TVEventTheme | null>(initialEventTheme);
   const clock = useClock();
+  const isFullscreen = useIsFullscreen();
   const shiftRef = useRef<HTMLDivElement>(null);
   const queueId = snapshot?.queue.id ?? queues[0]?.id ?? null;
 
@@ -271,7 +284,7 @@ export function TVBoard({
                 <a className={`btn btn--ghost btn--sm ${styles.control}`} href={`/ecran/${orgSlug}`}>
                   Plein écran
                 </a>
-              ) : (
+              ) : kioskMode || isFullscreen ? null : (
                 <button
                   type="button"
                   className={`btn btn--ghost btn--sm ${styles.control}`}

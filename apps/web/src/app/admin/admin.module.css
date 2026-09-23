@@ -76,9 +76,12 @@
 .main { padding: var(--sp-7) 0 var(--sp-9); }
 
 .page { display: flex; flex-direction: column; gap: var(--sp-6); }
-/* Filtres en ligne (plaques) : ils passent à la ligne au lieu de se
-   comprimer sur un téléphone. */
+/* Filtres en ligne (plaques) : une seule ligne sur ordinateur, repli à
+   la ligne seulement quand la place manque, pleine largeur sur téléphone. */
 .page :global(form.row) { flex-wrap: wrap; }
+.page :global(form.row) > :global(.input) { flex: 2 1 240px; width: auto; min-width: 0; }
+.page :global(form.row) > :global(.select) { flex: 1 1 200px; width: auto; min-width: 0; }
+.page :global(form.row) > :global(.btn) { flex: none; }
 @media (max-width: 620px) {
   .page :global(form.row) > :global(.input),
   .page :global(form.row) > :global(.select),
@@ -531,7 +534,8 @@
 .commandActions { display:flex; gap:9px; flex-wrap:wrap; }
 .commandStats {
   display:grid;
-  grid-template-columns:repeat(6,minmax(0,1fr));
+  /* 8 indicateurs : 4 + 4 sur ordinateur, sans orpheline. */
+  grid-template-columns:repeat(4,minmax(0,1fr));
   gap:10px;
 }
 .commandStat {
@@ -545,6 +549,7 @@
 }
 .commandStat > span {
   display:block; color: var(--text-muted);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   font-size: .6875rem; font-weight:800; text-transform:uppercase; letter-spacing:.1em;
 }
 .commandStat > strong {
@@ -608,14 +613,15 @@
   font-size:12px; font-weight:700;
 }
 
-@media (max-width: 1280px) {
-  .commandStats { grid-template-columns:repeat(3,minmax(0,1fr)); }
+@media (max-width: 1100px) {
+  .commandStats { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 900px) {
   .commandGrid { grid-template-columns:1fr; }
 }
 @media (max-width: 620px) {
   .commandStats { grid-template-columns:1fr 1fr; }
+  .commandStat > span { white-space:normal; }
   .integrationGrid { grid-template-columns:1fr; }
   .commandActions { width:100%; }
 }
@@ -688,6 +694,11 @@
   justify-items: end;
 }
 
+.globalSearch :global(.input) { text-overflow: ellipsis; }
+@media (max-width: 620px) {
+  /* Le texte indicatif long est coupé net sur téléphone : on le réduit. */
+  .globalSearch :global(.input)::placeholder { font-size: .8125rem; }
+}
 .globalSearch {
   width: min(100%, 620px);
   display: grid;

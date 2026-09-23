@@ -131,7 +131,10 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 6px 9px;
-  overflow-wrap: anywhere;
+  /* Une ligne : l'URL complète reste disponible via « Copier ». */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
@@ -172,3 +175,5 @@
   .createCard { grid-template-columns: 1fr; }
   .createForm { grid-template-columns: 1fr; }
 }
+
+.createKicker { margin-bottom: 8px; }

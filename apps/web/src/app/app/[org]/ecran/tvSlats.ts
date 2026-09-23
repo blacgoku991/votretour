@@ -78,8 +78,11 @@ export function reconcileSlats(prev: TvSlat[], items: TvQueueItem[], animate: bo
   const folding: Array<{ at: number; slat: TvSlat }> = [];
   staying.forEach((slat, index) => {
     if (nextIds.has(slat.id)) return;
-    if (index < headCut) passing.push({ ...slat, state: 'passed', leaving: true, fresh: false });
-    else folding.push({ at: index - headCut, slat: { ...slat, state: 'hidden', leaving: true, fresh: false } });
+    // Une latte qui sort perd son libellé : sa position appartient déjà
+    // à la suivante (pas de « 01 » en double pendant le Passage).
+    const gone = { ...slat, label: '', hint: undefined, leaving: true, fresh: false };
+    if (index < headCut) passing.push({ ...gone, state: 'passed' });
+    else folding.push({ at: index - headCut, slat: { ...gone, state: 'hidden' } });
   });
 
   const known = new Set(staying.map((slat) => slat.id));

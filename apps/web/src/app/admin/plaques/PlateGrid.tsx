@@ -74,7 +74,7 @@ export function PlateGrid({ plates, siteUrl, organizations, locations, queues }:
 
       <div className={styles.createCard}>
         <div>
-          <p className="t-label">SUPER ADMIN</p>
+          <p className={`t-label ${styles.createKicker}`}>SUPER ADMIN</p>
           <h2 className="t-section">Créer une plaque</h2>
           <p className="t-small t-muted">
             Le commerçant ne voit aucun réglage NFC/QR. Toute la création et la programmation restent ici.
@@ -305,7 +305,7 @@ function PlateCard({
 
       {/* ---------------- Lien ---------------- */}
       <div className={styles.urlRow}>
-        <code className={styles.url}>/e/{plate.code}</code>
+        <code className={styles.url} title={url}>/e/{plate.code}</code>
         <button type="button" className="btn btn--quiet btn--sm" onClick={copy}>
           {copied ? 'Copié' : 'Copier'}
         </button>

@@ -136,16 +136,29 @@
 .rulesText { font-size: 0.8125rem; line-height: 1.5; color: var(--text-muted); white-space: pre-line; }
 
 .facts {
-  display: flex;
-  align-items: flex-start;
+  /* Deux rangées partagées (étiquettes, puis valeurs) : « Vague » et
+     « Au nom de » restent alignés quelle que soit la hauteur des valeurs. */
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: auto auto;
   justify-content: space-between;
-  gap: 16px;
+  column-gap: 16px;
   margin: 4px 0 0;
 }
-.fact { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin: 0; }
+.fact {
+  grid-row: span 2;
+  display: grid;
+  grid-template-rows: subgrid;
+  row-gap: 8px;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+}
+.fact dt { align-self: start; }
 .fact dd { margin: 0; }
-.fact:last-child:not(:first-child) { text-align: right; align-items: flex-end; }
+.fact:last-child:not(:first-child) { text-align: right; justify-items: end; }
 .wave { --flap-tile: var(--ink-600); color: var(--bone-100); }
+.wave :global(.flap-row) { gap: 0.08em; }
 .holder {
   font-variation-settings: 'wdth' 104, 'wght' 720;
   font-size: 1.1875rem;
@@ -269,8 +282,11 @@
   text-align: center;
 }
 .timerMain { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.countdown { color: var(--bone-100); line-height: 1; }
+.countdown { color: var(--bone-100); line-height: 1; --flap-tile: var(--ink-600); }
+.countdown :global(.flap-row) { gap: 0.08em; }
 .until {
+  /* Deux lignes réservées : pas de saut au montage. */
+  min-height: 3em;
   font-size: 0.8125rem;
   line-height: 1.5;
   color: var(--text-muted);
@@ -313,7 +329,7 @@
   border-top: 1px solid var(--line);
   border-radius: 0 0 20px 20px;
   font-size: 0.75rem;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .brand {
   font-variation-settings: 'wdth' 118, 'wght' 800;

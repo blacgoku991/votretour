@@ -26,6 +26,8 @@
   flex-direction: column;
   align-items: center;
   gap: var(--sp-4);
+  text-align: center;
+  text-wrap: balance;
 }
 /* Le pied du moniteur : une colonne et un socle, en aplat. */
 .stand {

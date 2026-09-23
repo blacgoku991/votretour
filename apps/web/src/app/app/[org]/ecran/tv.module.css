@@ -12,8 +12,9 @@
 
 .frame {
   --tv-event: var(--signal-500);
-  /* Conteneur en largeur : le portrait (< 720 px de large) passe sur une
-     colonne et prend la hauteur de son contenu. */
+  /* Conteneur en largeur (aperçu) ; en plein écran, conteneur en taille
+     (voir plus bas) : le portrait se lit à l'orientation, pas seulement à
+     la largeur. */
   container-type: inline-size;
   width: 100%;
   height: 100dvh;
@@ -32,6 +33,10 @@
   --slat-text: #9aa3af;
   color-scheme: dark;
 }
+
+/* Plein écran : la hauteur est fixée (100dvh), le conteneur peut donc
+   mesurer les deux axes. Un téléviseur vertical passe en colonne. */
+.frame[data-variant='full'] { container-type: size; }
 
 /* Aperçu : l'écran devient un objet, un moniteur avec sa lunette. */
 .frame[data-variant='preview'] {
@@ -152,7 +157,20 @@
 }
 
 .select { min-height: 40px; width: auto; max-width: 240px; }
-.control { white-space: nowrap; }
+.control {
+  white-space: nowrap;
+  min-height: max(36px, calc(var(--u) * 56));
+  padding: 0 max(12px, calc(var(--u) * 22));
+  font-size: max(13px, calc(var(--u) * 20));
+  border-radius: max(10px, calc(var(--u) * 12));
+}
+/* Dans l'aperçu, le bouton est à l'échelle de l'écran, comme le reste. */
+.frame[data-variant='preview'] .control {
+  min-height: calc(var(--u) * 56);
+  padding: 0 calc(var(--u) * 22);
+  font-size: calc(var(--u) * 20);
+  border-radius: calc(var(--u) * 12);
+}
 
 .clock {
   display: block;
@@ -262,7 +280,7 @@
 }
 .headNote {
   font-size: calc(var(--u) * 18);
-  color: var(--text-faint);
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -314,8 +332,9 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   gap: calc(var(--u) * 16);
+  padding-top: calc(var(--u) * 40);
 }
 .servingList {
   list-style: none;
@@ -403,7 +422,7 @@
   inset: 0;
   height: 100%;
   min-height: 0;
-  --world-top: 34%;
+  --world-top: 48%;
   --persp-origin: 44% 16%;
 }
 /* La file prend la place de la boîte : le monde est agrandi par paliers
@@ -413,22 +432,31 @@
 @container tvscene (min-width: 480px) and (min-height: 420px) { .sceneBox > .scene :global(.world3d) { scale: 1.26; } }
 @container tvscene (min-width: 600px) and (min-height: 520px) { .sceneBox > .scene :global(.world3d) { scale: 1.46; } }
 @container tvscene (min-width: 720px) and (min-height: 640px) { .sceneBox > .scene :global(.world3d) { scale: 1.66; } }
+@container tvscene (min-width: 900px) and (min-height: 700px) { .sceneBox > .scene :global(.world3d) { scale: 2.1; } }
 /* Faces des lattes : la position en grand (« 01 »), les initiales à côté.
    Libellés décoratifs, courts ; le sens est porté par le texte de la scène. */
 .scene :global(.slot3d__face) > span {
   flex-direction: row;
-  align-items: baseline;
-  gap: 12px;
+  align-items: center;
+  gap: 16px;
 }
+/* Tailles dans le monde (px de FloorScene) : le monde lui-même est mis à
+   l'échelle de la boîte, donc de l'écran, par les paliers ci-dessus. Une
+   face fait 48 px de haut : « 01 » en occupe la majeure partie. */
 .scene :global(.slot3d__face) > span > span:first-child {
-  font-variation-settings: 'wdth' 125, 'wght' 820;
-  font-size: 20px;
-  letter-spacing: 0.02em;
+  font-variation-settings: 'wdth' 125, 'wght' 840;
+  font-size: 40px;
+  line-height: 1;
+  letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
+  overflow: visible;
 }
 .scene :global(.slot3d__face) > span > span + span {
-  font-size: 14px;
-  letter-spacing: 0.16em;
+  font-variation-settings: 'wdth' 100, 'wght' 760;
+  font-size: 26px;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  opacity: 0.9;
 }
 .scene :global(.slot3d[data-state='ghost'] .slot3d__face) > span > span:first-child {
   font-variation-settings: 'wdth' 100, 'wght' 700;
@@ -485,8 +513,11 @@
     height: auto;
     min-height: 100%;
     aspect-ratio: auto;
+    display: flex;
+    flex-direction: column;
   }
   .content {
+    flex: 1 1 auto;
     height: auto;
     gap: calc(var(--u) * 24);
     padding: calc(var(--u) * 26) calc(var(--u) * 24) calc(var(--u) * 22);
@@ -512,8 +543,9 @@
   .eventQr { width: calc(var(--u) * 160); justify-self: start; }
   .eventQr figcaption { font-size: calc(var(--u) * 14); }
 
-  .main { grid-template-columns: 1fr; gap: calc(var(--u) * 30); }
-  .counter { gap: calc(var(--u) * 20); }
+  .main { flex: 1 1 auto; display: flex; flex-direction: column; gap: calc(var(--u) * 30); }
+  .counter { flex: none; gap: calc(var(--u) * 20); }
+  .next { flex: 1 1 auto; }
   .head { flex-wrap: wrap; row-gap: calc(var(--u) * 10); min-height: 0; }
   .headLabel { font-size: calc(var(--u) * 17); }
   .headLabel::before { width: calc(var(--u) * 22); }
@@ -528,7 +560,82 @@
   .waiting :global(.flap-row) { --flap-size: calc(var(--u) * 150) !important; }
   .waitingLabel { font-size: calc(var(--u) * 30); padding-bottom: calc(var(--u) * 12); }
   /* La file au sol est en pixels (FloorScene) : sa boîte aussi. */
-  .sceneBox { flex: none; height: clamp(300px, calc(var(--u) * 560), 460px); }
+  /* Base 0 (et non auto) : avec une base « contenu », Chromium n'évalue
+     pas les requêtes de hauteur du conteneur tvscene. */
+  .sceneBox { flex: 1 1 0px; min-height: clamp(300px, calc(var(--u) * 560), 460px); }
   .foot { flex-direction: column; align-items: flex-start; font-size: calc(var(--u) * 17); gap: calc(var(--u) * 10); padding-top: calc(var(--u) * 18); }
   .nfc { width: calc(var(--u) * 28); height: calc(var(--u) * 28); }
+}
+
+/* Même colonne pour un écran plein écran plus haut que large (téléviseur
+   vertical). Bloc distinct : une requête qui mêle largeur et rapport
+   d'aspect ne trouverait plus l'aperçu, conteneur en largeur seulement. */
+@container (max-aspect-ratio: 1/1) {
+  .screen,
+  .frame[data-variant='preview'] .screen {
+    --u: calc(100cqw / 560);
+    height: auto;
+    min-height: 100%;
+    aspect-ratio: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .content {
+    flex: 1 1 auto;
+    height: auto;
+    gap: calc(var(--u) * 24);
+    padding: calc(var(--u) * 26) calc(var(--u) * 24) calc(var(--u) * 22);
+  }
+  .top {
+    flex-wrap: wrap;
+    row-gap: calc(var(--u) * 18);
+    padding-bottom: calc(var(--u) * 20);
+  }
+  .brand { flex: 1 1 100%; }
+  .logo { width: calc(var(--u) * 52); height: calc(var(--u) * 52); font-size: calc(var(--u) * 19); border-radius: calc(var(--u) * 12); }
+  .name { font-size: calc(var(--u) * 28); }
+  .meta { font-size: calc(var(--u) * 18); }
+  .topRight { flex: 1 1 100%; gap: calc(var(--u) * 14); }
+  .status { font-size: calc(var(--u) * 16); letter-spacing: 0.12em; margin-right: auto; }
+  .clock { padding-left: calc(var(--u) * 14); }
+  .clock :global(.flap-row) { --flap-size: calc(var(--u) * 46) !important; }
+
+  .event { grid-template-columns: 1fr; gap: calc(var(--u) * 16); padding: calc(var(--u) * 20); }
+  .eventTitle { font-size: calc(var(--u) * 34); }
+  .eventRules { font-size: calc(var(--u) * 18); }
+  .eventKicker { font-size: calc(var(--u) * 15); }
+  .eventQr { width: calc(var(--u) * 160); justify-self: start; }
+  .eventQr figcaption { font-size: calc(var(--u) * 14); }
+
+  .main { flex: 1 1 auto; display: flex; flex-direction: column; gap: calc(var(--u) * 30); }
+  .counter { flex: none; gap: calc(var(--u) * 20); }
+  .next { flex: 1 1 auto; }
+  .head { flex-wrap: wrap; row-gap: calc(var(--u) * 10); min-height: 0; }
+  .headLabel { font-size: calc(var(--u) * 17); }
+  .headLabel::before { width: calc(var(--u) * 22); }
+  .headNote { font-size: calc(var(--u) * 16); }
+  .team { justify-content: flex-start; }
+  .member { font-size: calc(var(--u) * 17); padding: calc(var(--u) * 7) calc(var(--u) * 13); }
+  .serving { padding-block: calc(var(--u) * 6); }
+  .servingRow :global(.flap-row) { --flap-size: calc(var(--u) * 48) !important; }
+  .servingList[data-count] .with { font-size: calc(var(--u) * 20); }
+  .idle { font-size: calc(var(--u) * 46); }
+  .waiting { gap: calc(var(--u) * 22); padding-top: calc(var(--u) * 22); }
+  .waiting :global(.flap-row) { --flap-size: calc(var(--u) * 150) !important; }
+  .waitingLabel { font-size: calc(var(--u) * 30); padding-bottom: calc(var(--u) * 12); }
+  /* La file au sol est en pixels (FloorScene) : sa boîte aussi. */
+  /* Base 0 (et non auto) : avec une base « contenu », Chromium n'évalue
+     pas les requêtes de hauteur du conteneur tvscene. */
+  .sceneBox { flex: 1 1 0px; min-height: clamp(300px, calc(var(--u) * 560), 460px); }
+  .foot { flex-direction: column; align-items: flex-start; font-size: calc(var(--u) * 17); gap: calc(var(--u) * 10); padding-top: calc(var(--u) * 18); }
+  .nfc { width: calc(var(--u) * 28); height: calc(var(--u) * 28); }
+}
+
+/* Téléviseur ou tablette à la verticale (720 px de large et plus) : un
+   écran de 720 px de large sert d'étalon, la file au sol prend le reste
+   de la hauteur. */
+@container (min-width: 720px) and (max-aspect-ratio: 1/1) {
+  .screen { --u: calc(100cqw / 720); }
+  .sceneBox { min-height: calc(var(--u) * 520); }
+  .eventKicker, .eventQr figcaption { font-size: calc(var(--u) * 16); }
 }

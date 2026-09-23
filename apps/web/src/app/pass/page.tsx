@@ -39,15 +39,25 @@ export default async function PassHomePage() {
   // Numéro de vague : une vague est émise en une seule transaction, donc
   // tous ses pass partagent le même issued_at. On compte les émissions
   // distinctes de l'événement jusqu'à celle de ce pass (lecture seule).
-  const { data: issuedRows } = await supabaseAdmin()
-    .from('event_access_passes')
-    .select('issued_at')
-    .eq('event_id', pass.event_id)
-    .lte('issued_at', pass.issued_at)
-    .limit(5000);
-  const wave = issuedRows && issuedRows.length > 0
-    ? new Set(issuedRows.map((row) => row.issued_at)).size
-    : null;
+  // Lecture triée et paginée : le compte reste exact au-delà d'une page.
+  const PAGE = 1000;
+  const issuedAt = new Set<string>();
+  let complete = false;
+  for (let from = 0; from < 50 * PAGE; from += PAGE) {
+    const { data: rows, error } = await supabaseAdmin()
+      .from('event_access_passes')
+      .select('issued_at')
+      .eq('event_id', pass.event_id)
+      .lte('issued_at', pass.issued_at)
+      .order('issued_at', { ascending: true })
+      .order('public_id', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error || !rows) break;
+    for (const row of rows) issuedAt.add(row.issued_at);
+    if (rows.length < PAGE) { complete = true; break; }
+  }
+  // Numéro incertain (erreur, ou plus de 50 000 pass) : on ne l'affiche pas.
+  const wave = complete && issuedAt.size > 0 ? issuedAt.size : null;
 
   const expired = pass.status === 'issued' && new Date(pass.grace_until).getTime() < Date.now();
   const status = expired ? 'expired' : pass.status;
