@@ -44,6 +44,8 @@ const nextConfig: NextConfig = {
   output: 'standalone',
 
   reactStrictMode: true,
+  // Pas de badge « N » de développement : il masquait les captures de revue.
+  devIndicators: false,
   poweredByHeader: false,
   serverExternalPackages: ['web-push'],
   experimental: {

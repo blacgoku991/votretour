@@ -1,0 +1,68 @@
+/* La file en relief, statique. Primitives dans globals.css (§3.9). */
+
+.scene {
+  background: var(--floor);
+  width: 100%;
+  --slat-h3d: calc(var(--pitch) - 12px);
+}
+
+.sm { height: 140px; --persp: 900px; --persp-origin: 50% 0%; }
+.md { height: 320px; --persp: 900px; --persp-origin: 55% 12%; }
+.lg { height: 100%; min-height: 360px; --persp: 1200px; --persp-origin: 55% 18%; }
+
+/* Le monde à plat : centré, la queue en bas, la tête (comptoir) en haut. */
+.world {
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: min(78%, 360px);
+  height: calc(var(--rows) * var(--pitch));
+}
+/* Bandeau : la queue file hors du cadre en bas, le seuil est plus bas
+   pour tenir dans 140 px. */
+.sm .world { bottom: 4px; width: min(62%, 280px); scale: 0.84; }
+.sm :global(.seuil3d) { height: calc(var(--pitch) * 1.25); }
+.sm :global(.seuil3d__label) { top: 5px; font-size: 0.625rem; }
+.md .world { bottom: 26px; }
+.lg .world { bottom: 12%; }
+
+/* Libellés courts et décoratifs posés sur la face. */
+.face { justify-content: flex-start; }
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.label {
+  font-variation-settings: 'wdth' 104, 'wght' 720;
+  font-size: 14px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hint {
+  font-variation-settings: 'wdth' 88, 'wght' 650;
+  font-size: 10px;
+  line-height: 1.1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.78;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Arrivée : les lattes se déplient une fois depuis le rail, de la tête
+   vers la queue (propriété `scale`, qui n'écrase pas `transform`). */
+@media (prefers-reduced-motion: no-preference) {
+  .intro :global(.slot3d__face),
+  .intro :global(.slot3d__edge) {
+    animation: unfold var(--dur-4) var(--ease-slat) calc(var(--i, 0) * 70ms + 200ms) backwards;
+  }
+  .intro :global(.slot3d__face) { transform-origin: 0 50%; }
+  .intro :global(.slot3d__edge) { transform-origin: 0 0; }
+}
+@keyframes unfold {
+  from { scale: 0 1; }
+}

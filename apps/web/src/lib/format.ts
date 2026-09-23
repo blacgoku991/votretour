@@ -54,6 +54,18 @@ export function formatDuration(seconds: number | null | undefined): string {
   return `${hours} h ${String(minutes % 60).padStart(2, '0')}`;
 }
 
+/**
+ * Durée bornée pour les tableaux de bord : null/NaN → « — » ; 0 → « — » ;
+ * ≥ 24 h → « + de 24 h » ; sinon comme formatDuration. Évite d'afficher
+ * « 240 h 00 » quand une entrée oubliée fausse une moyenne.
+ */
+export function formatDurationBounded(seconds: number | null | undefined): string {
+  if (seconds == null || Number.isNaN(seconds)) return '—';
+  if (Math.round(seconds) <= 0) return '—';
+  if (seconds >= 86_400) return '+ de 24 h';
+  return formatDuration(seconds);
+}
+
 /** Durée écoulée depuis un horodatage, pour les compteurs vivants. */
 export function elapsedSeconds(from: string | Date | null | undefined): number | null {
   if (!from) return null;

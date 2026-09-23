@@ -33,6 +33,17 @@
   gap: var(--sp-3);
 }
 
+/* Aperçu « Votre place » : même pas qu'une latte ordinaire, un peu plus
+   haute pour porter son libellé. */
+.ghost {
+  height: calc(var(--slat-h) + 8px);
+  justify-content: flex-start;
+}
+.ghost .selfName {
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: 0.875rem;
+}
+
 .selfDot {
   width: 8px;
   height: 8px;

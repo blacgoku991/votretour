@@ -1,0 +1,395 @@
+/* Planche de référence — mise en page seulement ; les primitives vivent
+   dans globals.css et les composants partagés. */
+
+.page {
+  min-height: 100dvh;
+  background: var(--surface);
+}
+
+/* ------------------------------------------------------------ En-tête */
+.hero {
+  position: relative;
+  background: var(--floor);
+  border-bottom: 1px solid var(--line);
+  overflow: clip;
+}
+.heroInner {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding-top: 40px;
+}
+.heroText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-title);
+  padding-bottom: 8px;
+}
+.heroScene {
+  height: 300px;
+  margin-inline: calc(-1 * var(--sp-5));
+}
+@media (max-width: 379px) {
+  .heroScene { margin-inline: -16px; }
+}
+
+.toc { margin-top: 8px; }
+.toc :global(.rail-list) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+.toc :global(.rail-list > li) { padding: 0; border-top: 0; }
+.toc :global(.rail-list > li::before) { top: 21px; }
+.tocLink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-variation-settings: 'wdth' 100, 'wght' 620;
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+}
+.tocLink:hover { color: var(--text); }
+.tocNum {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8125rem;
+  color: var(--floor-number);
+}
+
+@media (min-width: 1024px) {
+  .heroInner {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    align-items: stretch;
+    gap: 48px;
+    min-height: 620px;
+    padding-top: 0;
+  }
+  .heroText { justify-content: center; padding-block: 72px; }
+  .heroScene {
+    height: auto;
+    margin-inline: 0 calc(-1 * max(var(--sp-5), (100vw - var(--maxw-app)) / 2 + var(--sp-5)));
+    border-left: 1px solid var(--line);
+  }
+}
+
+/* ----------------------------------------------------------- Sections */
+.main { padding-bottom: 120px; }
+
+.section {
+  display: grid;
+  gap: 28px;
+  padding-block: 56px;
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 16px;
+}
+.section:first-child { border-top: 0; }
+@media (min-width: 1024px) {
+  .section {
+    grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+    column-gap: 56px;
+    padding-block: 72px;
+  }
+  .sectionHead { position: sticky; top: 24px; align-self: start; }
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+}
+.sectionHead {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.sectionTitle { margin-top: 14px; }
+.sectionNote { margin-top: var(--gap-title); max-width: 42ch; }
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+
+.code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.8125rem;
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------- Jetons */
+.swatches {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  overflow: hidden;
+}
+.swatch {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  background: var(--surface);
+}
+.chipColor {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.swatchText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.contrast {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.contrastInk,
+.contrastCobalt {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-variation-settings: 'wdth' 100, 'wght' 680;
+  font-size: 0.9375rem;
+}
+/* -------------------------------------------------------- Typographie */
+.typeStack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.typeRow {
+  display: grid;
+  gap: 10px;
+  padding-block: 22px;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.typeRow:first-child { border-top: 0; padding-top: 0; }
+.typeTag {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+.afterKicker { margin-top: 12px; }
+@media (min-width: 760px) {
+  .typeRow { grid-template-columns: 160px minmax(0, 1fr); align-items: baseline; gap: 24px; }
+}
+
+/* ------------------------------------------------------------ Boutons */
+.buttons { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.btnRow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 20px;
+  padding: 24px;
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+}
+.keyCell { display: flex; flex-direction: column; gap: 12px; }
+.heroBtn { display: flex; flex-direction: column; gap: 12px; max-width: 420px; }
+
+/* ------------------------------------------------------------- Champs */
+.fieldsGrid {
+  display: grid;
+  gap: 40px;
+  min-width: 0;
+}
+@media (min-width: 900px) {
+  .fieldsGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 56px; }
+}
+
+/* ------------------------------------------------------------- Listes */
+.segDemo { display: flex; flex-wrap: wrap; gap: 12px; }
+.boardKey { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+
+/* -------------------------------------------------------------- Volet */
+.flapDemo { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+.flapHero {
+  display: grid;
+  gap: 28px;
+  padding: 28px 24px;
+  border-radius: var(--r-card);
+  background: var(--floor);
+  border: 1px solid var(--line);
+}
+.flapBig {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.flapSide {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: 24px 28px;
+  align-content: center;
+}
+.flapCell { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; min-width: 0; }
+@media (min-width: 1100px) {
+  .flapHero { grid-template-columns: auto minmax(0, 1fr); gap: 48px; padding: 36px 40px; align-items: center; }
+}
+
+/* --------------------------------------------------------------- Rang */
+.rangDemo {
+  display: grid;
+  gap: 40px;
+  min-width: 0;
+}
+@media (min-width: 900px) {
+  .rangDemo { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 56px; }
+}
+.rangCol { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.rangHead { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.tick, .tickSignal {
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.35;
+}
+.tickSignal { background: var(--accent); opacity: 0.9; }
+
+/* ---------------------------------------------------------------- Sol */
+.floorGrid {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+}
+.floorSmall {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+}
+.floorFig {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.floorFig > :first-child { border-radius: var(--r-card); border: 1px solid var(--line); }
+.floorDemo { display: flex; flex-direction: column; gap: 14px; }
+.floorDemo > :first-child { border-radius: var(--r-card); border: 1px solid var(--line); }
+.floorFig > .floorDemo { border: 0; }
+
+/* ------------------------------------------------------------- Plaque */
+.plaques {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 40px 24px;
+  padding: 44px 24px 36px;
+  border-radius: var(--r-card);
+  background: var(--floor);
+  border: 1px solid var(--line);
+  justify-items: center;
+}
+.plaqueFig {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 40px;
+}
+.plaqueDemo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 32px 48px;
+  padding: 48px 24px 64px;
+  border-radius: var(--r-card);
+  background: var(--floor);
+  border: 1px solid var(--line);
+}
+@media (max-width: 1023px) {
+  .plaqueDemo { justify-content: center; }
+}
+.plaqueDriven { display: inline-block; }
+.plaqueControls { display: flex; flex-direction: column; gap: 20px; min-width: min(100%, 280px); }
+.range { width: 100%; accent-color: var(--accent); }
+
+/* -------------------------------------------------------------- Seuil */
+.seuils {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  align-items: stretch;
+}
+.seuilBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: flex-end;
+  min-height: 170px;
+  padding-top: 44px;
+}
+.seuilTurn {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 20px;
+  border-radius: var(--r-card);
+  background: var(--accent);
+  color: var(--ink-1000);
+}
+.seuilInner {
+  align-self: stretch;
+  padding-top: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.turnKicker { font-size: 1.25rem; font-variation-settings: 'wdth' 100, 'wght' 600; }
+.turnTitle {
+  font-variation-settings: 'wdth' 122, 'wght' 820;
+  font-size: clamp(2.5rem, 1.8rem + 3vw, 3.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+}
+.turnLabel {
+  margin-top: 8px;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* -------------------------------------------------------------- États */
+.states {
+  display: grid;
+  gap: 32px 40px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+}
+.stateCell { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.skelTitle { display: block; height: 22px; width: 60%; }
+.skelLine { display: block; height: 14px; width: 85%; }
+.skelBlock { display: block; height: 72px; width: 100%; border-radius: var(--r-card); }
+
+/* --------------------------------------------------------- Révélation */
+.inView {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kpiBand > * { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+
+@media (max-width: 1023px) {
+  .plaqueDemo { flex-direction: column; gap: 104px; padding-top: 56px; }
+  .plaqueControls { align-self: stretch; }
+}

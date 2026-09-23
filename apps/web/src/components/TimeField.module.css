@@ -1,0 +1,33 @@
+/* « 09 h 00 » : deux listes compactes, ≈ 168 px au total. */
+.timeField {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.select {
+  width: 74px;
+  min-height: 48px;
+  padding: 0 26px 0 14px;
+  font-variation-settings: 'wdth' 108, 'wght' 650;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.0625rem;
+  letter-spacing: 0.01em;
+  background-position: right 15px center, right 10px center;
+  background-size: 5px 5px, 5px 5px;
+  cursor: pointer;
+}
+.select:disabled {
+  cursor: not-allowed;
+  color: var(--text-faint);
+  background-color: transparent;
+  border-style: dashed;
+}
+
+.sep {
+  font-variation-settings: 'wdth' 100, 'wght' 600;
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+}
+.timeField[data-disabled='1'] .sep { color: var(--text-faint); }

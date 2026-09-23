@@ -1,5 +1,5 @@
 /* =====================================================================
-   VOTRETOUR — SYSTÈME DE DESIGN « LE RANG »
+   RANGVIA — SYSTÈME DE DESIGN « LE RANG EN RELIEF »
    ---------------------------------------------------------------------
    Direction artistique tirée de l'objet même du produit : une file, des
    positions, un ordre qui avance.
@@ -10,7 +10,7 @@
      LE RAIL    une ligne verticale continue : la file elle-même.
      LA LATTE   une barre horizontale accrochée au rail : une personne.
                 Elle porte une encoche à gauche, là où elle rejoint le
-                rail. C'est la forme signature de VotreTour.
+                rail. C'est la forme signature de Rangvia.
      LE VOLET   un compteur à lamelle, façon tableau d'affichage de gare.
                 Le chiffre tombe quand la file avance.
 
@@ -71,7 +71,8 @@
 
   /* Géométrie : la latte est peu arrondie (objet), la carte l'est plus */
   --r-slat: 10px;
-  --r-card: 18px;
+  --r-card: 14px;         /* était 18px */
+  --r-key: 16px;          /* la touche TERMINER */
   --r-field: 12px;
   --r-pill: 999px;
   --rail-w: 2px;
@@ -88,6 +89,23 @@
   --dur-2: 240ms;
   --dur-3: 420ms;
   --dur-4: 620ms;
+  --dur-5: 900ms;
+  --ease-camera: cubic-bezier(0.45, 0.05, 0.2, 1);   /* la caméra de l'accueil */
+  --stagger: 34ms;                                    /* décalage de la tête vers la queue */
+
+  /* Sol des scènes (« Le Rang en relief ») */
+  --floor: #07090D;
+  --floor-line: color-mix(in oklab, var(--bone-100) 7%, transparent);
+  --floor-number: color-mix(in oklab, var(--bone-100) 24%, transparent);
+  /* Seule lumière permise : l'ellipse posée au sol derrière le seuil. */
+  --spill: color-mix(in oklab, var(--signal-500) 22%, transparent);
+  --slat-edge: var(--ink-700);            /* tranche des lattes grises */
+  --slat-edge-self: var(--signal-600);    /* tranche de la latte « Vous » */
+  --edge-light: inset 0 1px 0 color-mix(in oklab, var(--bone-100) 8%, transparent);
+
+  /* Mise en page */
+  --gap-title: 20px;                      /* entre un titre et le paragraphe suivant */
+  --site-header-h: 56px;                  /* 64px à partir de 760px */
 
   --maxw-phone: 460px;
   --maxw-read: 720px;
@@ -98,6 +116,10 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 
   color-scheme: light;
+}
+
+@media (min-width: 760px) {
+  :root { --site-header-h: 64px; }
 }
 
 /* ---- Thème clair : le tableau de bord, en boutique, en plein jour ---- */
@@ -118,7 +140,8 @@
   --slat-text:   var(--ink-500);
   --accent:      var(--signal-500);
   --accent-hover: var(--signal-600);
-  --accent-ink:  #FFFFFF;
+  /* Encre sur vermillon : 5,9:1 (le blanc ne donnait que 3,3:1). */
+  --accent-ink:  var(--ink-1000);
   --accent-soft: var(--signal-100);
   --shadow-1: 0 1px 2px color-mix(in oklab, var(--ink-900) 8%, transparent);
   --shadow-2: 0 2px 4px color-mix(in oklab, var(--ink-900) 6%, transparent),
@@ -144,7 +167,7 @@
   --slat-text:   #9AA3AF;
   --accent:      var(--signal-500);
   --accent-hover: var(--signal-400);
-  --accent-ink:  #FFFFFF;
+  --accent-ink:  var(--ink-1000);
   --accent-soft: color-mix(in oklab, var(--signal-500) 18%, transparent);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.45), 0 18px 40px -16px rgba(0, 0, 0, 0.7);
@@ -168,6 +191,7 @@
     --slat:        var(--ink-600);
     --slat-text:   #9AA3AF;
     --accent-hover: var(--signal-400);
+    --accent-ink:  var(--ink-1000);
     --accent-soft: color-mix(in oklab, var(--signal-500) 18%, transparent);
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.45), 0 18px 40px -16px rgba(0, 0, 0, 0.7);
@@ -216,6 +240,9 @@
 [data-accent='cobalt']  { --accent: var(--cobalt-500);  --accent-soft: var(--cobalt-100); }
 [data-accent='brique']  { --accent: var(--brique-500);  --accent-soft: var(--brique-100); }
 [data-accent='ardoise'] { --accent: var(--ardoise-500); --accent-soft: var(--ardoise-100); }
+/* Jade et cuivre gardent l'encre (6,7:1 et plus) ; cobalt, brique et
+   ardoise sont plus lisibles en blanc (cobalt : 5,3:1 contre 3,8:1). */
+[data-accent='cobalt'], [data-accent='brique'], [data-accent='ardoise'] { --accent-ink: #FFFFFF; }
 
 /* ---------------------------------------------------------------------
    2. SOCLE
@@ -242,6 +269,9 @@ body {
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: 'ss01', 'cv01';
   overflow-wrap: break-word;
+  /* Jamais de défilement horizontal. `clip` et non `hidden` : hidden
+     casserait position: sticky. */
+  overflow-x: clip;
 }
 
 img, svg, video, canvas { display: block; max-width: 100%; }
@@ -310,6 +340,72 @@ a { color: inherit; text-decoration: none; }
 .t-faint { color: var(--text-faint); }
 .t-num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
 
+/* H1 d'accueil et appel final : ≈ 43 px à 390, 92 px à 1440. */
+.t-hero {
+  font-variation-settings: 'wdth' 120, 'wght' 820;
+  font-size: clamp(2.625rem, 1.2rem + 6.2vw, 5.75rem);
+  line-height: 0.92;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+  max-width: 13ch;
+}
+/* Titres des étapes de la séquence. */
+.t-story {
+  font-variation-settings: 'wdth' 112, 'wght' 760;
+  font-size: clamp(1.625rem, 1.2rem + 1.8vw, 2.5rem);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+/* Libellés du tableau des départs. */
+.t-board {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: clamp(1rem, 0.9rem + 0.5vw, 1.375rem);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+/* Chapô. */
+.t-lead {
+  font-size: clamp(1rem, 0.95rem + 0.4vw, 1.1875rem);
+  line-height: 1.55;
+  color: var(--text-muted);
+  max-width: 48ch;
+}
+/* « 01 — Il arrive » */
+.t-kicker {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.t-kicker__num {
+  font-variation-settings: 'wdth' 125, 'wght' 820;
+  font-size: 1rem;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+/* Lien d'évitement : premier élément focusable d'une séquence animée. */
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: 8px;
+  z-index: 100;
+  transform: translateY(-160%);
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--bone-100);
+  color: var(--ink-1000);
+  font-variation-settings: 'wght' 700;
+}
+.skip-link:focus-visible { transform: none; }
+
 /* ---------------------------------------------------------------------
    4. LE RAIL ET LES LATTES
    ---------------------------------------------------------------------
@@ -337,29 +433,35 @@ a { color: inherit; text-decoration: none; }
   border-radius: var(--rail-w);
 }
 
-/* Impulsion qui descend le rail quand la file avance : on « voit » le
-   mouvement traverser la file, pas seulement les lattes bouger. */
+/* Impulsion qui remonte le rail quand la file avance, de la queue vers
+   la tête : on « voit » le mouvement traverser la file, pas seulement les
+   lattes bouger. Le calque couvre toute la hauteur du rail ; seule sa
+   bande centrale est colorée, et il glisse en translateY (compositeur). */
 .rang[data-pulse='1']::after {
   content: '';
   position: absolute;
   left: calc(var(--rail-w) * -1);
+  top: 0;
+  bottom: 0;
   width: calc(var(--rail-w) * 3);
-  height: 56px;
   border-radius: var(--rail-w);
   background: linear-gradient(to bottom,
-    transparent,
-    var(--accent) 35%,
-    var(--accent) 65%,
-    transparent);
-  animation: rail-pulse var(--dur-4) var(--ease-slat) 1;
+    transparent calc(50% - 28px),
+    var(--accent) calc(50% - 8px),
+    var(--accent) calc(50% + 8px),
+    transparent calc(50% + 28px));
+  opacity: 0;
   pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .rang[data-pulse='1']::after { animation: rail-pulse var(--dur-4) var(--ease-slat) 1; }
 }
 
 @keyframes rail-pulse {
-  0%   { top: -56px; opacity: 0; }
+  0%   { transform: translateY(calc(50% + 28px)); opacity: 0; }
   20%  { opacity: 1; }
   80%  { opacity: 1; }
-  100% { top: 100%; opacity: 0; }
+  100% { transform: translateY(calc(-50% - 28px)); opacity: 0; }
 }
 
 .slat {
@@ -374,8 +476,7 @@ a { color: inherit; text-decoration: none; }
   color: var(--slat-text);
   transition:
     transform var(--dur-4) var(--ease-slat),
-    background var(--dur-2) var(--ease-out),
-    height var(--dur-3) var(--ease-slat);
+    background var(--dur-2) var(--ease-out);
   will-change: transform;
 }
 
@@ -417,15 +518,53 @@ a { color: inherit; text-decoration: none; }
    à la distinguer, sans inventer un état qu'on ne connaît pas. */
 .slat--head { background: color-mix(in oklab, var(--text) 7%, var(--slat)); }
 
-/* Une latte qui s'en va : elle se rétracte vers le rail. */
+/* LE PASSAGE — la latte de tête se relève comme un volet autour de son
+   bord côté seuil (en haut), puis s'efface. Remplace la rétractation. */
 .slat--leaving {
-  animation: slat-leave var(--dur-3) var(--ease-in) forwards;
-  transform-origin: left center;
+  transform-origin: 50% 0;
+  animation: slat-pass var(--dur-3) var(--ease-in) forwards;
 }
-@keyframes slat-leave {
-  0%   { opacity: 1; scale: 1 1; }
-  60%  { opacity: 0.4; }
-  100% { opacity: 0; scale: 0 0.6; }
+@keyframes slat-pass {
+  0%   { transform: perspective(600px) rotateX(0deg); opacity: 1; }
+  45%  { opacity: 1; }
+  100% { transform: perspective(600px) rotateX(88deg); opacity: 0; }
+}
+
+/* Le relief, sans aucune 3D : une tranche dure de 2 px sous chaque latte. */
+.rang--relief .slat { box-shadow: 0 2px 0 var(--slat-edge); }
+.rang--relief .slat--self {
+  box-shadow: 0 3px 0 var(--slat-edge-self),
+              0 8px 24px -10px color-mix(in oklab, var(--accent) 70%, transparent);
+}
+.rang--relief .slat--ghost,
+.rang--relief .slat--kept { box-shadow: none; }
+
+/* Latte fantôme : « Votre place », pas encore prise. */
+.slat--ghost {
+  background: transparent;
+  border: 2px dashed color-mix(in oklab, var(--accent) 60%, transparent);
+  color: var(--text-muted);
+}
+.slat--ghost::before {
+  background: none;
+  border-top: 2px dashed color-mix(in oklab, var(--accent) 60%, transparent);
+}
+
+/* Place gardée : le client est sorti, sa place reste. */
+.slat--kept {
+  background: transparent;
+  border: 2px solid var(--accent);
+  color: var(--text);
+}
+.slat--kept::before { background: var(--accent); height: 4px; }
+
+/* La file avance d'un cran : décalage de la tête vers la queue. */
+@media (prefers-reduced-motion: no-preference) {
+  .rang > .slat {
+    transition:
+      transform var(--dur-4) var(--ease-slat) calc(var(--i, 0) * var(--stagger)),
+      background var(--dur-2) var(--ease-out);
+  }
 }
 
 /* Une latte qui arrive : elle se déplie depuis le rail. */
@@ -442,36 +581,114 @@ a { color: inherit; text-decoration: none; }
 .rang--advancing .slat { transform: translateY(calc(var(--step) * -1)); }
 
 /* ---------------------------------------------------------------------
-   5. LE VOLET — compteur à lamelle
+   5. LE VOLET v2 — vrai tableau à palettes, à demi-cellules
    ---------------------------------------------------------------------
-   Le chiffre ne change pas : il tombe. C'est le geste qui dit « votre
-   place vient d'avancer ».
+   Le chiffre ne change pas : il tombe. Chaque cellule mesure 0.68em × 1em.
+   Au repos, une seule couche. Pendant un changement (440 ms), quatre :
+     .flap__top                      nouveau caractère, moitié haute
+     .flap__bottom                   ancien caractère, moitié basse
+     .flap__top.flap__flipTop        ancien, moitié haute, qui bascule
+     .flap__bottom.flap__flipBottom  nouveau, moitié basse, qui arrive
+   On ne voit donc JAMAIS deux caractères entiers superposés : seulement
+   des demi-cellules. --flap-delay décale une cellule (FlapText).
    --------------------------------------------------------------------- */
+.flap-row { display: inline-flex; align-items: center; }
+.flap-row--tile { gap: 0.06em; }
+
 .flap {
   position: relative;
-  display: inline-grid;
-  place-items: center;
-  overflow: hidden;
-  font-variation-settings: 'wdth' 125, 'wght' 800;
-  font-variant-numeric: tabular-nums;
+  display: inline-block;
+  width: 0.68em;
+  height: 1em;
   line-height: 1;
   font-size: var(--flap-size, clamp(5rem, 3rem + 14vw, 9rem));
-  height: 1em;
-  min-width: 0.66em;
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.04em;
+  perspective: 4em;
+  vertical-align: top;
 }
-.flap__cell { grid-area: 1 / 1; }
-.flap__cell--out { animation: flap-out var(--dur-3) var(--ease-in) forwards; }
-.flap__cell--in  { animation: flap-in  var(--dur-3) var(--ease-slat) backwards; }
+.flap--auto { width: auto; }                      /* FlapText proportionnel */
+.flap--tile {
+  background: var(--flap-tile, var(--ink-700));
+  border-radius: 0.08em;
+  box-shadow: var(--edge-light), 0 1px 0 var(--ink-1000);
+  /* Tuile : chasse un peu moins large, pour que M et W tiennent dans la cellule. */
+  font-variation-settings: 'wdth' 108, 'wght' 800;
+}
+.flap--tile:not(.flap--auto) { width: 0.74em; }
+/* Charnière : seulement sur tuile. */
+.flap--tile::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% - 0.5px);
+  height: 1px;
+  background: color-mix(in oklab, var(--floor) 70%, transparent);
+  pointer-events: none;
+}
 
-@keyframes flap-out {
-  from { transform: translateY(0);     opacity: 1; }
-  to   { transform: translateY(-85%);  opacity: 0; }
+.flap__face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  white-space: pre;
 }
-@keyframes flap-in {
-  from { transform: translateY(85%);   opacity: 0; }
-  to   { transform: translateY(0);     opacity: 1; }
+/* La première couche est dans le flux : elle donne sa largeur à la
+   cellule proportionnelle. */
+.flap > .flap__face:first-child { position: relative; height: 100%; }
+.flap--tile .flap__face { background: var(--flap-tile, var(--ink-700)); border-radius: inherit; }
+/* Une cellule = un caractère : l'approche négative ne ferait que le décentrer. */
+.flap:not(.flap--auto) > .flap__face, .flap--tile > .flap__face { letter-spacing: 0; }
+.flap--tile.flap--auto .flap__face { padding-inline: 0.1em; }
+.flap__top    { clip-path: inset(0 0 50% 0); }
+.flap__bottom { clip-path: inset(50% 0 0 0); }
+.flap__flipTop    { transform-origin: 50% 50%; }
+.flap__flipBottom { transform-origin: 50% 50%; transform: rotateX(90deg); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .flap__flipTop {
+    animation: flap-top 180ms var(--ease-in) var(--flap-delay, 0ms) forwards;
+  }
+  .flap__flipBottom {
+    animation: flap-bottom 240ms var(--ease-slat) calc(180ms + var(--flap-delay, 0ms)) both;
+  }
+  /* Sans tuile, les couches sont transparentes : la nouvelle moitié haute
+     n'apparaît qu'une fois l'ancienne couchée, et l'ancienne moitié basse
+     disparaît quand la nouvelle arrive. Jamais de superposition. */
+  .flap:not(.flap--tile) > .flap__top:not(.flap__flipTop) {
+    animation: flap-hold 180ms steps(1, end) var(--flap-delay, 0ms) backwards;
+  }
+  .flap:not(.flap--tile) > .flap__bottom:not(.flap__flipBottom) {
+    animation: flap-drop 180ms steps(1, end) var(--flap-delay, 0ms) forwards;
+  }
+  /* Sur tuile, la palette s'assombrit en tombant (calque d'opacité). */
+  .flap--tile .flap__flipTop::after,
+  .flap--tile .flap__flipBottom::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: #000;
+    opacity: 0;
+  }
+  .flap--tile .flap__flipTop::after {
+    animation: flap-shade-in 180ms var(--ease-in) var(--flap-delay, 0ms) forwards;
+  }
+  .flap--tile .flap__flipBottom::after {
+    animation: flap-shade-out 240ms var(--ease-slat) calc(180ms + var(--flap-delay, 0ms)) backwards;
+  }
 }
+@keyframes flap-top    { from { transform: rotateX(0deg); }  to { transform: rotateX(-90deg); } }
+@keyframes flap-bottom { from { transform: rotateX(90deg); } to { transform: rotateX(0deg); } }
+@keyframes flap-hold   { from { opacity: 0; } to { opacity: 0; } }
+@keyframes flap-drop   { to { opacity: 0; } }
+@keyframes flap-shade-in  { to { opacity: 0.45; } }
+@keyframes flap-shade-out { from { opacity: 0.35; } to { opacity: 0; } }
 
 /* ---------------------------------------------------------------------
    6. PRIMITIVES D'INTERFACE
@@ -503,7 +720,6 @@ a { color: inherit; text-decoration: none; }
   user-select: none;
 }
 .btn:active:not(:disabled) { transform: scale(0.975); }
-.btn:disabled, .btn[aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; }
 
 .btn--signal {
   --btn-bg: var(--accent);
@@ -528,6 +744,63 @@ a { color: inherit; text-decoration: none; }
   font-size: 1.125rem;
   font-variation-settings: 'wdth' 104, 'wght' 720;
   border-radius: 16px;
+}
+
+/* Action secondaire forte : contour vermillon. */
+.btn--outline-signal {
+  --btn-bg: transparent;
+  --btn-fg: var(--accent);
+  --btn-bd: var(--accent);
+  border-width: 1.5px;
+}
+.btn--outline-signal:hover:not(:disabled) {
+  --btn-bg: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+
+/* LA TOUCHE TERMINER — s'emploie avec .btn--signal. Sa tranche (::after)
+   s'écrase à l'appui : c'est le seul « objet » de l'outil de travail. */
+.btn--key {
+  min-height: 72px;
+  border-radius: var(--r-key);
+  font-size: 1.5rem;
+  font-variation-settings: 'wdth' 110, 'wght' 780;
+  letter-spacing: -0.01em;
+  margin-bottom: 4px;
+}
+.btn--key::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 100%;
+  height: 4px;
+  border-radius: 0 0 10px 10px;
+  background: var(--signal-600);
+  transform-origin: top;
+  transition: transform var(--dur-1) var(--ease-out);
+  pointer-events: none;
+}
+.btn--key:active:not(:disabled) { transform: translateY(3px); }
+.btn--key:active:not(:disabled)::after { transform: scaleY(0.25); }
+.btn--key:disabled::after,
+.btn--key[aria-disabled='true']::after { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  /* Appui en 140 ms, retour en 240 ms. */
+  .btn--key, .btn--key::after { transition-duration: var(--dur-2); }
+  .btn--key:active:not(:disabled),
+  .btn--key:active:not(:disabled)::after { transition-duration: var(--dur-1); }
+}
+
+/* État désactivé FANTÔME — fin des pavés gris. Placé après toutes les
+   variantes pour l'emporter sur elles. */
+.btn:disabled, .btn[aria-disabled='true'] {
+  --btn-bg: transparent;
+  --btn-fg: var(--text-faint);
+  --btn-bd: var(--line-strong);
+  border-style: dashed;
+  box-shadow: none;
+  opacity: 1;
+  cursor: not-allowed;
 }
 
 .field { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -565,6 +838,41 @@ a { color: inherit; text-decoration: none; }
 }
 .hint { font-size: 0.8125rem; color: var(--text-muted); }
 .error-text { font-size: 0.8125rem; color: var(--brique-500); font-variation-settings: 'wght' 600; }
+
+/* Champs accrochés au rail : chaque champ a son encoche, qui passe au
+   jade quand il est valide et au vermillon quand il a le focus. */
+.field-rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-left: 22px;
+}
+.field-rail::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.field-rail > .field { position: relative; }
+.field-rail > .field::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 8px;
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+  /* Micro-état toléré sur un trait de 2 px, pas une animation continue. */
+  transition: background var(--dur-2) var(--ease-out);
+}
+.field-rail > .field:has(:user-valid)::before { background: var(--jade-500); }
+.field-rail > .field:has(:focus-visible)::before { background: var(--accent); }
 
 .card {
   background: var(--surface-raised);
@@ -604,12 +912,27 @@ a { color: inherit; text-decoration: none; }
   background: var(--text-faint);
   flex: none;
 }
-.pip--live { background: var(--jade-500); animation: pip 2.4s var(--ease-out) infinite; }
+.pip--live { position: relative; background: var(--jade-500); }
 .pip--warn { background: var(--copper-500); }
 .pip--off  { background: var(--text-faint); }
-@keyframes pip {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--jade-500) 55%, transparent); }
-  55%      { box-shadow: 0 0 0 6px transparent; }
+/* Anneau qui s'élargit : un calque animé en transform et opacité
+   seulement (plus de box-shadow animée). L'une des deux seules boucles
+   du site. */
+.pip--live::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--jade-500);
+  opacity: 0;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pip--live::after { animation: pip-ring 2.4s var(--ease-out) infinite; }
+}
+@keyframes pip-ring {
+  0%        { transform: scale(1);   opacity: 0.55; }
+  70%, 100% { transform: scale(2.6); opacity: 0; }
 }
 
 .hr { height: 1px; background: var(--line); border: 0; }
@@ -632,6 +955,10 @@ a { color: inherit; text-decoration: none; }
 }
 .shell--read { max-width: var(--maxw-read); }
 .shell--phone { max-width: var(--maxw-phone); }
+/* Gouttière de 16 px sur les très petits écrans. */
+@media (max-width: 379px) {
+  .shell { padding-inline: 16px; }
+}
 
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -656,19 +983,19 @@ a { color: inherit; text-decoration: none; }
 [data-theme='dark'] .banner--warn  { background: color-mix(in oklab, var(--copper-500) 16%, transparent); color: var(--copper-500); }
 [data-theme='dark'] .banner--error { background: color-mix(in oklab, var(--brique-500) 18%, transparent); color: #F0958C; }
 
-/* Motif de fond : des lattes empilées, très en retrait. Utilisé sur les
-   grandes surfaces vides plutôt qu'une illustration décorative. */
-.grain {
+/* MARQUAGE AU SOL : des traits de place tous les 52 px, très en retrait.
+   `.grain` garde son nom pour la compatibilité ; `.floor-marks` est
+   l'alias à employer. Plus de mask-image : il produisait une bande coupée. */
+.grain,
+.floor-marks {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.5;
   background-image: repeating-linear-gradient(
     to bottom,
-    var(--line) 0 1px,
-    transparent 1px var(--step)
+    var(--floor-line) 0 1px,
+    transparent 1px 52px
   );
-  mask-image: radial-gradient(120% 90% at 50% 0%, #000 0%, transparent 72%);
 }
 
 /* Compteur animé générique (nombre de personnes, statistiques) */
@@ -681,12 +1008,447 @@ a { color: inherit; text-decoration: none; }
 .fade-in { animation: fade-in var(--dur-3) var(--ease-out) backwards; }
 @keyframes fade-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
+/* Squelette de chargement : un fond statique qui respire en opacité
+   (le dégradé glissant a disparu). */
 .skeleton {
-  background: linear-gradient(90deg, var(--surface-sunken) 0%,
-    color-mix(in oklab, var(--surface-sunken) 60%, var(--surface-raised)) 50%,
-    var(--surface-sunken) 100%);
-  background-size: 200% 100%;
-  animation: skeleton 1.4s linear infinite;
+  background: var(--surface-sunken);
   border-radius: var(--r-slat);
 }
-@keyframes skeleton { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton { animation: skeleton-breathe 1.2s ease-in-out infinite alternate; }
+}
+@keyframes skeleton-breathe {
+  from { opacity: 0.45; }
+  to   { opacity: 0.9; }
+}
+
+/* ---------------------------------------------------------------------
+   7. LE RANG EN RELIEF — listes, tableau des départs, sélecteurs
+   --------------------------------------------------------------------- */
+
+/* Chargement : un rail et quatre lattes qui se déplient en boucle. */
+.loading-slats {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 20px;
+}
+.loading-slats::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--rail);
+  border-radius: 2px;
+}
+.loading-slats > span {
+  height: 34px;
+  border-radius: var(--r-slat);
+  background: var(--slat);
+  opacity: 0.6;
+  transform-origin: 0 50%;
+}
+.loading-slats > span:nth-child(1) { width: 88%; --i: 0; }
+.loading-slats > span:nth-child(2) { width: 79%; --i: 1; }
+.loading-slats > span:nth-child(3) { width: 70%; --i: 2; }
+.loading-slats > span:nth-child(4) { width: 61%; --i: 3; }
+@media (prefers-reduced-motion: no-preference) {
+  .loading-slats > span {
+    animation: loading-slat 1.2s var(--ease-slat) infinite alternate;
+    animation-delay: calc(var(--i, 0) * 90ms);
+  }
+}
+@keyframes loading-slat {
+  from { transform: scaleX(0.2); opacity: 0.35; }
+  to   { transform: scaleX(1);   opacity: 0.8; }
+}
+
+/* Liste-rail : toute liste du site public et du tableau de bord. */
+.rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 40px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.rail-list::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.rail-list > li {
+  position: relative;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.rail-list > li::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 26px;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.rail-list > li[aria-current='true']::before,
+.rail-list > li.is-self::before {
+  background: var(--accent);
+  height: 4px;
+  top: 25px;
+}
+
+/* Tableau des départs : liste-rail à colonnes. S'emploie TOUJOURS avec
+   .rail-list (class="rail-list board"). La clé porte .t-board. */
+.board > li {
+  display: grid;
+  grid-template-columns: minmax(0, 17rem) minmax(0, 1fr) auto;
+  gap: 8px 32px;
+  align-items: baseline;
+  padding: 22px 0;
+}
+.board > li::before { top: 30px; }
+.board > li[aria-current='true']::before,
+.board > li.is-self::before { top: 29px; }
+@media (max-width: 719px) {
+  .board > li { grid-template-columns: 1fr; gap: 8px; }
+}
+/* Une puce reste une étiquette, jamais étirée par la grille. */
+.board > li > .chip { justify-self: start; }
+
+/* Sélecteur segmenté (Mensuel/Annuel, 7/30/90 j, Ouverte/En pause/Fermée). */
+.seg {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 12px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+}
+.seg > * {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  transition: color var(--dur-1) var(--ease-out);
+}
+.seg > *:hover { color: var(--text); }
+.seg > [aria-pressed='true'],
+.seg > [aria-current='page'],
+.seg > [aria-checked='true'] {
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--edge-light), 0 1px 0 var(--slat-edge);
+}
+
+/* Bande KPI : un tableau d'affichage, pas des cartes. */
+.kpi-band {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  overflow: hidden;
+}
+.kpi-band > * {
+  background: var(--surface);
+  padding: 20px;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------------
+   8. LE SOL EN RELIEF — primitives 3D partagées (FloorScene, accueil)
+   ---------------------------------------------------------------------
+   Repère : dans le monde à plat, la tête (comptoir) est en HAUT, la queue
+   en bas ; --pos: 0 est « au comptoir ». rotateX(tilt) avec l'origine en
+   bas fait fuir la tête vers le fond ; rotateZ(turn) est appliqué avant
+   l'inclinaison (`rotateX(tilt) rotateZ(turn)`) : positif → tête à droite.
+
+   INTERDIT sur .world3d, .slot3d et .slot3d__lift : opacity < 1,
+   overflow ≠ visible, filter, mask, clip-path (ils aplatissent la 3D).
+   Le brouillard ne s'applique qu'aux FEUILLES (faces, tranches, encoches).
+   --------------------------------------------------------------------- */
+.scene3d {
+  position: relative;
+  overflow: clip;
+  perspective: var(--persp, 1100px);
+  perspective-origin: var(--persp-origin, 55% 22%);
+}
+.world3d {
+  position: absolute;
+  transform-style: preserve-3d;
+  transform-origin: 50% 100%;
+}
+
+.floor3d {
+  position: absolute;
+  inset: calc(var(--pitch) * -0.5) -40px calc(var(--pitch) * -1) -40px;
+  background-image: repeating-linear-gradient(
+    to bottom, var(--floor-line) 0 1px, transparent 1px var(--pitch));
+}
+.rail3d {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--rail);
+  transform: translateZ(0.5px);
+}
+.floorNum {
+  position: absolute;
+  left: -30px;
+  width: 22px;
+  text-align: right;
+  top: calc(var(--n) * var(--pitch) + 6px);
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--floor-number);
+  font-variant-numeric: tabular-nums;
+}
+
+.slot3d {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--slat-h3d, 44px);
+  transform-style: preserve-3d;
+  transform: translate3d(0, calc(var(--pos) * var(--pitch)), 0);
+}
+.slot3d__notch {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 24px;
+  height: 2px;
+  margin-top: -1px;
+  background: var(--rail);
+  transform: translateZ(0.6px);
+}
+.slot3d__lift {
+  position: absolute;
+  inset: 0 0 0 28px;
+  transform-style: preserve-3d;
+  /* Coin haut-gauche : le dépliage part du rail, le Passage pivote
+     autour du bord côté seuil, la chute tourne autour de l'encoche. */
+  transform-origin: 0 0;
+}
+.slot3d__face {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-slat);
+  background: var(--slat);
+  color: var(--slat-text);
+  transform: translateZ(8px);
+  box-shadow: var(--edge-light);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  overflow: hidden;
+  white-space: nowrap;
+  /* Brouillard : opacité des feuilles seulement. */
+  opacity: max(0.25, min(1, calc(1 - (var(--pos) - 1) * 0.12)));
+}
+.slot3d__edge {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 100%;
+  height: 8px;
+  border-radius: 0 0 6px 6px;
+  background: var(--slat-edge);
+  transform-origin: 50% 0;
+  transform: translateZ(8px) rotateX(-90deg);
+  opacity: max(0.25, min(1, calc(1 - (var(--pos) - 1) * 0.12)));
+}
+.slot3d__tick {
+  flex: none;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.35;
+}
+
+/* États (attribut data-state sur .slot3d) */
+.slot3d[data-state='serving'] .slot3d__face {
+  background: color-mix(in oklab, var(--text) 12%, var(--slat));
+  color: var(--text);
+}
+.slot3d[data-state='serving'] .slot3d__tick,
+.slot3d[data-state='serving'] .slot3d__notch { background: var(--accent); opacity: 0.9; }
+.slot3d:is([data-state='self'], [data-state='back'], [data-state='turn']) .slot3d__face {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.slot3d:is([data-state='self'], [data-state='back'], [data-state='turn']) .slot3d__edge {
+  background: var(--slat-edge-self);
+}
+/* Le vermillon ne passe jamais dans le brouillard : mêlé au sol, il vire
+   au brun. La latte « Vous » reste pleine où qu'elle soit. */
+.slot3d:is([data-state='self'], [data-state='back'], [data-state='turn'], [data-state='kept'])
+  :is(.slot3d__face, .slot3d__edge) { opacity: 1; }
+.slot3d:is([data-state='self'], [data-state='back'], [data-state='turn'], [data-state='kept']) .slot3d__notch {
+  background: var(--accent);
+  height: 4px;
+  margin-top: -2px;
+}
+.slot3d[data-state='kept'] .slot3d__face {
+  background: transparent;
+  border: 2px solid var(--accent);
+  color: var(--text);
+}
+.slot3d[data-state='kept'] .slot3d__edge { opacity: 0; }
+.slot3d[data-state='ghost'] .slot3d__face {
+  background: transparent;
+  border: 2px dashed color-mix(in oklab, var(--accent) 60%, transparent);
+  color: var(--text-muted);
+  box-shadow: none;
+  transform: translateZ(0.5px);
+}
+.slot3d[data-state='ghost'] .slot3d__edge { opacity: 0; }
+.slot3d[data-state='fallen'] .slot3d__lift { transform: translate(14px, 6px) rotateZ(-7deg); }
+.slot3d[data-state='fallen'] .slot3d__notch { opacity: 0.4; }
+.slot3d[data-state='hidden'] .slot3d__lift { scale: 0 1; }
+.slot3d[data-state='hidden'] :is(.slot3d__face, .slot3d__edge, .slot3d__notch) { opacity: 0; }
+.slot3d[data-state='passed'] .slot3d__lift {
+  transform: translate3d(0, calc(var(--pitch) * -0.6), 0) rotateX(90deg);
+}
+.slot3d[data-state='passed'] :is(.slot3d__face, .slot3d__edge, .slot3d__notch) { opacity: 0; }
+/* Appareil modeste : pas de tranche. */
+[data-lite='1'] .slot3d__edge { display: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .slot3d {
+    transition: transform var(--dur-4) var(--ease-slat) calc(var(--i, 0) * var(--stagger));
+  }
+  .slot3d__lift {
+    transition: transform var(--dur-4) var(--ease-slat), scale var(--dur-4) var(--ease-slat);
+  }
+  .slot3d__face, .slot3d__edge, .slot3d__notch {
+    transition: opacity var(--dur-2) var(--ease-out);
+  }
+  .slot3d[data-state='passed'] :is(.slot3d__face, .slot3d__edge, .slot3d__notch) {
+    transition: opacity var(--dur-2) var(--ease-in) 380ms;
+  }
+}
+
+/* Le Seuil en relief : debout au-dessus de la tête de file. */
+.seuil3d {
+  position: absolute;
+  left: 16px;
+  right: -16px;
+  bottom: calc(100% + var(--pitch) * 0.2);
+  height: calc(var(--pitch) * 1.9);
+  transform-origin: 50% 100%;
+  transform: rotateX(-90deg);
+  border: 3px solid var(--accent);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+}
+.seuil3d__label {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  translate: -50% 0;
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 0.75rem;
+  line-height: 1;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--bone-100);
+  white-space: nowrap;
+}
+/* Seule lumière permise : l'ellipse posée au sol derrière le seuil. */
+.spill3d {
+  position: absolute;
+  left: -30%;
+  right: -30%;
+  top: calc(var(--pitch) * -1.4);
+  height: calc(var(--pitch) * 2.4);
+  background: radial-gradient(closest-side, var(--spill), transparent);
+  transform: translateZ(0.2px);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------
+   9. LE SEUIL 2D — deux poteaux et un linteau vermillon de 3 px
+   --------------------------------------------------------------------- */
+.seuil { position: relative; padding: 28px 20px 20px; }
+.seuil__post {
+  position: absolute;
+  bottom: 0;
+  top: 0;
+  width: 3px;
+  background: var(--seuil-color, var(--accent));
+  transform-origin: 50% 100%;
+}
+.seuil__post--l { left: 0; }
+.seuil__post--r { right: 0; }
+.seuil__lintel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: var(--seuil-color, var(--accent));
+  transform-origin: 50% 50%;
+}
+.seuil__label {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  translate: -50% 0;
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 0.6875rem;
+  line-height: 1;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--seuil-color, var(--accent));
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .seuil[data-draw='1'] .seuil__post   { animation: seuil-post var(--dur-3) var(--ease-slat) backwards; }
+  .seuil[data-draw='1'] .seuil__lintel { animation: seuil-lintel var(--dur-3) var(--ease-slat) 200ms backwards; }
+  .seuil[data-draw='1'] .seuil__label  { animation: seuil-label var(--dur-2) var(--ease-out) 380ms backwards; }
+}
+@keyframes seuil-post   { from { transform: scaleY(0); } }
+@keyframes seuil-lintel { from { transform: scaleX(0); } }
+@keyframes seuil-label  { from { opacity: 0; } }
+
+/* ---------------------------------------------------------------------
+   10. RÉVÉLATION — utilisée par <Reveal>. Sans JavaScript, rien n'est
+   jamais « armé » : tout est visible.
+   --------------------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  [data-reveal='armed'] { opacity: 0; transform: translateY(12px); }
+  [data-reveal='armed'][data-reveal-variant='slat'] { transform: scaleX(0); transform-origin: 0 50%; }
+  [data-reveal='armed'][data-reveal-variant='fade'] { transform: none; }
+  [data-reveal='in'] {
+    transition:
+      opacity var(--dur-3) var(--ease-out) calc(var(--reveal-i, 0) * 60ms),
+      transform var(--dur-4) var(--ease-slat) calc(var(--reveal-i, 0) * 60ms);
+  }
+  [data-reveal='in'][data-reveal-variant='slat'] { transform-origin: 0 50%; }
+}

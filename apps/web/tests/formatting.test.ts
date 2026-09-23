@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  formatDuration, formatPercent, formatNumber, initials, directionsUrl, WEEKDAYS,
+  formatDuration, formatDurationBounded, formatPercent, formatNumber, initials, directionsUrl, WEEKDAYS,
 } from '@/lib/format';
 import { slugSchema, clientNameSchema, publicIdSchema } from '@/lib/api';
 
@@ -12,6 +12,19 @@ describe('formatage', () => {
     expect(formatDuration(725)).toBe('12 min');
     expect(formatDuration(3660)).toBe('1 h 01');
     expect(formatDuration(null)).toBe('—');
+  });
+
+  it('borne les durées des tableaux de bord', () => {
+    expect(formatDurationBounded(null)).toBe('—');
+    expect(formatDurationBounded(undefined)).toBe('—');
+    expect(formatDurationBounded(Number.NaN)).toBe('—');
+    expect(formatDurationBounded(0)).toBe('—');
+    expect(formatDurationBounded(45)).toBe('45 s');
+    expect(formatDurationBounded(725)).toBe('12 min');
+    expect(formatDurationBounded(3660)).toBe('1 h 01');
+    expect(formatDurationBounded(86_399)).toBe('23 h 59');
+    expect(formatDurationBounded(86_400)).toBe('+ de 24 h');
+    expect(formatDurationBounded(864_000)).toBe('+ de 24 h');
   });
 
   it('formate les pourcentages et les nombres', () => {
