@@ -6,45 +6,6 @@
    physique : très large, espacé, lisible à un mètre.
    ===================================================================== */
 
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--sp-3);
-}
-@media (min-width: 900px) {
-  .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-
-.tile {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 16px 18px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: var(--surface-raised);
-  /* Le liseré gauche reprend le rail : la couleur dit l'état du stock. */
-  border-left: 3px solid var(--line-strong);
-}
-.tile_jade   { border-left-color: var(--jade-500); }
-.tile_signal { border-left-color: var(--accent); }
-.tile_muted  { border-left-color: var(--line); opacity: .85; }
-
-.tileLabel {
-  font-size: .6875rem;
-  font-variation-settings: 'wdth' 90, 'wght' 750;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.tileValue {
-  font-size: 2rem;
-  line-height: 1;
-  font-variation-settings: 'wdth' 125, 'wght' 800;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -.02em;
-}
-
 .consoleGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

@@ -4,9 +4,15 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requirePlatformAdmin } from '@/server/auth';
 import { integrationStatus } from '@/lib/env';
 import { formatNumber, relativeTime } from '@/lib/format';
+import { AdminHero, AdminStat, AdminStats } from './AdminKit';
+import {
+  ENTRY_STATUS_LABEL, ORGANIZATION_STATUS_LABEL, EVENT_STATUS_LABEL, ERROR_LEVEL_LABEL,
+  auditActionLabel, labelOf,
+} from './labels';
+import { monthlyRecurringCents } from './revenue';
 import styles from './admin.module.css';
 
-export const metadata: Metadata = { title: 'Control Room', robots: { index: false } };
+export const metadata: Metadata = { title: 'Salle de contrôle', robots: { index: false } };
 export const dynamic = 'force-dynamic';
 
 interface PlatformStats {
@@ -151,16 +157,19 @@ export default async function AdminHomePage({
     integrations.appleAssociation,
   ].filter(Boolean).length;
 
-  const mrrCents = (subscriptions ?? []).reduce((total, subscription) => {
-    if (!['active', 'trialing'].includes(subscription.status)) return total;
+  // Même calcul que la page Offres : seuls les abonnements payants
+  // comptent, les essais sont annoncés à part.
+  const mrrCents = monthlyRecurringCents((subscriptions ?? []).map((subscription) => {
     const plan = Array.isArray(subscription.plans) ? subscription.plans[0] : subscription.plans;
-    if (!plan) return total;
-    return total + (
-      subscription.billing_interval === 'year'
-        ? Math.round((plan.price_year_cents ?? 0) / 12)
-        : (plan.price_month_cents ?? 0)
-    );
-  }, 0);
+    return {
+      status: subscription.status,
+      billing_interval: subscription.billing_interval,
+      priceMonthCents: plan?.price_month_cents,
+      priceYearCents: plan?.price_year_cents,
+    };
+  }));
+  const activeSubscriptions = (subscriptions ?? []).filter((s) => s.status === 'active').length;
+  const trialSubscriptions = (subscriptions ?? []).filter((s) => s.status === 'trialing').length;
 
   const onlineDisplays = (displays ?? []).filter((display) =>
     display.last_seen_at && display.last_seen_at >= onlineSince,
@@ -168,27 +177,25 @@ export default async function AdminHomePage({
 
   const notificationTotal24h =
     (stats?.notifications.sent24h ?? 0) + (stats?.notifications.failed24h ?? 0);
+  // Aucun envoi : pas de pourcentage (un « 100 % » vert serait faux).
   const notificationSuccess =
     notificationTotal24h > 0
       ? Math.round(((stats?.notifications.sent24h ?? 0) / notificationTotal24h) * 100)
-      : 100;
+      : null;
+  const failed24h = stats?.notifications.failed24h ?? 0;
+  const activeDisplays = displays?.length ?? 0;
 
   const searchedOrganizations = searchOrganizations.data ?? [];
   const searchedEvents = searchEvents.data ?? [];
   const searchedPlates = searchPlates.data ?? [];
 
   return (
-    <div className={styles.page}>
-      <section className={styles.controlHero}>
-        <div>
-          <span className={styles.cardKicker}>RANGVIA CONTROL ROOM</span>
-          <h1>Vue plateforme</h1>
-          <p>
-            Exploitation, revenus, files, événements, écrans, notifications et incidents au même endroit.
-          </p>
-        </div>
-
-        <div className={styles.heroTools}>
+    <div className={`shell ${styles.page}`}>
+      <AdminHero
+        kicker="SALLE DE CONTRÔLE"
+        title="Vue plateforme"
+        description="Exploitation, revenus, files, événements, écrans, notifications et incidents au même endroit."
+      >
           <form className={styles.globalSearch} method="get">
             <input
               className="input"
@@ -202,10 +209,9 @@ export default async function AdminHomePage({
 
           <div className={styles.commandActions}>
             <Link href="/admin/etablissements" className="btn btn--solid">Établissements</Link>
-            <Link href="/admin/evenements" className="btn btn--signal">Événements live</Link>
+            <Link href="/admin/evenements" className="btn btn--signal">Événements en direct</Link>
           </div>
-        </div>
-      </section>
+      </AdminHero>
 
       {q.length >= 2 && (
         <section className={styles.searchResults}>
@@ -234,7 +240,7 @@ export default async function AdminHomePage({
                         <span>/{organization.slug} · {organization.activity}</span>
                       </div>
                       <span className={organization.status === 'active' ? 'chip chip--jade' : 'chip chip--brique'}>
-                        {organization.status}
+                        {labelOf(ORGANIZATION_STATUS_LABEL, organization.status)}
                       </span>
                     </Link>
                   ))}
@@ -254,7 +260,7 @@ export default async function AdminHomePage({
                           <strong>{event.name}</strong>
                           <span>{org?.name ?? '—'}</span>
                         </div>
-                        <span className="chip">{event.status}</span>
+                        <span className="chip">{labelOf(EVENT_STATUS_LABEL, event.status)}</span>
                       </Link>
                     );
                   })}
@@ -286,54 +292,66 @@ export default async function AdminHomePage({
         </section>
       )}
 
-      <div className={styles.commandStats}>
-        <CommandStat
+      <AdminStats>
+        <AdminStat
           label="Établissements actifs"
           value={formatNumber(stats?.organizations.active ?? 0)}
           hint={'+' + formatNumber(stats?.organizations.newThisWeek ?? 0) + ' cette semaine'}
           tone="live"
         />
-        <CommandStat
+        <AdminStat
           label="Clients en file"
           value={formatNumber(stats?.entries.inQueueNow ?? 0)}
           hint={formatNumber(stats?.queues.open ?? 0) + ' files ouvertes'}
           tone="signal"
         />
-        <CommandStat
+        <AdminStat
           label="Passages · 24 h"
           value={formatNumber(stats?.entries.completed24h ?? 0)}
           hint={formatNumber(stats?.entries.active24h ?? 0) + ' inscriptions'}
         />
-        <CommandStat
+        <AdminStat
           label="MRR estimé"
           value={(mrrCents / 100).toLocaleString('fr-FR', { maximumFractionDigits: 0 }) + ' €'}
-          hint={(subscriptions ?? []).filter((subscription) => subscription.status === 'active').length + ' abonnements actifs'}
+          hint={
+            formatNumber(activeSubscriptions)
+            + (activeSubscriptions > 1 ? ' abonnements actifs' : ' abonnement actif')
+            + (trialSubscriptions > 0 ? ' · ' + formatNumber(trialSubscriptions) + ' en essai' : '')
+          }
           tone="signal"
         />
-        <CommandStat
+        <AdminStat
           label="Push réussis · 24 h"
-          value={notificationSuccess + '%'}
-          hint={formatNumber(stats?.notifications.failed24h ?? 0) + ' échec(s)'}
-          tone={notificationSuccess >= 98 ? 'live' : notificationSuccess >= 90 ? 'warn' : 'danger'}
+          value={notificationSuccess === null ? '—' : notificationSuccess + ' %'}
+          hint={
+            notificationSuccess === null
+              ? 'aucun envoi'
+              : formatNumber(failed24h) + (failed24h > 1 ? ' échecs' : ' échec')
+          }
+          tone={
+            notificationSuccess === null ? 'default'
+            : notificationSuccess >= 98 ? 'live'
+            : notificationSuccess >= 90 ? 'warn' : 'danger'
+          }
         />
-        <CommandStat
+        <AdminStat
           label="Écrans en ligne"
           value={formatNumber(onlineDisplays)}
-          hint={formatNumber(displays?.length ?? 0) + ' appareils actifs'}
+          hint={formatNumber(activeDisplays) + (activeDisplays > 1 ? ' appareils actifs' : ' appareil actif')}
           tone={onlineDisplays > 0 ? 'live' : 'default'}
         />
-        <CommandStat
+        <AdminStat
           label="Scans NFC · 7 j"
           value={formatNumber(stats?.plates.scans7d ?? 0)}
           hint={formatNumber(stats?.plates.active ?? 0) + ' plaques actives'}
         />
-        <CommandStat
+        <AdminStat
           label="Incidents ouverts"
           value={formatNumber(stats?.errorsOpen ?? 0)}
           hint={(stats?.errorsOpen ?? 0) > 0 ? 'à traiter' : 'système nominal'}
           tone={(stats?.errorsOpen ?? 0) > 0 ? 'danger' : 'live'}
         />
-      </div>
+      </AdminStats>
 
       <div className={styles.analyticsGrid}>
         <section className={styles.adminCard}>
@@ -352,7 +370,7 @@ export default async function AdminHomePage({
         <section className={styles.adminCard}>
           <div className={styles.adminCardHead}>
             <div>
-              <span className={styles.cardKicker}>DELIVERY · 7 JOURS</span>
+              <span className={styles.cardKicker}>ENVOIS · 7 JOURS</span>
               <h2>Notifications envoyées</h2>
             </div>
             <strong className={styles.metricTotal}>
@@ -367,7 +385,7 @@ export default async function AdminHomePage({
         <section className={styles.adminCard}>
           <div className={styles.adminCardHead}>
             <div>
-              <span className={styles.cardKicker}>LIVE</span>
+              <span className={styles.cardKicker}>EN DIRECT</span>
               <h2>Événements en cours</h2>
             </div>
             <Link href="/admin/evenements" className="btn btn--ghost btn--sm">Tout gérer</Link>
@@ -386,7 +404,7 @@ export default async function AdminHomePage({
                     <strong>{event.name}</strong>
                     <span>{org?.name ?? '—'} · {location?.name ?? '—'}</span>
                   </div>
-                  <span className="chip">{event.status === 'live' ? 'Live' : 'Pause'}</span>
+                  <span className="chip">{event.status === 'live' ? 'En direct' : 'En pause'}</span>
                 </div>
               );
             })}
@@ -396,19 +414,19 @@ export default async function AdminHomePage({
         <section className={styles.adminCard}>
           <div className={styles.adminCardHead}>
             <div>
-              <span className={styles.cardKicker}>INFRA</span>
+              <span className={styles.cardKicker}>INFRASTRUCTURE</span>
               <h2>État des intégrations</h2>
             </div>
             <span className="chip chip--jade">{integrationCount}/6</span>
           </div>
 
           <div className={styles.integrationGrid}>
-            <Integration name="Supabase service" ok={integrations.serviceRole} />
-            <Integration name="Secret sessions" ok={integrations.sessionSecret} />
+            <Integration name="Clé de service Supabase" ok={integrations.serviceRole} />
+            <Integration name="Secret des sessions" ok={integrations.sessionSecret} />
             <Integration name="APNs / App Clip" ok={integrations.apns} />
             <Integration name="Web Push" ok={integrations.webPush} />
             <Integration name="Stripe" ok={integrations.stripe} />
-            <Integration name="Apple association" ok={integrations.appleAssociation} />
+            <Integration name="Association Apple" ok={integrations.appleAssociation} />
           </div>
         </section>
       </div>
@@ -433,7 +451,7 @@ export default async function AdminHomePage({
                   <span className={entry.status === 'serving' ? styles.livePulse : styles.pausePulse} />
                   <div>
                     <strong>{org?.name ?? '—'}</strong>
-                    <span>{queue?.name ?? '—'} · {entry.status} · {relativeTime(entry.joined_at)}</span>
+                    <span>{queue?.name ?? '—'} · {labelOf(ENTRY_STATUS_LABEL, entry.status)} · {relativeTime(entry.joined_at)}</span>
                   </div>
                 </div>
               );
@@ -444,7 +462,7 @@ export default async function AdminHomePage({
         <section className={styles.adminCard}>
           <div className={styles.adminCardHead}>
             <div>
-              <span className={styles.cardKicker}>DISPLAY FLEET</span>
+              <span className={styles.cardKicker}>PARC D’ÉCRANS</span>
               <h2>Écrans TV</h2>
             </div>
             <span className="chip chip--jade">{onlineDisplays} en ligne</span>
@@ -491,12 +509,12 @@ export default async function AdminHomePage({
             ) : (errors ?? []).map((error) => (
               <div className={styles.incidentRow} key={error.id}>
                 <span className={error.level === 'fatal' ? 'chip chip--brique' : 'chip chip--copper'}>
-                  {error.level}
+                  {labelOf(ERROR_LEVEL_LABEL, error.level)}
                 </span>
                 <div>
                   <strong>{error.message}</strong>
                   <span>
-                    {error.source} · {error.occurrences} occurrence(s) · {relativeTime(error.last_seen_at)}
+                    {error.source} · {formatNumber(error.occurrences)} occurrence{error.occurrences > 1 ? 's' : ''} · {relativeTime(error.last_seen_at)}
                   </span>
                 </div>
               </div>
@@ -519,7 +537,7 @@ export default async function AdminHomePage({
               return (
                 <div className={styles.auditRow} key={row.id}>
                   <div>
-                    <strong>{row.action}</strong>
+                    <strong>{auditActionLabel(row.action)}</strong>
                     <span>
                       {org?.name ?? 'Plateforme'} · {row.actor_label ?? row.actor} · {relativeTime(row.created_at)}
                     </span>
@@ -578,29 +596,15 @@ function DailyBars({
           <div className={styles.barColumn} key={point.label}>
             <div className={styles.barValue}>{formatNumber(value)}</div>
             <div className={styles.barTrack}>
-              <div className={styles.barFill} style={{ height: height + '%' }} />
+              <div
+                className={value > 0 ? styles.barFill : `${styles.barFill} ${styles.barFillEmpty}`}
+                style={{ height: height + '%' }}
+              />
             </div>
             <span>{point.label}</span>
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function CommandStat({
-  label, value, hint, tone = 'default',
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  tone?: 'default' | 'live' | 'signal' | 'warn' | 'danger';
-}) {
-  return (
-    <div className={styles.commandStat} data-tone={tone}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{hint}</small>
     </div>
   );
 }

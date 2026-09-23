@@ -919,3 +919,125 @@
     min-height: 95px;
   }
 }
+
+/* Une journée sans activité : la piste reste vide, sans trait coloré
+   qui ferait croire à une activité. */
+.barFillEmpty { background: var(--line-strong); opacity: .6; }
+
+
+/* =====================================================================
+   HARMONISATION — un seul en-tête de page, une seule tuile, des
+   tableaux lisibles sur téléphone.
+   ===================================================================== */
+
+/* En-tête en carte (AdminHero) : le texte à gauche, les outils à droite ;
+   « empilé » quand les filtres sont nombreux. */
+.heroText { min-width: 0; }
+/* Quelques boutons seulement : les outils prennent leur largeur, le
+   titre garde la sienne (sans passer sur deux lignes). */
+.heroTools:has(> .commandActions:only-child) { min-width: 0; flex: none; }
+.controlHeroStacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+.controlHeroStacked .heroTools {
+  min-width: 0;
+  width: 100%;
+  justify-items: stretch;
+}
+.heroTools :global(form.row) { width: 100%; }
+/* Les listes de filtres gardent leur texte entier (« Tous les établissements »). */
+.page :global(form.row) > :global(.select) { flex-basis: 240px; }
+@media (max-width: 620px) {
+  .controlHero {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+    padding: 18px;
+    border-radius: 18px;
+  }
+  .heroTools { min-width: 0; width: 100%; justify-items: stretch; }
+  .controlFilters { grid-template-columns: 1fr; min-width: 0; }
+}
+
+/* Tableau défilant : fondu sur le bord qui cache encore des colonnes. */
+.scrollFrame { position: relative; min-width: 0; }
+.scrollFrame::before,
+.scrollFrame::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 44px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .2s var(--ease-out);
+}
+.scrollFrame::before {
+  left: 0;
+  background: linear-gradient(to right, var(--surface-raised), transparent);
+}
+.scrollFrame::after {
+  right: 0;
+  background: linear-gradient(to left, var(--surface-raised) 10%, transparent);
+}
+.scrollFrame[data-left='true']::before,
+.scrollFrame[data-right='true']::after { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .scrollFrame::before, .scrollFrame::after { transition: none; }
+}
+.tableWrap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Cellule d'actions : les boutons restent sur une ligne, le tableau
+   défile déjà horizontalement. */
+.rowNowrap { display: flex; gap: var(--sp-2); flex-wrap: nowrap; }
+
+/* Sous 640 px, les tableaux « empilés » deviennent une pile de fiches :
+   chaque ligne un bloc, chaque cellule « libellé : valeur ». */
+@media (max-width: 640px) {
+  .stackTable,
+  .stackTable tbody,
+  .stackTable th,
+  .stackTable td { display: block; }
+  .stackTable thead {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .stackTable tr {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .stackTable tbody tr:last-child { border-bottom: 0; }
+  .stackTable th,
+  .stackTable td {
+    padding: 0;
+    border: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+  .stackTable td[data-label] {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    gap: 10px;
+    align-items: baseline;
+    justify-items: start;
+  }
+  .stackTable td[data-label]::before {
+    content: attr(data-label);
+    font-variation-settings: 'wdth' 88, 'wght' 700;
+    font-size: .6875rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .stackTable .stackLead { order: -1; font-size: .9375rem; color: var(--text); }
+  .stackTable .stackActions { padding-top: 6px; }
+}

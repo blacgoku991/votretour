@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requirePlatformAdmin } from '@/server/auth';
-import { PageHeader, Section, EmptyState } from '@/components/Page';
+import { Section, EmptyState } from '@/components/Page';
+import { AdminHero } from '../AdminKit';
 import { formatDateTime, relativeTime } from '@/lib/format';
 import { TicketThread } from './TicketThread';
 import styles from '../admin.module.css';
@@ -37,7 +38,11 @@ export default async function AdminSupportPage() {
 
   return (
     <div className={`shell ${styles.page}`}>
-      <PageHeader title="Support" description="Les demandes reçues, de la plus récente à la plus ancienne." />
+      <AdminHero
+        kicker="SUPPORT"
+        title="Demandes des professionnels"
+        description="Les demandes reçues, de la plus récente à la plus ancienne."
+      />
       <Section>
         {(tickets ?? []).length === 0 ? (
           <EmptyState title="Aucune demande" description="Les demandes des professionnels arriveront ici." />

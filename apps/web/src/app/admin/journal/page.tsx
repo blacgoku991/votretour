@@ -1,8 +1,11 @@
 import type { Metadata } from 'next';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requirePlatformAdmin } from '@/server/auth';
-import { PageHeader, Section, EmptyState } from '@/components/Page';
+import { Section, EmptyState } from '@/components/Page';
 import { formatDateTime } from '@/lib/format';
+import { AdminHero } from '../AdminKit';
+import { ScrollTable } from '../ScrollTable';
+import { auditActionLabel, targetTypeLabel } from '../labels';
 import styles from '../admin.module.css';
 
 export const metadata: Metadata = { title: 'Journal d’audit', robots: { index: false } };
@@ -22,7 +25,8 @@ export default async function AdminAuditPage() {
 
   return (
     <div className={`shell ${styles.page}`}>
-      <PageHeader
+      <AdminHero
+        kicker="AUDIT"
         title="Journal d’audit"
         description="Les actions sensibles : équipe, réglages, facturation, suspensions. Le flux des files est tracé séparément."
       />
@@ -31,13 +35,13 @@ export default async function AdminAuditPage() {
         {(logs ?? []).length === 0 ? (
           <EmptyState title="Journal vide" />
         ) : (
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
+          <ScrollTable label="Journal d’audit">
+            <table className={`${styles.table} ${styles.stackTable}`}>
               <thead>
                 <tr>
                   <th scope="col">Quand</th>
-                  <th scope="col">Qui</th>
                   <th scope="col">Action</th>
+                  <th scope="col">Qui</th>
                   <th scope="col">Organisation</th>
                   <th scope="col">Cible</th>
                 </tr>
@@ -48,25 +52,33 @@ export default async function AdminAuditPage() {
                   const profile = Array.isArray(log.profiles) ? log.profiles[0] : log.profiles;
                   return (
                     <tr key={log.id}>
-                      <td className="t-num">{formatDateTime(log.created_at)}</td>
-                      <td>
-                        {profile?.full_name ?? profile?.email ?? '—'}
-                        {log.actor === 'platform_admin' && (
-                          <span className="chip chip--signal" style={{ marginLeft: 6 }}>plateforme</span>
-                        )}
+                      <td className="t-num" data-label="Quand">{formatDateTime(log.created_at)}</td>
+                      <th scope="row" className={`${styles.orgName} ${styles.stackLead}`}>
+                        {auditActionLabel(log.action)}
+                      </th>
+                      <td data-label="Qui">
+                        {/* Une seule enveloppe : en fiche (mobile), la valeur
+                            tient dans une seule case de la grille. */}
+                        <span>
+                          {profile?.full_name ?? profile?.email ?? '—'}
+                          {log.actor === 'platform_admin' && (
+                            <span className="chip chip--signal" style={{ marginLeft: 6 }}>plateforme</span>
+                          )}
+                        </span>
                       </td>
-                      <th scope="row" className={styles.orgName}>{log.action}</th>
-                      <td>{org?.name ?? '—'}</td>
-                      <td>
-                        {log.target_type}
-                        {log.target_id && <span className="t-micro t-faint"> · {log.target_id.slice(0, 12)}</span>}
+                      <td data-label="Organisation">{org?.name ?? '—'}</td>
+                      <td data-label="Cible">
+                        <span>
+                          {targetTypeLabel(log.target_type)}
+                          {log.target_id && <span className="t-micro t-faint"> · {log.target_id.slice(0, 12)}</span>}
+                        </span>
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-          </div>
+          </ScrollTable>
         )}
       </Section>
     </div>

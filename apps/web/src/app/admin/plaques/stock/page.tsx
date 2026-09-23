@@ -3,7 +3,8 @@ import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requirePlatformAdmin } from '@/server/auth';
 import { selectAll } from '@/server/select-all';
-import { PageHeader } from '@/components/Page';
+import { AdminHero, AdminStat, AdminStats } from '../../AdminKit';
+import { ScrollTable } from '../../ScrollTable';
 import { formatDate, formatNumber } from '@/lib/format';
 import { normalizeStockCode } from '@/lib/plate-stock';
 import { StockConsole, type AssignTargets } from './StockConsole';
@@ -86,18 +87,28 @@ export default async function PlateStockPage({
 
   return (
     <div className={`shell ${adminStyles.page}`}>
-      <PageHeader
+      <AdminHero
+        kicker="STOCK"
         title="Stock fournisseur"
         description="Générez les liens à graver, envoyez-les au fabricant, puis attribuez chaque plaque livrée à une société."
-        actions={<Link href="/admin/plaques" className="btn btn--ghost btn--sm">Plaques en service</Link>}
-      />
+      >
+        <div className={adminStyles.commandActions}>
+          <Link href="/admin/plaques" className="btn btn--ghost btn--sm">Plaques en service</Link>
+        </div>
+      </AdminHero>
 
-      <div className={styles.tiles}>
-        <Tile label="En stock" value={total} hint="liens générés" />
-        <Tile label="Disponibles" value={counts.available} hint="prêtes à attribuer" tone="jade" />
-        <Tile label="Attribuées" value={counts.assigned} hint="en service chez une société" tone="signal" />
-        <Tile label="Au rebut" value={counts.void} hint="perdues ou défectueuses" tone="muted" />
-      </div>
+      <AdminStats>
+        <AdminStat label="En stock" value={formatNumber(total)} hint="liens générés" />
+        <AdminStat
+          label="Disponibles" value={formatNumber(counts.available)} hint="prêtes à attribuer"
+          tone={counts.available > 0 ? 'live' : 'default'}
+        />
+        <AdminStat
+          label="Attribuées" value={formatNumber(counts.assigned)} hint="en service chez une société"
+          tone={counts.assigned > 0 ? 'signal' : 'default'}
+        />
+        <AdminStat label="Au rebut" value={formatNumber(counts.void)} hint="perdues ou défectueuses" />
+      </AdminStats>
 
       <StockConsole targets={targets} initialQuery={initialQuery} />
 
@@ -111,11 +122,11 @@ export default async function PlateStockPage({
 
         {(batches ?? []).length === 0 ? (
           <p className="t-small t-muted">
-            Aucun lot pour l&apos;instant. Générez-en un ci-dessus : ses liens seront prêts à envoyer au fabricant.
+            Aucun lot pour l’instant. Générez-en un ci-dessus : ses liens seront prêts à envoyer au fabricant.
           </p>
         ) : (
-          <div className={adminStyles.tableWrap}>
-            <table className={adminStyles.table}>
+          <ScrollTable label="Lots commandés">
+            <table className={`${adminStyles.table} ${adminStyles.stackTable}`}>
               <thead>
                 <tr>
                   <th scope="col">Lot</th>
@@ -131,17 +142,17 @@ export default async function PlateStockPage({
                   const c = perBatch.get(batch.id) ?? { available: 0, assigned: 0, void: 0 };
                   return (
                     <tr key={batch.id}>
-                      <th scope="row">
+                      <th scope="row" className={adminStyles.stackLead}>
                         <Link href={`/admin/plaques/stock/${batch.id}`} className={styles.batchLink}>
                           {batch.label}
                         </Link>
                         {batch.supplier_note && <span className="t-micro t-faint"> · {batch.supplier_note}</span>}
                       </th>
-                      <td>{formatDate(batch.created_at)}</td>
-                      <td className="t-num">{formatNumber(batch.quantity)}</td>
-                      <td className="t-num">{formatNumber(c.available)}</td>
-                      <td className="t-num">{formatNumber(c.assigned)}</td>
-                      <td>
+                      <td data-label="Créé le">{formatDate(batch.created_at)}</td>
+                      <td className="t-num" data-label="Plaques">{formatNumber(batch.quantity)}</td>
+                      <td className="t-num" data-label="Disponibles">{formatNumber(c.available)}</td>
+                      <td className="t-num" data-label="Attribuées">{formatNumber(c.assigned)}</td>
+                      <td className={adminStyles.stackActions}>
                         <div className={styles.rowActions}>
                           <a className="btn btn--ghost btn--sm" href={`/api/admin/plate-stock/${batch.id}/export?format=csv`}>CSV</a>
                           <a className="btn btn--ghost btn--sm" href={`/api/admin/plate-stock/${batch.id}/export?format=txt`}>URL</a>
@@ -153,19 +164,9 @@ export default async function PlateStockPage({
                 })}
               </tbody>
             </table>
-          </div>
+          </ScrollTable>
         )}
       </section>
-    </div>
-  );
-}
-
-function Tile({ label, value, hint, tone }: { label: string; value: number; hint: string; tone?: 'jade' | 'signal' | 'muted' }) {
-  return (
-    <div className={`${styles.tile} ${tone ? styles[`tile_${tone}`] : ''}`}>
-      <span className={styles.tileLabel}>{label}</span>
-      <strong className={styles.tileValue}>{formatNumber(value)}</strong>
-      <span className="t-micro t-faint">{hint}</span>
     </div>
   );
 }

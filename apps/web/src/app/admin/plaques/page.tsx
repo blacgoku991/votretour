@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requirePlatformAdmin } from '@/server/auth';
 import { env } from '@/lib/env';
-import { PageHeader, Section, EmptyState } from '@/components/Page';
+import { Section, EmptyState } from '@/components/Page';
+import { AdminHero } from '../AdminKit';
 import { formatNumber } from '@/lib/format';
 import { PlateGrid, type AdminPlate } from './PlateGrid';
 import styles from '../admin.module.css';
@@ -69,7 +70,8 @@ export default async function AdminPlatesPage({
 
   return (
     <div className={`shell ${styles.page}`}>
-      <PageHeader
+      <AdminHero
+        kicker="PLAQUES & NFC"
         title="Plaques"
         description={
           `${formatNumber(rows.length)} plaque${rows.length > 1 ? 's' : ''} · `
@@ -77,7 +79,8 @@ export default async function AdminPlatesPage({
           + `${formatNumber(programmed)} programmée${programmed > 1 ? 's' : ''} · `
           + `${formatNumber(scanned)} déjà scannée${scanned > 1 ? 's' : ''}`
         }
-        actions={
+        stacked
+      >
           <form className="row g2" method="get">
             <input
               className="input" name="q" defaultValue={q ?? ''}
@@ -98,8 +101,7 @@ export default async function AdminPlatesPage({
             </select>
             <button type="submit" className="btn btn--solid btn--sm">Filtrer</button>
           </form>
-        }
-      />
+      </AdminHero>
 
       <Section>
         {rows.length === 0 ? (

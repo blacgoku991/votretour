@@ -98,6 +98,12 @@ function AssignPanel({ targets, initialQuery }: { targets: AssignTargets; initia
 
   const toggleVoid = (value: boolean) => {
     if (!plate) return;
+    // Mettre au rebut retire la plaque du stock attribuable : on demande
+    // confirmation, comme pour « Libérer ». La remise en stock, elle, est
+    // sans risque.
+    if (value && !window.confirm(
+      `Mettre la plaque ${formatStockCode(plate.code)} au rebut ? Elle ne pourra plus être attribuée tant qu’elle n’est pas remise en stock.`,
+    )) return;
     setError(null);
     startTransition(async () => {
       const result = await adminSetStockPlateVoid({ code: plate.code, void: value });
@@ -136,7 +142,7 @@ function AssignPanel({ targets, initialQuery }: { targets: AssignTargets; initia
       </form>
       <p className="t-micro t-faint">
         Astuce : connecté au super-admin, scannez une plaque livrée avec votre téléphone —
-        elle s&apos;ouvre directement ici.
+        elle s’ouvre directement ici.
       </p>
 
       {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
@@ -320,7 +326,7 @@ function AssignForm({
               <option key={l.id} value={l.id}>{l.name}{l.city ? ` · ${l.city}` : ''}{l.active ? '' : ' (inactif)'}</option>
             ))}
           </select>
-          {locations.length === 0 && <p className="hint">Cette société n&apos;a encore aucun établissement.</p>}
+          {locations.length === 0 && <p className="hint">Cette société n’a encore aucun établissement.</p>}
         </div>
       )}
 
@@ -435,7 +441,19 @@ function BatchPanel() {
               value={quantityInput}
               onChange={(event) => setQuantityInput(event.target.value)}
               required
+              aria-invalid={!quantityValid}
+              aria-describedby="batch-quantity-help"
             />
+            {/* Toujours visible : le bouton grisé seul ne dit pas pourquoi. */}
+            <p
+              id="batch-quantity-help"
+              className={quantityValid ? 'hint' : 'error-text'}
+              aria-live="polite"
+            >
+              {quantityValid
+                ? 'De 1 à 1000 plaques par lot.'
+                : 'Indiquez un nombre entier entre 1 et 1000.'}
+            </p>
           </div>
           <div className="field">
             <label htmlFor="batch-kind">Support</label>
@@ -466,7 +484,7 @@ function BatchPanel() {
         </button>
 
         <ol className={styles.steps}>
-          <li>Téléchargez le <strong>CSV</strong> (ou la liste d&apos;URL) et envoyez-le au fabricant.</li>
+          <li>Téléchargez le <strong>CSV</strong> (ou la liste d’URL) et envoyez-le au fabricant.</li>
           <li>Il grave chaque URL dans une puce NFC et imprime le QR correspondant, avec le code <strong>RV-…</strong> en petit.</li>
           <li>À la livraison, attribuez chaque plaque à une société — ici, ou en la scannant.</li>
         </ol>

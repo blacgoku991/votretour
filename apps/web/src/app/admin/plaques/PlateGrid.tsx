@@ -74,7 +74,7 @@ export function PlateGrid({ plates, siteUrl, organizations, locations, queues }:
 
       <div className={styles.createCard}>
         <div>
-          <p className={`t-label ${styles.createKicker}`}>SUPER ADMIN</p>
+          <p className={`t-label ${styles.createKicker}`}>NOUVELLE PLAQUE</p>
           <h2 className="t-section">Créer une plaque</h2>
           <p className="t-small t-muted">
             Le commerçant ne voit aucun réglage NFC/QR. Toute la création et la programmation restent ici.
@@ -332,7 +332,8 @@ function PlateCard({
         />
         <button
           type="button"
-          className={plate.is_active ? 'btn btn--danger btn--sm' : 'btn btn--ghost btn--sm'}
+          // Réversible : un contour neutre. Le rouge est réservé à « Supprimer ».
+          className="btn btn--ghost btn--sm"
           disabled={busy}
           onClick={() => onPatch(plate.id, { isActive: !plate.is_active })}
         >
@@ -376,12 +377,12 @@ function PlateCard({
               id={`queue-${plate.id}`} className="select" value={plate.queue_id ?? ''} disabled={busy}
               onChange={(e) => onPatch(plate.id, { queueId: e.target.value || null })}
             >
-              <option value="">File par défaut de l&apos;établissement</option>
+              <option value="">File par défaut de l’établissement</option>
               {queues.map((q) => <option key={q.id} value={q.id}>{q.name}</option>)}
             </select>
             <p className="hint">
               Seules les files de cet établissement sont proposées, et le serveur le
-              revérifie avant d&apos;enregistrer.
+              revérifie avant d’enregistrer.
             </p>
           </div>
 

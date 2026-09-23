@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requirePlatformAdmin } from '@/server/auth';
 import { formatNumber, relativeTime } from '@/lib/format';
+import { AdminHero, AdminStat, AdminStats } from '../AdminKit';
+import { ScrollTable } from '../ScrollTable';
 import styles from '../admin.module.css';
 
 export const metadata: Metadata = { title: 'Écrans TV', robots: { index: false } };
@@ -55,45 +57,52 @@ export default async function AdminDisplaysPage({
   const revoked = all.filter((device) => device.status === 'revoked').length;
 
   return (
-    <div className={styles.page}>
-      <div className={styles.controlHero}>
-        <div>
-          <span className={styles.cardKicker}>DISPLAY FLEET</span>
-          <h1>Écrans TV</h1>
-          <p>État, appairage et affectation de tous les écrans Rangvia.</p>
-        </div>
-
+    <div className={`shell ${styles.page}`}>
+      <AdminHero
+        kicker="PARC D’ÉCRANS"
+        title="Écrans TV"
+        description="État, appairage et affectation de tous les écrans Rangvia."
+      >
         <form className={styles.controlFilters} method="get">
-          <input className="input" name="q" defaultValue={q ?? ''} placeholder="Nom, établissement…" />
-          <select className="select" name="etat" defaultValue={etat ?? ''}>
+          <input
+            className="input" name="q" defaultValue={q ?? ''}
+            placeholder="Nom, établissement…" aria-label="Rechercher un écran"
+          />
+          <select className="select" name="etat" defaultValue={etat ?? ''} aria-label="État">
             <option value="">Tous</option>
             <option value="actifs">Actifs</option>
             <option value="revoques">Révoqués</option>
           </select>
           <button className="btn btn--solid btn--sm" type="submit">Filtrer</button>
         </form>
-      </div>
+      </AdminHero>
 
-      <div className={styles.commandStats}>
-        <MiniStat label="Écrans actifs" value={active} />
-        <MiniStat label="En ligne" value={online} tone="live" />
-        <MiniStat label="Hors ligne" value={Math.max(0, active - online)} tone="warn" />
-        <MiniStat label="Révoqués" value={revoked} />
-      </div>
+      <AdminStats>
+        <AdminStat label="Écrans actifs" value={formatNumber(active)} hint="appairés et autorisés" />
+        <AdminStat
+          label="En ligne" value={formatNumber(online)} hint="signal depuis moins de 2 min"
+          tone={online > 0 ? 'live' : 'default'}
+        />
+        <AdminStat
+          label="Hors ligne" value={formatNumber(Math.max(0, active - online))} hint="actifs mais silencieux"
+          tone={active - online > 0 ? 'warn' : 'default'}
+        />
+        <AdminStat label="Révoqués" value={formatNumber(revoked)} hint="accès retiré" />
+      </AdminStats>
 
       <section className={styles.adminCard}>
-        <div className={styles.tableWrap}>
+        <ScrollTable label="Écrans TV">
           <table className={styles.table}>
             <thead>
               <tr>
-                <th>Écran</th>
-                <th>Organisation</th>
-                <th>Établissement</th>
-                <th>File</th>
-                <th>Événement</th>
-                <th>État</th>
-                <th>Dernier signal</th>
-                <th />
+                <th scope="col">Écran</th>
+                <th scope="col">État</th>
+                <th scope="col">Organisation</th>
+                <th scope="col">Établissement</th>
+                <th scope="col">File</th>
+                <th scope="col">Événement</th>
+                <th scope="col">Dernier signal</th>
+                <th scope="col"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -111,10 +120,6 @@ export default async function AdminDisplaysPage({
                 return (
                   <tr key={device.id}>
                     <th scope="row" className={styles.orgName}>{device.name}</th>
-                    <td>{org?.name ?? '—'}</td>
-                    <td>{location?.name ?? '—'}{location?.city ? ' · ' + location.city : ''}</td>
-                    <td>{queue?.name ?? '—'}</td>
-                    <td>{event?.name ?? '—'}</td>
                     <td>
                       <span className={
                         device.status === 'revoked'
@@ -126,6 +131,10 @@ export default async function AdminDisplaysPage({
                         {device.status === 'revoked' ? 'Révoqué' : isOnline ? 'En ligne' : 'Hors ligne'}
                       </span>
                     </td>
+                    <td>{org?.name ?? '—'}</td>
+                    <td>{location?.name ?? '—'}{location?.city ? ' · ' + location.city : ''}</td>
+                    <td>{queue?.name ?? '—'}</td>
+                    <td>{event?.name ?? '—'}</td>
                     <td>{device.last_seen_at ? relativeTime(device.last_seen_at) : 'Jamais'}</td>
                     <td>
                       <Link
@@ -143,26 +152,8 @@ export default async function AdminDisplaysPage({
               )}
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
       </section>
-    </div>
-  );
-}
-
-function MiniStat({
-  label,
-  value,
-  tone = 'default',
-}: {
-  label: string;
-  value: number;
-  tone?: 'default' | 'live' | 'warn';
-}) {
-  return (
-    <div className={styles.commandStat} data-tone={tone}>
-      <span>{label}</span>
-      <strong>{formatNumber(value)}</strong>
-      <small>flotte Rangvia</small>
     </div>
   );
 }

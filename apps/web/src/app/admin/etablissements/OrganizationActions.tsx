@@ -34,8 +34,10 @@ export function OrganizationActions({
   }
 
   if (!asking) {
+    // Une seule ligne : « Gérer » et « Suspendre » côte à côte, jamais
+    // l'un sous l'autre (le tableau défile déjà en largeur).
     return (
-      <div className="row g2 wrap">
+      <div className="row g2" style={{ flexWrap: 'nowrap' }}>
         <Link href={`/admin/etablissements/${organizationId}`} className="btn btn--solid btn--sm">
           Gérer
         </Link>

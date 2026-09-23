@@ -2,11 +2,14 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requirePlatformAdmin } from '@/server/auth';
-import { PageHeader, Section, EmptyState } from '@/components/Page';
+import { Section, EmptyState } from '@/components/Page';
 import { formatDate, formatNumber } from '@/lib/format';
 import { ACTIVITY_LABEL } from '@/lib/copy';
 import { OrganizationActions } from './OrganizationActions';
 import { CreateOrganizationV2 } from './CreateOrganizationV2';
+import { AdminHero } from '../AdminKit';
+import { ScrollTable } from '../ScrollTable';
+import { SUBSCRIPTION_STATUS_LABEL, labelOf } from '../labels';
 import styles from '../admin.module.css';
 import v2 from '../admin-v2.module.css';
 
@@ -59,14 +62,17 @@ export default async function AdminOrganizationsPage({
   );
 
   return (
-    <div className={styles.page}>
-      <PageHeader
+    <div className={`shell ${styles.page}`}>
+      <AdminHero
+        kicker="CLIENTS"
         title="Établissements"
-        description={`${formatNumber(organizations?.length ?? 0)} organisations · identité, exploitation et sécurité`}
-        actions={<CreateOrganizationV2 />}
-      />
-
-      <form className={styles.controlFilters} method="get">
+        description={
+          `${formatNumber(organizations?.length ?? 0)} organisation${(organizations?.length ?? 0) > 1 ? 's' : ''}`
+          + ' · identité, exploitation et sécurité'
+        }
+        stacked
+      >
+      <form className="row g2" method="get">
         <input className="input" name="q" defaultValue={q ?? ''}
           placeholder="Rechercher une organisation" aria-label="Rechercher une organisation" />
         <select className="select" name="etat" defaultValue={etat ?? ''} aria-label="État">
@@ -76,13 +82,17 @@ export default async function AdminOrganizationsPage({
         </select>
         <button type="submit" className="btn btn--solid btn--sm">Filtrer</button>
       </form>
+      <div className={styles.commandActions}>
+        <CreateOrganizationV2 />
+      </div>
+      </AdminHero>
 
       <Section>
         {(organizations ?? []).length === 0 ? (
           <EmptyState title="Aucun résultat" />
         ) : (
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
+          <ScrollTable label="Établissements">
+            <table className={`${styles.table} ${styles.stackTable}`}>
               <thead>
                 <tr>
                   <th scope="col">Organisation</th>
@@ -101,7 +111,7 @@ export default async function AdminOrganizationsPage({
                   const plan = Array.isArray(subscription?.plans) ? subscription?.plans[0] : subscription?.plans;
                   return (
                     <tr key={org.id}>
-                      <th scope="row" className={styles.orgName}>
+                      <th scope="row" className={`${styles.orgName} ${styles.stackLead}`}>
                         <Link href={'/admin/etablissements/' + org.id} className={v2.orgIdentity}>
                           <span className={v2.orgLogo}>
                             {org.logo_url
@@ -114,17 +124,21 @@ export default async function AdminOrganizationsPage({
                           </span>
                         </Link>
                       </th>
-                      <td>{ACTIVITY_LABEL[org.activity] ?? org.activity}</td>
-                      <td>
-                        {plan?.name ?? '—'}
-                        {subscription?.status && (
-                          <span className="t-micro t-faint"> · {subscription.status}</span>
-                        )}
+                      <td data-label="Activité">{ACTIVITY_LABEL[org.activity] ?? org.activity}</td>
+                      <td data-label="Offre">
+                        <span>
+                          {plan?.name ?? '—'}
+                          {subscription?.status && (
+                            <span className="t-micro t-faint">
+                              {' · '}{labelOf(SUBSCRIPTION_STATUS_LABEL, subscription.status)}
+                            </span>
+                          )}
+                        </span>
                       </td>
-                      <td className="t-num">{locationCount[org.id] ?? 0}</td>
-                      <td className="t-num">{formatNumber(entryCount[org.id] ?? 0)}</td>
-                      <td>{formatDate(org.created_at)}</td>
-                      <td>
+                      <td className="t-num" data-label="Sites">{locationCount[org.id] ?? 0}</td>
+                      <td className="t-num" data-label="Clients (7 j)">{formatNumber(entryCount[org.id] ?? 0)}</td>
+                      <td data-label="Inscription">{formatDate(org.created_at)}</td>
+                      <td data-label="État">
                         {org.status === 'active' ? (
                           <span className="chip chip--jade">Actif</span>
                         ) : (
@@ -133,7 +147,7 @@ export default async function AdminOrganizationsPage({
                           </span>
                         )}
                       </td>
-                      <td>
+                      <td className={styles.stackActions}>
                         <OrganizationActions
                           organizationId={org.id}
                           name={org.name}
@@ -145,7 +159,7 @@ export default async function AdminOrganizationsPage({
                 })}
               </tbody>
             </table>
-          </div>
+          </ScrollTable>
         )}
       </Section>
     </div>

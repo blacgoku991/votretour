@@ -9,7 +9,9 @@
 .grid {
   display: grid;
   gap: var(--sp-4);
-  grid-template-columns: 1fr;
+  /* minmax(0, …) : sans lui, la colonne prend la largeur mini de son
+     contenu le plus large et la carte déborde de l'écran sur mobile. */
+  grid-template-columns: minmax(0, 1fr);
   /* Sans cela, toutes les cartes d'une rangée prennent la hauteur de la
      plus grande : ouvrir un panneau d'édition étirait ses deux voisines
      sur du vide. */
@@ -26,6 +28,7 @@
   background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: var(--r-card);
+  min-width: 0;
   overflow: clip;
   /* Le liseré gauche reprend le rail : une plaque active est « dans la
      file », une plaque désactivée en est sortie. */
@@ -117,12 +120,13 @@
 
 .urlRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
   min-width: 0;
 }
 .url {
-  flex: 1;
+  flex: 1 1 12rem;
   min-width: 0;
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: .75rem;

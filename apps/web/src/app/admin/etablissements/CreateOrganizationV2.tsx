@@ -74,7 +74,7 @@ export function CreateOrganizationV2() {
     <section className={styles.creator}>
       <div className={styles.creatorHead}>
         <div>
-          <span className={styles.eyebrow}>PROVISIONING</span>
+          <span className={styles.eyebrow}>MISE EN SERVICE</span>
           <h2>Créer un établissement complet</h2>
           <p>
             La création prépare l’organisation, le premier établissement, sa file,

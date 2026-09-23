@@ -2,18 +2,17 @@ import type { Metadata } from 'next';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requirePlatformAdmin } from '@/server/auth';
 import { stripeConfigured } from '@/server/stripe';
-import { PageHeader, Section, Stat } from '@/components/Page';
+import { Section } from '@/components/Page';
 import { formatNumber, formatPrice, formatDate } from '@/lib/format';
 import { PlanEditor } from './PlanEditor';
+import { AdminHero, AdminStat, AdminStats } from '../AdminKit';
+import { ScrollTable } from '../ScrollTable';
+import { SUBSCRIPTION_STATUS_LABEL, labelOf } from '../labels';
+import { monthlyRecurringCents } from '../revenue';
 import styles from '../admin.module.css';
 
 export const metadata: Metadata = { title: 'Offres & abonnements', robots: { index: false } };
 export const dynamic = 'force-dynamic';
-
-const STATUS_LABEL: Record<string, string> = {
-  trialing: 'Essai', active: 'Actif', past_due: 'Impayé',
-  canceled: 'Résilié', incomplete: 'Incomplet', paused: 'En pause',
-};
 
 export default async function AdminPlansPage() {
   // Chaque page revérifie le rôle elle-même : une requête RSC forgée
@@ -34,20 +33,23 @@ export default async function AdminPlansPage() {
     return acc;
   }, {});
 
-  const mrrCents = rows
-    .filter((s) => s.status === 'active')
-    .reduce((total, s) => {
-      const plan = Array.isArray(s.plans) ? s.plans[0] : s.plans;
-      const match = (plans ?? []).find((p) => p.code === plan?.code);
-      if (!match) return total;
-      return total + (s.billing_interval === 'year'
-        ? Math.round(match.price_year_cents / 12)
-        : match.price_month_cents);
-    }, 0);
+  // Même calcul que le tableau de bord (revenue.ts) : les essais ne
+  // comptent pas.
+  const mrrCents = monthlyRecurringCents(rows.map((s) => {
+    const plan = Array.isArray(s.plans) ? s.plans[0] : s.plans;
+    const match = (plans ?? []).find((p) => p.code === plan?.code);
+    return {
+      status: s.status,
+      billing_interval: s.billing_interval,
+      priceMonthCents: match?.price_month_cents,
+      priceYearCents: match?.price_year_cents,
+    };
+  }));
 
   return (
     <div className={`shell ${styles.page}`}>
-      <PageHeader
+      <AdminHero
+        kicker="FACTURATION"
         title="Offres & abonnements"
         description="Les tarifs et quotas sont modifiables ici : aucun redéploiement n’est nécessaire."
       />
@@ -61,14 +63,25 @@ export default async function AdminPlansPage() {
         </div>
       )}
 
-      <div className={styles.statGrid}>
-        <Stat accent label="Revenu mensuel récurrent" value={formatPrice(mrrCents)}
-          hint="abonnements actifs, annuels ramenés au mois" />
-        <Stat label="Abonnements actifs" value={formatNumber(byStatus.active ?? 0)} />
-        <Stat label="En période d’essai" value={formatNumber(byStatus.trialing ?? 0)} />
-        <Stat label="Impayés" value={formatNumber(byStatus.past_due ?? 0)}
-          hint={byStatus.past_due ? 'à relancer' : 'aucun'} />
-      </div>
+      <AdminStats>
+        <AdminStat
+          label="MRR estimé" value={formatPrice(mrrCents)} tone="signal"
+          hint="abonnements actifs, annuels ramenés au mois"
+        />
+        <AdminStat
+          label="Abonnements actifs" value={formatNumber(byStatus.active ?? 0)} hint="payants"
+          tone={(byStatus.active ?? 0) > 0 ? 'live' : 'default'}
+        />
+        <AdminStat
+          label="En période d’essai" value={formatNumber(byStatus.trialing ?? 0)}
+          hint="non comptés dans le MRR"
+        />
+        <AdminStat
+          label="Impayés" value={formatNumber(byStatus.past_due ?? 0)}
+          hint={byStatus.past_due ? 'à relancer' : 'aucun'}
+          tone={byStatus.past_due ? 'danger' : 'default'}
+        />
+      </AdminStats>
 
       <Section title="Offres" description="-1 signifie illimité.">
         {(plans ?? []).map((plan) => (
@@ -77,7 +90,7 @@ export default async function AdminPlansPage() {
       </Section>
 
       <Section title="Abonnements">
-        <div className={styles.tableWrap}>
+        <ScrollTable label="Abonnements">
           <table className={styles.table}>
             <thead>
               <tr>
@@ -104,7 +117,7 @@ export default async function AdminPlansPage() {
                         : subscription.status === 'past_due' ? 'chip chip--brique'
                         : 'chip chip--copper'
                       }>
-                        {STATUS_LABEL[subscription.status] ?? subscription.status}
+                        {labelOf(SUBSCRIPTION_STATUS_LABEL, subscription.status)}
                       </span>
                     </td>
                     <td>{subscription.billing_interval === 'year' ? 'Annuel' : 'Mensuel'}</td>
@@ -116,7 +129,7 @@ export default async function AdminPlansPage() {
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollTable>
       </Section>
     </div>
   );
