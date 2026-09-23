@@ -7,12 +7,15 @@ import { formatPrice } from '@/lib/format';
 import styles from './marketing.module.css';
 
 export const metadata: Metadata = {
-  title: "VotreTour — la file d'attente qui vous laisse partir",
+  title: "Rangvia — la file d'attente qui vous laisse partir",
   description:
-    "Vos clients approchent leur téléphone d'une plaque, rejoignent la file et sortent. Ils voient combien de personnes sont devant eux et reçoivent une notification quand c'est leur tour. Sans compte, sans application à installer, sans SMS.",
+    "Vos clients approchent leur téléphone d'une plaque Rangvia, rejoignent la file et sortent. Ils voient leur position et reçoivent une notification quand leur tour approche. Sans compte ni application à installer.",
 };
 
-export const revalidate = 3600;
+// Cette page lit les offres via service_role. Elle doit donc être rendue
+// au runtime, jamais pendant le build Docker : on évite ainsi d'injecter
+// SUPABASE_SERVICE_ROLE_KEY dans les couches de l'image.
+export const dynamic = 'force-dynamic';
 
 const STEPS = [
   {
