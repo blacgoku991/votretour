@@ -216,8 +216,10 @@ export function ClientExperience({
   // La latte fantôme « Votre place » ne se déplie qu'après un vrai
   // passage par l'écran « Rejoindre » dans cette session (pas au
   // rechargement d'une place déjà prise).
-  const sawJoin = useRef(phase === 'join');
-  if (phase === 'join') sawJoin.current = true;
+  const [sawJoin, setSawJoin] = useState(phase === 'join');
+  useEffect(() => {
+    if (phase === 'join') setSawJoin(true);
+  }, [phase]);
 
   const locationName = ticket?.location.name ?? entryPoint.location.name;
   const subtitle = [
@@ -240,7 +242,9 @@ export function ClientExperience({
         <EventWelcome theme={eventTheme} />
       )}
 
-      {error && (
+      {/* Rejoindre et Dans la file : l'erreur s'affiche près du bouton
+          touché (voir JoinPanel et QueuedPanel). Ailleurs, en haut. */}
+      {error && phase !== 'join' && phase !== 'queued' && (
         <div className="banner banner--error" role="alert">
           <span>{error}</span>
         </div>
@@ -258,6 +262,7 @@ export function ClientExperience({
           onService={setServiceId}
           onJoin={join}
           busy={busy || pending}
+          error={error}
         />
       )}
 
@@ -270,7 +275,8 @@ export function ClientExperience({
           servingCount={servingCount}
           vapidPublicKey={vapidPublicKey}
           onAction={act}
-          unfold={sawJoin.current}
+          unfold={sawJoin}
+          error={error}
         />
       )}
 
@@ -343,6 +349,12 @@ function queueLabel(status: string): string {
   return 'File fermée';
 }
 
+/** Même échelle du volet avant et après avoir rejoint : pas de saut. */
+const COUNT_SIZE = 'clamp(5rem, 3rem + 14vw, 7.5rem)';
+
+/** Lattes dessinées dans l'aperçu avant de rejoindre. */
+const PREVIEW_SLATS = 4;
+
 /** « personne » / « personnes » + le reste, sur deux lignes à côté du volet. */
 function CountUnit({ count, rest }: { count: number; rest: string }) {
   return (
@@ -368,7 +380,7 @@ function CounterLine() {
 
 function JoinPanel({
   entryPoint, waitingCount, name, onName, staffId, onStaff,
-  serviceId, onService, onJoin, busy,
+  serviceId, onService, onJoin, busy, error,
 }: {
   entryPoint: EntryPoint;
   waitingCount: number;
@@ -380,6 +392,7 @@ function JoinPanel({
   onService: (v: string | null) => void;
   onJoin: () => void;
   busy: boolean;
+  error: string | null;
 }) {
   const queue = entryPoint.queue;
   const closed = !queue || queue.status !== 'open';
@@ -395,54 +408,94 @@ function JoinPanel({
 
   const unit = waitingCount <= 1 ? 'personne dans la file' : 'personnes dans la file';
   const typed = name.trim();
+  const mapsHref = useMemo(() => directionsUrl(entryPoint.location), [entryPoint.location]);
+  const closedMessage = !closed
+    ? null
+    : queue?.status === 'paused'
+      ? queue.pauseReason
+        ? `En pause : ${queue.pauseReason}`
+        : 'La file est momentanément en pause. Réessayez dans quelques minutes.'
+      : 'La file est fermée pour le moment. Présentez-vous au comptoir.';
 
   return (
     <div className={styles.panel}>
       <section className={styles.count} aria-label="État de la file">
-        <div className={styles.countRow}>
-          <FlapNumber
-            value={waitingCount}
-            size="clamp(5rem, 3rem + 14vw, 7.5rem)"
-            label={`${waitingCount} ${unit}`}
-          />
-          <CountUnit count={waitingCount} rest="dans la file" />
-        </div>
+        {closed && waitingCount === 0 ? (
+          // Fermée ou en pause, personne : on dit l'état, pas « 0 ».
+          <h2 className={styles.closedHead}>
+            {queue?.status === 'paused' ? 'File en pause' : 'File fermée'}
+          </h2>
+        ) : (
+          <div className={styles.countRow}>
+            <FlapNumber
+              value={waitingCount}
+              size={COUNT_SIZE}
+              label={`${waitingCount} ${unit}`}
+            />
+            <CountUnit count={waitingCount} rest="dans la file" />
+          </div>
+        )}
         {waitingCount === 0 && !closed && (
           <p className={styles.countNote}>Vous serez le prochain.</p>
         )}
+        {closedMessage && <p className={styles.closedMsg}>{closedMessage}</p>}
       </section>
 
-      {/* L'aperçu du Rang, couché en légère perspective (statique) : la
-          file telle qu'elle est, et au bout, votre place. */}
-      <div className={`${styles.preview} ${closed ? styles.previewOff : ''}`} aria-hidden="true">
-        <div className={styles.previewPlane}>
-          <CounterLine />
-          <Rang
-            ahead={waitingCount}
-            ghostSelf
-            relief
-            maxSlats={4}
-            selfLabel={typed || 'Votre place'}
-            selfHint={typed ? 'Votre place' : null}
-          />
-          {/* Derrière vous, les places marquées au sol, encore libres. */}
-          <div className={styles.floorPlaces}>
-            {Array.from({ length: Math.max(1, 4 - Math.min(waitingCount, 4)) }, (_, i) => (
-              <span key={i} className={styles.floorPlace} />
-            ))}
+      {closed ? (
+        // Pas de place à prendre : le comptoir et le rail, éteints, sans
+        // « Votre place » ni places au sol.
+        <div className={`${styles.preview} ${styles.previewOff} ${styles.previewFill}`} aria-hidden="true">
+          <div className={styles.previewPlane}>
+            <CounterLine />
+            <span className={styles.railOnly} />
           </div>
         </div>
-      </div>
+      ) : (
+        // L'aperçu du Rang, couché en légère perspective (statique) : la
+        // file telle qu'elle est, et au bout, votre place. Au-delà de
+        // PREVIEW_SLATS personnes, une coupure du rail dit qu'il y en a
+        // davantage que de lattes dessinées.
+        <div className={styles.preview} aria-hidden="true">
+          <div className={styles.previewPlane}>
+            <CounterLine />
+            {waitingCount > PREVIEW_SLATS && (
+              <div className={styles.railCut}>
+                <span />
+                <span />
+                <span />
+              </div>
+            )}
+            <Rang
+              ahead={waitingCount}
+              ghostSelf
+              relief
+              maxSlats={waitingCount > PREVIEW_SLATS ? PREVIEW_SLATS - 1 : PREVIEW_SLATS}
+              selfLabel={typed || 'Votre place'}
+              selfHint={typed ? 'Votre place' : null}
+            />
+            {/* Derrière vous, les places marquées au sol, encore libres. */}
+            <div className={styles.floorPlaces}>
+              {Array.from({ length: Math.max(1, PREVIEW_SLATS - Math.min(waitingCount, PREVIEW_SLATS)) }, (_, i) => (
+                <span key={i} className={styles.floorPlace} />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {closed ? (
-        <div className="banner banner--warn">
-          <span>
-            {queue?.status === 'paused'
-              ? queue.pauseReason
-                ? `File en pause : ${queue.pauseReason}`
-                : 'La file est momentanément en pause. Réessayez dans quelques minutes.'
-              : "La file est fermée pour le moment. Présentez-vous au comptoir."}
-          </span>
+        // En bas, au pouce : de quoi se présenter au comptoir.
+        <div className={`${styles.closedDock} ${styles.actionRow}`}>
+          <a className="btn btn--ghost" href={mapsHref} target="_blank" rel="noreferrer">
+            <PinIcon />
+            Itinéraire
+          </a>
+          {entryPoint.location.phone && (
+            <a className="btn btn--ghost" href={`tel:${entryPoint.location.phone}`}>
+              <PhoneIcon />
+              Appeler
+            </a>
+          )}
         </div>
       ) : (
         <div className={styles.form}>
@@ -528,8 +581,15 @@ function JoinPanel({
             </div>
           )}
 
-          {/* À portée de pouce : collé en bas quand le contenu dépasse. */}
+          {/* À portée de pouce : collé en bas quand le contenu dépasse.
+              L'erreur de jonction vit DANS ce bloc, juste au-dessus du
+              bouton touché : jamais cachée par lui. */}
           <div className={styles.dock}>
+            {error && (
+              <div className={`banner banner--error ${styles.joinError}`} role="alert">
+                <span>{error}</span>
+              </div>
+            )}
             <button
               type="button"
               className="btn btn--signal btn--hero"
@@ -594,7 +654,7 @@ function EventWelcome({
    ================================================================== */
 
 function QueuedPanel({
-  ticket, entryPoint, phase, busy, servingCount, vapidPublicKey, onAction, unfold,
+  ticket, entryPoint, phase, busy, servingCount, vapidPublicKey, onAction, unfold, error,
 }: {
   ticket: TicketState;
   entryPoint: EntryPoint;
@@ -604,6 +664,7 @@ function QueuedPanel({
   vapidPublicKey: string | null;
   onAction: (action: 'leave' | 'returning' | 'present') => void;
   unfold: boolean;
+  error: string | null;
 }) {
   const ahead = ticket.entry.peopleAhead;
   const isTurn = phase === 'turn';
@@ -612,8 +673,10 @@ function QueuedPanel({
   const rangRef = useRef<HTMLDivElement>(null);
   // Le rideau ne part de la latte que si on l'a vue avant : au
   // rechargement directement sur « C'est votre tour », il est déjà là.
-  const sawQueued = useRef(!isTurn);
-  if (!isTurn) sawQueued.current = true;
+  const [sawQueued, setSawQueued] = useState(!isTurn);
+  useEffect(() => {
+    if (!isTurn) setSawQueued(true);
+  }, [isTurn]);
 
   const mapsHref = useMemo(
     () => directionsUrl({ ...ticket.location, name: ticket.location.name }),
@@ -631,7 +694,7 @@ function QueuedPanel({
           <div className={styles.countRow}>
             <FlapNumber
               value={shown}
-              size="7.5rem"
+              size={COUNT_SIZE}
               label={`${shown} ${peopleAheadUnit(shown)}`}
             />
             <CountUnit count={shown} rest="devant vous" />
@@ -668,6 +731,11 @@ function QueuedPanel({
         />
 
         <div className={styles.actions}>
+          {error && !isTurn && (
+            <div className="banner banner--error" role="alert">
+              <span>{error}</span>
+            </div>
+          )}
           <button
             type="button"
             className={isReturning ? 'btn btn--ghost btn--hero' : 'btn btn--signal btn--hero'}
@@ -692,7 +760,7 @@ function QueuedPanel({
 
           {entryPoint.settings.allowClientLeave && (
             <LeaveControl
-              confirm={confirmLeave}
+              confirm={confirmLeave && !isTurn}
               onAsk={() => setConfirmLeave(true)}
               onCancel={() => setConfirmLeave(false)}
               onLeave={() => onAction('leave')}
@@ -705,7 +773,7 @@ function QueuedPanel({
       {isTurn && (
         <TurnCurtain
           originRef={rangRef}
-          animate={sawQueued.current}
+          animate={sawQueued}
           locationName={ticket.location.name}
           clientName={ticket.entry.name}
         >
@@ -749,9 +817,29 @@ function LeaveControl({
   tone?: 'surface' | 'ink';
 }) {
   const ink = tone === 'ink';
+  const askRef = useRef<HTMLButtonElement>(null);
+  const groupRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const wasConfirm = useRef(confirm);
+
+  // Ouverture : le focus va sur « Annuler » et la confirmation entière
+  // remonte dans l'écran. Fermeture : le focus revient au bouton d'origine.
+  useEffect(() => {
+    if (confirm === wasConfirm.current) return;
+    wasConfirm.current = confirm;
+    if (confirm) {
+      cancelRef.current?.focus({ preventScroll: true });
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+      groupRef.current?.scrollIntoView({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' });
+    } else {
+      askRef.current?.focus({ preventScroll: true });
+    }
+  }, [confirm]);
+
   if (!confirm) {
     return (
       <button
+        ref={askRef}
         type="button"
         className={`btn ${ink ? styles.inkQuiet : 'btn--quiet'} ${styles.leave}`}
         onClick={onAsk}
@@ -762,10 +850,20 @@ function LeaveControl({
     );
   }
   return (
-    <div className={`${styles.confirm} ${ink ? styles.confirmInk : ''}`} role="group" aria-label="Quitter la file">
+    <div
+      ref={groupRef}
+      className={`${styles.confirm} ${ink ? styles.confirmInk : ''}`}
+      role="group"
+      aria-label="Quitter la file"
+    >
       <p className={styles.confirmText}>Quitter la file ? Votre place sera libérée.</p>
       <div className={styles.confirmRow}>
-        <button type="button" className={`btn ${ink ? styles.inkQuiet : 'btn--quiet'}`} onClick={onCancel}>
+        <button
+          ref={cancelRef}
+          type="button"
+          className={`btn ${ink ? styles.inkQuiet : 'btn--quiet'}`}
+          onClick={onCancel}
+        >
           Annuler
         </button>
         <button
@@ -922,7 +1020,11 @@ function DonePanel({ ticket, onRejoin }: { ticket: TicketState; onRejoin: () => 
           </a>
         )}
 
-        <button type="button" className="btn btn--quiet btn--block" onClick={onRejoin}>
+        <button
+          type="button"
+          className={reviewUrl ? 'btn btn--quiet btn--block' : 'btn btn--ghost btn--hero'}
+          onClick={onRejoin}
+        >
           Revenir dans la file
         </button>
       </div>

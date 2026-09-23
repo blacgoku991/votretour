@@ -10,7 +10,7 @@ import styles from './client.module.css';
  * Il part du rectangle exact de la latte « Vous » et couvre l'écran
  * (FLIP) : le rectangle est lu UNE seule fois, au changement de phase ;
  * ensuite seul `transform` passe de `translate(…) scale(…)` à `none`
- * (520 ms, --ease-slat). Le texte n'est jamais déformé : il vit sur un
+ * (640 ms, départ lent). Le texte n'est jamais déformé : il vit sur un
  * calque à part, qui apparaît en opacité quand le rideau est presque
  * posé, puis le Seuil se dessine autour de lui.
  *
@@ -18,7 +18,9 @@ import styles from './client.module.css';
  * rechargée), le rideau est simplement là, sans transition.
  */
 
-const FLIP_MS = 520;
+const FLIP_MS = 640;
+/** Départ lent : on voit le rideau quitter la latte « Vous », puis il se pose. */
+const FLIP_EASE = 'cubic-bezier(0.6, 0, 0.18, 1)';
 const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 export function TurnCurtain({
@@ -63,7 +65,7 @@ export function TurnCurtain({
     let raf2 = 0;
     const raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => {
-        bg.style.transition = `transform ${FLIP_MS}ms var(--ease-slat)`;
+        bg.style.transition = `transform ${FLIP_MS}ms ${FLIP_EASE}`;
         bg.style.transform = 'none';
         root.dataset.flip = 'play';
       });
@@ -82,7 +84,9 @@ export function TurnCurtain({
       <div className={styles.curtainInner}>
         <p className={styles.curtainPlace}>{locationName}</p>
 
-        <div className={styles.curtainMain} role="alert">
+        {/* Une seule annonce : le focus sur le titre quand le rideau se
+            déploie ; role="alert" seulement quand il est déjà là. */}
+        <div className={styles.curtainMain} role={animate ? undefined : 'alert'}>
           <Seuil tone="ink" draw label="Comptoir" className={styles.curtainSeuil}>
             {clientName && <p className={styles.turnName}>{clientName}</p>}
             <p className={styles.turnKicker}>C&apos;est</p>

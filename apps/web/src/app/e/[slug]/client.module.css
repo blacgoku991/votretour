@@ -353,7 +353,8 @@
   content: '';
   position: absolute;
   left: 0;
-  top: calc(var(--slat-gap) * -1);
+  /* Chevauche le bas du rail du Rang : pas de coupure sous votre place. */
+  top: calc(var(--slat-gap) * -1 - 8px);
   bottom: 2px;
   width: var(--rail-w);
   border-radius: var(--rail-w);
@@ -368,6 +369,93 @@
 .floorPlace:nth-child(2) { opacity: 0.7; }
 .floorPlace:nth-child(3) { opacity: 0.5; }
 .floorPlace:nth-child(n + 4) { opacity: 0.35; }
+
+/* Plus de monde que de lattes dessinées : le rail se coupe en tirets et
+   trois lattes tassées disent « il y en a d'autres », sans texte en 3D. */
+.railCut {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  height: 40px;
+  padding-left: var(--sp-5);
+}
+.railCut::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -10px;
+  bottom: 0;
+  width: 0;
+  border-left: var(--rail-w) dashed var(--rail);
+}
+.railCut span {
+  height: 3px;
+  border-radius: 3px;
+  background: var(--rail);
+}
+.railCut span:nth-child(1) { width: 38%; opacity: 0.5; }
+.railCut span:nth-child(2) { width: 52%; opacity: 0.7; }
+.railCut span:nth-child(3) { width: 66%; }
+
+/* File fermée ou en pause : le rail seul, sans place à prendre. */
+.railOnly {
+  position: relative;
+  display: block;
+  height: 132px;
+}
+.railOnly::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -10px;
+  height: 40%;
+  width: var(--rail-w);
+  border-radius: var(--rail-w);
+  background: var(--rail);
+}
+.railOnly::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: calc(40% - 2px);
+  bottom: 0;
+  width: 0;
+  border-left: var(--rail-w) dashed var(--rail);
+}
+
+.closedHead {
+  margin: 0;
+  font-variation-settings: 'wdth' 112, 'wght' 800;
+  font-size: clamp(2.5rem, 1.6rem + 4vw, 3.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.closedMsg {
+  max-width: 34ch;
+  font-size: 1.0625rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/* Fermée : le rail vide descend jusqu'aux actions, au lieu d'un trou. */
+.previewFill {
+  flex: 1;
+  display: flex;
+  min-height: 160px;
+}
+.previewFill .previewPlane { flex: 1; transform: none; }
+.previewFill .railOnly { flex: 1; height: auto; min-height: 120px; }
+
+/* Les actions prennent la place du bouton, en bas, au pouce. */
+.closedDock {
+  margin-top: auto;
+  padding-bottom: calc(12px + var(--safe-bottom));
+}
 
 /* Le rail part du comptoir : il remonte jusqu'à la ligne. */
 .previewPlane :global(.rang)::before,
@@ -399,6 +487,9 @@
   background: var(--surface);
 }
 
+/* L'erreur de jonction, dans le bloc collé, juste au-dessus du bouton. */
+.joinError { margin-bottom: 10px; }
+
 /* Pendant la saisie, le bouton reprend sa place sous le champ : le clavier
    virtuel ne doit jamais faire passer le champ sous le bouton collé. */
 .form:focus-within .dock { position: static; }
@@ -406,7 +497,9 @@
 /* Écrans courts (iPhone SE…) : l'aperçu se resserre pour que le champ
    reste visible au-dessus du bouton. */
 @media (max-height: 740px) {
-  .floorPlace:nth-child(n + 2) { display: none; }
+  .floorPlaces { display: none; }
+  .railCut { height: 22px; gap: 3px; }
+  .previewPlane :global(.slat--ghost) { height: var(--slat-h); }
   .stage, .panel, .queued { gap: 22px; }
 }
 
@@ -462,8 +555,10 @@
    Dans la file
    --------------------------------------------------------------------- */
 
-/* « Plus qu'une personne devant vous » : bandeau cuivre. */
+/* « Plus qu'une personne devant vous » : bandeau cuivre. Il apparaît en
+   opacité, sans glisser. */
 .soon {
+  animation: soon-in var(--dur-3, 320ms) var(--ease-out) both;
   align-items: flex-start;
   gap: 12px;
   padding: 14px 16px;
@@ -472,6 +567,8 @@
   line-height: 1.4;
   text-wrap: pretty;
 }
+@keyframes soon-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .soon { animation: none; } }
 .soonMark {
   flex: none;
   width: 14px;
@@ -571,6 +668,7 @@
 
 /* Confirmation en ligne, tenue par un filet brique. */
 .confirm {
+  scroll-margin-bottom: calc(24px + var(--safe-bottom));
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -629,9 +727,9 @@
 /* Le texte attend que le rideau soit presque posé, puis le Seuil se
    dessine autour de lui (poteaux, puis linteau). */
 .curtain[data-flip='from'] .curtainInner { opacity: 0; }
-.curtain[data-flip='play'] .curtainInner { transition: opacity 280ms var(--ease-out) 240ms; }
-.curtain[data-flip] :global(.seuil__post) { animation-delay: 380ms; }
-.curtain[data-flip] :global(.seuil__lintel) { animation-delay: 580ms; }
+.curtain[data-flip='play'] .curtainInner { transition: opacity 280ms var(--ease-out) 380ms; }
+.curtain[data-flip] :global(.seuil__post) { animation-delay: 500ms; }
+.curtain[data-flip] :global(.seuil__lintel) { animation-delay: 700ms; }
 
 /* Couleur du cadre = encre de l'accent (encre sur vermillon, 5,9:1). */
 .curtain :global(.seuil__post),
