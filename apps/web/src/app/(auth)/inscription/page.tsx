@@ -34,15 +34,17 @@ export default function SignupPage() {
 
       <SignupForm />
 
-      <p className={`t-micro ${styles.legal}`}>
-        En créant un compte, vous acceptez les{' '}
-        <Link href="/cgu">conditions d&apos;utilisation</Link> et la{' '}
-        <Link href="/confidentialite">politique de confidentialité</Link>.
-      </p>
+      <div className={styles.outro}>
+        <p className={`t-micro ${styles.legal}`}>
+          En créant un compte, vous acceptez les{' '}
+          <Link href="/cgu">conditions d&apos;utilisation</Link> et la{' '}
+          <Link href="/confidentialite">politique de confidentialité</Link>.
+        </p>
 
-      <p className={styles.footer}>
-        Déjà un compte&nbsp;? <Link href="/connexion">Se connecter</Link>
-      </p>
+        <p className={styles.footer}>
+          Déjà un compte&nbsp;? <Link href="/connexion">Se connecter</Link>
+        </p>
+      </div>
     </AuthFrame>
   );
 }

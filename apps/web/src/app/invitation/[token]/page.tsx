@@ -81,6 +81,7 @@ export default async function InvitePage({
               { id: 'i1', state: 'wait' },
               { id: 'i2', state: 'ghost', label: 'Place libre' },
             ]}
+            caption="Une invitation, une place dans l’équipe."
           />
         }
       >
@@ -124,8 +125,9 @@ export default async function InvitePage({
           slats={[
             { id: 'a0', state: 'serving' },
             { id: 'a1', state: 'wait' },
-            { id: 'a2', state: 'self', label: 'Vous', hint: organization.name },
+            { id: 'a2', state: 'self', label: 'Vous', hint: shortName(organization.name) },
           ]}
+          caption="Votre place dans l’équipe est prête."
         />
       }
     >
@@ -141,4 +143,10 @@ export default async function InvitePage({
       </Link>
     </AuthFrame>
   );
+}
+
+/** La latte n'a qu'une ligne : un nom long est raccourci proprement. */
+function shortName(name: string): string {
+  const max = 24;
+  return name.length > max ? `${name.slice(0, max - 1).trimEnd()}…` : name;
 }

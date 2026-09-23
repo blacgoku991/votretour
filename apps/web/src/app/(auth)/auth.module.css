@@ -63,6 +63,11 @@
 
 .panel { display: none; }
 
+/* Tablette : le formulaire se centre sous le bandeau, lui aussi centré. */
+@media (min-width: 600px) and (max-width: 1023px) {
+  .content { margin-inline: auto; }
+}
+
 @media (min-width: 1024px) {
   .frame {
     display: grid;
@@ -131,9 +136,13 @@
 }
 .footer a:hover { text-decoration-color: var(--accent); }
 
+.outro {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
 .legal {
   color: var(--text-muted);
-  margin-top: -8px;
 }
 .legal a {
   color: var(--text);
@@ -235,6 +244,8 @@
 /* La file est le sujet du panneau : on l'agrandit d'un bloc (seuil
    compris), sans toucher à sa géométrie. */
 .floorScene.floorScene :global(.world3d) { scale: 1.32; }
+/* Le sol couvre tout le panneau, sans bord de « feuille » visible. */
+.floorScene.floorScene :global(.floor3d) { left: -160%; right: -160%; }
 
 .legend {
   position: absolute;
@@ -249,6 +260,20 @@
      légende. Calque statique. */
   background: linear-gradient(to top, var(--floor) 58%, transparent);
   pointer-events: none;
+}
+/* Portable (1366 × 768 avec la barre du navigateur) : la file remonte et
+   rétrécit, la plaque aussi, et le fondu se limite à la légende. */
+@media (min-width: 1024px) and (max-height: 760px) {
+  .floorPanel[data-legend='1'] .floorScene.floorScene { --world-top: 20%; }
+  .floorScene.floorScene :global(.world3d) { scale: 1.1; }
+  .legend {
+    padding-top: 48px;
+    background: linear-gradient(to top, var(--floor) 70%, transparent);
+  }
+  .still :global(*) { --plaque-w: 124px !important; }
+}
+@media (min-width: 1024px) and (max-height: 680px) {
+  .still { display: none; }
 }
 .still { flex: none; }
 .caption {
@@ -267,6 +292,15 @@
   justify-content: space-between;
   padding: clamp(48px, 18svh, 168px) clamp(40px, 5.5vw, 88px) clamp(40px, 6svh, 64px);
 }
+/* Faible hauteur : la silhouette cède la place, la promesse reste. */
+@media (min-width: 1024px) and (max-height: 760px) {
+  .journey { padding-top: clamp(40px, 12svh, 96px); }
+  .journey .ghostPlaque { width: 128px; height: 160px; padding: 14px; }
+  .journey .ghostNfc { width: 34px; height: 34px; }
+}
+@media (min-width: 1024px) and (max-height: 700px) {
+  .journey .ghostWrap { display: none; }
+}
 .journeyBody {
   display: flex;
   flex-direction: column;
@@ -278,7 +312,7 @@
   border-top: 0;
   padding: 0;
 }
-.steps > li.step + li.step { margin-top: 18px; }
+.steps > li.step + li.step { margin-top: 14px; }
 /* Encoche au milieu de la latte. */
 .steps.steps > li.step::before { top: calc(50% - 1px); }
 .steps.steps > li.step.step:global(.is-self)::before { top: calc(50% - 2px); }
@@ -288,8 +322,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 84px;
-  padding: 0 26px;
+  min-height: 64px;
+  padding: 0 22px;
   border-radius: 14px;
   background: var(--slat);
   color: var(--slat-text);
@@ -298,7 +332,7 @@
 .step:global(.is-self) .stepSlat {
   background: var(--accent);
   color: var(--accent-ink);
-  box-shadow: 0 3px 0 var(--slat-edge-self), 0 18px 40px -18px color-mix(in oklab, var(--accent) 80%, transparent);
+  box-shadow: 0 3px 0 var(--slat-edge-self);
 }
 .stepText {
   display: flex;
@@ -306,7 +340,7 @@
   gap: 10px;
   min-width: 0;
   font-variation-settings: 'wdth' 112, 'wght' 740;
-  font-size: clamp(1.25rem, 0.5rem + 1.3vw, 1.75rem);
+  font-size: 1.25rem;
   line-height: 1.1;
   letter-spacing: -0.015em;
   color: var(--text);
@@ -335,21 +369,21 @@
   position: relative;
   display: flex;
   align-items: center;
-  margin-top: -20px;   /* colle au bas du rail de la liste */
-  padding: 40px 0 0 18px;
+  padding: 20px 0 0 18px;
 }
+/* Le pointillé remonte jusqu'au bas du rail de la liste (20 px de gap). */
 .ghostRail {
   position: absolute;
   left: 18px;
-  top: 0;
-  height: calc(20px + 50%);
+  top: -20px;
+  height: calc(40px + 50%);
   border-left: 2px dashed color-mix(in oklab, var(--accent) 55%, transparent);
 }
 .ghostLink {
   flex: none;
   width: 72px;
   height: 0;
-  margin-top: 40px;
+  margin-top: 20px;
   border-top: 2px dashed color-mix(in oklab, var(--accent) 55%, transparent);
 }
 .ghostPlaque {
@@ -375,6 +409,8 @@
 }
 
 .trial {
+  flex: none;
+  padding-top: 24px;
   color: var(--text);
   display: inline-flex;
   align-items: center;

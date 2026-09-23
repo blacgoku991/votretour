@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Wordmark } from '@/components/Wordmark';
 import { Plaque } from '@/components/objects/Plaque';
@@ -13,7 +13,7 @@ import styles from './onboarding.module.css';
  *
  * Sur le sol (--floor), le Seuil « Comptoir » se dessine et encadre la
  * vraie plaque de l'établissement (vrai QR). La plaque entre une fois, de
- * couchée (rotateX 70°) à posée (10°, légèrement tournée), en 700 ms.
+ * couchée à posée (6°, légèrement tournée), en 700 ms.
  * Le marquage au sol reste AUTOUR du seuil, jamais sous un texte.
  *
  * Logique inchangée : ouverture de la file, copie du lien, QR en PNG,
@@ -21,7 +21,8 @@ import styles from './onboarding.module.css';
  */
 
 const PLAQUE_POSE = {
-  ['--plaque-rx' as string]: '10deg',
+  // 6° au plus : la tranche haute ne se lit pas comme une barre au-dessus de la face.
+  ['--plaque-rx' as string]: '6deg',
   ['--plaque-ry' as string]: '0deg',
   ['--plaque-rz' as string]: '-3deg',
 } as React.CSSProperties;
@@ -30,6 +31,15 @@ export function ReadyScreen({ result }: { result: OnboardingResult }) {
   const [opened, setOpened] = useState(false);
   const [copied, setCopied] = useState(false);
   const [pending, startTransition] = useTransition();
+  const titleRef = useRef<HTMLHeadingElement>(null);
+
+  // L'écran remplace l'étape Horaires (souvent défilée) et le bouton qui
+  // avait le focus : on revient en haut et le focus va au titre, que le
+  // lecteur d'écran annonce.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    titleRef.current?.focus({ preventScroll: true });
+  }, []);
 
   const qr = (
     // eslint-disable-next-line @next/next/no-img-element
@@ -45,20 +55,13 @@ export function ReadyScreen({ result }: { result: OnboardingResult }) {
       <div className={styles.readyStage}>
         <Seuil draw label="Comptoir" className={styles.readySeuil}>
           <div className={styles.plaqueEntry}>
+            {/* Une seule plaque : 240 px sur ordinateur, réduite en CSS sur mobile. */}
             <Plaque
               width={240}
               pose="none"
               qr={qr}
               name={result.locationName}
-              className={styles.plaqueWide}
-              style={PLAQUE_POSE}
-            />
-            <Plaque
-              width={200}
-              pose="none"
-              qr={qr}
-              name={result.locationName}
-              className={styles.plaqueNarrow}
+              className={styles.readyPlaque}
               style={PLAQUE_POSE}
             />
           </div>
@@ -71,7 +74,7 @@ export function ReadyScreen({ result }: { result: OnboardingResult }) {
 
       <div className={styles.readyText}>
         <p className={`t-label ${styles.readyKicker}`}>C&apos;est prêt</p>
-        <h1 className={`t-display ${styles.readyTitle}`}>Votre file est prête</h1>
+        <h1 ref={titleRef} tabIndex={-1} className={`t-display ${styles.readyTitle}`}>Votre file est prête</h1>
         <p className={`t-lead ${styles.readyLead}`}>
           {result.locationName} peut recevoir ses premiers clients. Posez ce QR au
           comptoir, ou écrivez ce lien sur une plaque NFC.

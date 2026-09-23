@@ -1,6 +1,8 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { FlapNumber } from '@/components/FlapNumber';
+import { useReducedMotion } from '@/components/motion/useMotionPreference';
 import { Wordmark } from '@/components/Wordmark';
 import styles from './onboarding.module.css';
 
@@ -28,11 +30,20 @@ export function stepWord(remaining: number): string {
   return remaining > 1 ? 'étapes' : 'étape';
 }
 
+/** Durée de la chute du volet : le mot suit le chiffre, il ne le devance pas. */
+const FLAP_MS = 440;
+
 function Remaining({ remaining, size, compact }: { remaining: number; size: string; compact?: boolean }) {
-  const word = stepWord(remaining);
+  const reduced = useReducedMotion();
+  const [word, setWord] = useState(() => stepWord(remaining));
+  useEffect(() => {
+    const next = stepWord(remaining);
+    const timer = window.setTimeout(() => setWord(next), reduced ? 0 : FLAP_MS);
+    return () => window.clearTimeout(timer);
+  }, [remaining, reduced]);
   return (
     <p className={compact ? styles.remainingCompact : styles.remaining}>
-      <FlapNumber static value={remaining} size={size} label={`${remaining} ${word} avant votre file`} />
+      <FlapNumber static value={remaining} size={size} label={`${remaining} ${stepWord(remaining)} avant votre file`} />
       <span className={styles.remainingText} aria-hidden="true">
         <span>{word}</span> <span>avant votre file</span>
       </span>

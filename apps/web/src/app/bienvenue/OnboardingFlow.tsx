@@ -49,8 +49,8 @@ const DEFAULT_HOURS: Hours[] = WEEKDAYS.map((_, index) => ({
   closesAt: '19:00',
 }));
 
-/** Durée de la sortie d'une étape (l'entrée, en CSS, dure 240 ms). */
-const LEAVE_MS = 160;
+/** Durée de la sortie d'une étape ; l'entrée, en CSS, dure 140 ms : 240 ms en tout. */
+const LEAVE_MS = 100;
 
 export function OnboardingFlow({ userName }: { userName: string | null }) {
   const [step, setStep] = useState<Step>('place');
@@ -142,7 +142,7 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
   const greeting = `${userName ? `Bonjour ${userName.split(' ')[0]}.` : 'Bienvenue.'} Créons votre file.`;
   const kicker = (
     <p className="t-kicker">
-      <span className="t-kicker__num">{String(index + 1).padStart(2, '0')}</span>
+      <span className="t-kicker__num" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
       <span className="sr-only">{`Étape ${index + 1}`}</span>
       {`sur ${String(STEPS.length).padStart(2, '0')} · ${STEPS[index]?.label ?? ''}`}
     </p>
@@ -172,7 +172,7 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
           data-leaving={leaving ? '1' : undefined}
           data-dir={direction}
         >
-          <p className={styles.mobileGreeting}>{greeting}</p>
+          {step === 'place' && <p className={styles.mobileGreeting}>{greeting}</p>}
 
           {step === 'place' && (
             <div className={styles.stepBody}>
@@ -204,8 +204,8 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
                     onChange={(e) => setForm({ ...form, locationName: e.target.value })} />
                   <p className="hint" id="place-aide">Utile si vous avez plusieurs adresses. Sinon, laissez vide.</p>
                 </div>
-                <div className={`field ${styles.addressField}`}>
-                  <span className={styles.groupLabel} aria-hidden="true">Coordonnées · facultatif</span>
+                <div className={`field ${styles.addressField}`} role="group" aria-labelledby="coord-label">
+                  <span className={styles.groupLabel} id="coord-label">Coordonnées · facultatif</span>
                   <div className={styles.grid2}>
                     <div className="field">
                       <label htmlFor="addr">Adresse</label>
