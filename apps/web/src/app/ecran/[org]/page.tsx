@@ -39,6 +39,28 @@ export default async function StandaloneTVPage({
   const selected = list.find((queue) => queue.id === file) ?? list[0] ?? null;
   const snapshot = selected ? await getQueueSnapshot(selected.id) : null;
 
+  const { data: liveEvent } = selected
+    ? await db.from('event_campaigns')
+        .select('id, name, status, hero_title, logo_url, cover_url, accent_hex, rules_text, qr_label')
+        .eq('queue_id', selected.id)
+        .in('status', ['live', 'paused'])
+        .order('started_at', { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle()
+    : { data: null };
+
+  const eventTheme = liveEvent ? {
+    id: liveEvent.id,
+    name: liveEvent.name,
+    status: liveEvent.status,
+    heroTitle: liveEvent.hero_title ?? null,
+    logoUrl: liveEvent.logo_url ?? null,
+    coverUrl: liveEvent.cover_url ?? null,
+    accentHex: liveEvent.accent_hex ?? '#FF4B1F',
+    rulesText: liveEvent.rules_text ?? null,
+    qrLabel: liveEvent.qr_label ?? null,
+  } : null;
+
   return (
     <TVBoard
       orgSlug={org}
@@ -46,6 +68,7 @@ export default async function StandaloneTVPage({
       logoUrl={organization?.logo_url ?? null}
       initialSnapshot={snapshot}
       queues={list.map((queue) => ({ id: queue.id, name: queue.name }))}
+      eventTheme={eventTheme}
     />
   );
 }
