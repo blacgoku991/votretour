@@ -123,7 +123,7 @@ export function AdminEventsTable({ events }: { events: Row[] }) {
                   </button>
                 )}
                 <Link className="btn btn--ghost btn--sm"
-                  href={'/ecran/' + event.organizationSlug + '?file=' + encodeURIComponent(event.queueId)}
+                  href={'/ecran/' + event.organizationSlug + '?file=' + encodeURIComponent(event.queueId) + '&event=' + encodeURIComponent(event.id)}
                   target="_blank">
                   Écran
                 </Link>
