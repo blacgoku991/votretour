@@ -59,7 +59,7 @@ export function PairTV({ initialCode = '' }: { initialCode?: string }) {
 
       <section className={styles.pairCopy} aria-labelledby="pair-title">
         <div className={styles.pairIntro}>
-          <span className="t-label">Rangvia Display</span>
+          <span className="t-label">Écran Rangvia</span>
           <h1 id="pair-title" className={`t-display ${styles.pairTitle}`}>Connecter cet écran</h1>
           <p className={styles.pairLead}>
             Saisissez le code à 6 chiffres fourni par Rangvia. L’écran affichera ensuite la file
@@ -105,7 +105,7 @@ export function PairTV({ initialCode = '' }: { initialCode?: string }) {
           </p>
         </div>
 
-        {error && <div className="banner banner--error" role="alert"><span>{error}</span></div>}
+        {error && <div className={`banner banner--error ${styles.pairError}`} role="alert"><span>{error}</span></div>}
 
         <div className={styles.pairActions}>
           <button

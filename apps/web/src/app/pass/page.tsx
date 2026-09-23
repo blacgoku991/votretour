@@ -4,19 +4,38 @@ import { notFound } from 'next/navigation';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { verifyEventPassCookie } from '@/lib/event-pass';
 import { EventPassCard } from './EventPassCard';
+import { PassState, type PassStateKind } from './PassState';
 
-export const metadata: Metadata = {
-  title: 'Laisser-passer',
-  robots: { index: false, follow: false },
-  referrer: 'no-referrer',
-};
+type PassSearchParams = Promise<{ etat?: string | string[] }>;
+
+/** ?etat= posé par /api/pass/activate et /api/pass/access quand le lien est refusé. */
+function readState(value: string | string[] | undefined): PassStateKind | null {
+  const etat = Array.isArray(value) ? value[0] : value;
+  return etat === 'expire' || etat === 'invalide' ? etat : null;
+}
+
+export async function generateMetadata({ searchParams }: { searchParams: PassSearchParams }): Promise<Metadata> {
+  const state = readState((await searchParams).etat);
+  return {
+    title: state === 'expire'
+      ? 'Laisser-passer expiré'
+      : state === 'invalide'
+        ? 'Lien de laisser-passer invalide'
+        : 'Laisser-passer',
+    robots: { index: false, follow: false },
+    referrer: 'no-referrer',
+  };
+}
 export const dynamic = 'force-dynamic';
 
 const COOKIE = 'rv_event_pass';
 
-export default async function PassHomePage() {
+export default async function PassHomePage({ searchParams }: { searchParams: PassSearchParams }) {
+  const state = readState((await searchParams).etat);
   const jar = await cookies();
   const session = verifyEventPassCookie(jar.get(COOKIE)?.value);
+  // Lien refusé : on dit pourquoi, au lieu de la 404 « Cette file n’existe pas ».
+  if (state) return <PassState kind={state} hasPass={Boolean(session)} />;
   if (!session) notFound();
 
   const { data: pass } = await supabaseAdmin()

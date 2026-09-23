@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import type { CSSProperties, RefObject } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchQueueSnapshot } from '@/server/actions/queue';
 import { initials } from '@/lib/format';
@@ -79,6 +79,52 @@ function useIsFullscreen(): boolean {
   return full;
 }
 
+/**
+ * Pointeur au repos : après IDLE_MS sans mouvement, `data-idle` passe à
+ * « true » sur le cadre et le bouton « Plein écran » s'efface. Écriture
+ * directe de l'attribut : aucun rendu React.
+ */
+const IDLE_MS = 4000;
+function useIdleFlag(ref: RefObject<HTMLDivElement | null>, enabled: boolean) {
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || !enabled) return;
+    let timer = 0;
+    const wake = () => {
+      node.dataset.idle = 'false';
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => { node.dataset.idle = 'true'; }, IDLE_MS);
+    };
+    wake();
+    window.addEventListener('pointermove', wake, { passive: true });
+    window.addEventListener('pointerdown', wake, { passive: true });
+    window.addEventListener('keydown', wake);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('pointermove', wake);
+      window.removeEventListener('pointerdown', wake);
+      window.removeEventListener('keydown', wake);
+      delete node.dataset.idle;
+    };
+  }, [ref, enabled]);
+}
+
+/** Le lieu sans le nom de l'enseigne : « Barber House — Paris 11 » → « Paris 11 ». */
+function placeLabel(locationName: string, brand: string): string {
+  const name = locationName.trim();
+  const head = brand.trim();
+  if (!head || !name.toLocaleLowerCase('fr').startsWith(head.toLocaleLowerCase('fr'))) return name;
+  // « Barber Housekeeping » ne commence pas par l'enseigne « Barber House ».
+  if (/[\p{L}\p{N}]/u.test(name.charAt(head.length))) return name;
+  const rest = name.slice(head.length).replace(/^[\s\-–—·,:|/]+/, '').trim();
+  return rest || name;
+}
+
+/** Cases du tableau pour un prénom : juste sa longueur (6 au moins), 12 au plus. */
+function nameCells(name: string): number {
+  return Math.min(12, Math.max(6, Array.from(name).length));
+}
+
 /** Lattes « À suivre » : Passage de la tête, avance d'un cran, arrivées qui se déplient. */
 function useQueueSlats(items: TvQueueItem[]): TvSlat[] {
   const reduced = useReducedMotion();
@@ -140,6 +186,8 @@ export function TVBoard({
   const clock = useClock();
   const isFullscreen = useIsFullscreen();
   const shiftRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  useIdleFlag(frameRef, variant === 'full' && !kioskMode && snapshot !== null);
   const queueId = snapshot?.queue.id ?? queues[0]?.id ?? null;
 
   const refresh = useCallback(async () => {
@@ -234,6 +282,11 @@ export function TVBoard({
   const title = eventTheme?.name || organizationName;
   const shown = serving.slice(0, 3);
   const waitingLabel = counts.waiting > 1 ? 'personnes en attente' : 'personne en attente';
+  // Le téléphone compte toute la file (prestation comprise) ; l'écran met
+  // en grand ceux qui attendent. La ligne du dessous relie les deux.
+  const atCounter = Math.max(0, counts.active - counts.waiting);
+  const brand = eventTheme ? organizationName : title;
+  const place = placeLabel(location.name, brand);
   const statusLabel = queue.status === 'open' ? 'File ouverte' : queue.status === 'paused' ? 'En pause' : 'File fermée';
   const statusPip = queue.status === 'open' ? 'pip pip--live' : queue.status === 'paused' ? 'pip pip--warn' : 'pip pip--off';
   const served = counts.completedToday;
@@ -242,7 +295,7 @@ export function TVBoard({
     : [{ id: 'tv-ghost', state: 'ghost' as const, label: 'Prochain client' }];
 
   return (
-    <div className={styles.frame} data-variant={variant} style={frameStyle}>
+    <div className={styles.frame} data-variant={variant} style={frameStyle} ref={frameRef}>
       <Root className={styles.screen} data-event={eventTheme ? 'true' : 'false'}>
         <div className={styles.content} ref={shiftRef}>
           <header className={styles.top}>
@@ -256,7 +309,7 @@ export function TVBoard({
               <span className={styles.brandText}>
                 <h1 className={`t-board ${styles.name}`}>{title}</h1>
                 <span className={styles.meta}>
-                  {eventTheme ? `${organizationName} · ` : ''}{location.name}
+                  {eventTheme ? `${organizationName} · ` : ''}{place}
                 </span>
               </span>
             </div>
@@ -359,16 +412,19 @@ export function TVBoard({
                     {shown.map((entry) => {
                       const pro = staff.find((s) => s.id === entry.staffId);
                       const name = (entry.name ?? 'Client').trim().toUpperCase().slice(0, 12);
+                      const cells = nameCells(name);
+                      // Une tuile fait 0,74em + 0,06em d'écart : la rangée tient la colonne.
+                      const unit = Math.min(shown.length > 1 ? 76 : 128, Math.floor(1000 / (cells * 0.8)));
                       return (
                         <li key={entry.id} className={styles.servingRow}>
                           <FlapText
                             fixed
                             tile
-                            cells={12}
+                            cells={cells}
                             stagger={40}
                             text={name}
                             label={entry.name ?? 'Client'}
-                            size={shown.length > 1 ? 'calc(var(--u) * 70)' : 'calc(var(--u) * 100)'}
+                            size={`calc(var(--u) * ${unit})`}
                           />
                           <span className={styles.with}>
                             {pro?.name ? <>avec <strong>{pro.name}</strong></> : 'En prestation'}
@@ -392,7 +448,14 @@ export function TVBoard({
                   label={`${counts.waiting} ${waitingLabel}`}
                   size="calc(var(--u) * 232)"
                 />
-                <span className={styles.waitingLabel}>{waitingLabel}</span>
+                <span className={styles.waitingText}>
+                  <span className={styles.waitingLabel}>{waitingLabel}</span>
+                  {atCounter > 0 && (
+                    <span className={styles.waitingTotal}>
+                      + {atCounter} au comptoir · <strong>{counts.active}</strong> dans la file
+                    </span>
+                  )}
+                </span>
               </div>
             </section>
 
@@ -407,12 +470,16 @@ export function TVBoard({
                       : 'Positions dans la file'}
                 </span>
               </div>
-              <div className={styles.sceneBox}>
+              <div
+                className={styles.sceneBox}
+                style={{ ['--tv-fit' as string]: Math.min(1, 4.6 / Math.max(1, sceneSlats.length)).toFixed(3) } as CSSProperties}
+              >
                 <FloorScene
                   size="lg"
                   spill
                   positions={false}
-                  turn={-5}
+                  tilt={40}
+                  turn={-3}
                   className={styles.scene}
                   slats={sceneSlats}
                   label={upcoming.length === 0

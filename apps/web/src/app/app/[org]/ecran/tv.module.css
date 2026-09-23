@@ -30,7 +30,8 @@
   --line-strong: color-mix(in oklab, var(--bone-100) 20%, transparent);
   --rail: color-mix(in oklab, var(--bone-100) 26%, transparent);
   --slat: var(--ink-600);
-  --slat-text: #9aa3af;
+  /* Lattes lues de loin : texte blanc, pas gris. */
+  --slat-text: var(--bone-100);
   color-scheme: dark;
 }
 
@@ -163,6 +164,12 @@
   padding: 0 max(12px, calc(var(--u) * 22));
   font-size: max(13px, calc(var(--u) * 20));
   border-radius: max(10px, calc(var(--u) * 12));
+}
+/* Écran client : le bouton s'efface quand personne ne touche la souris
+   (data-idle, posé par TVBoard) et revient au premier mouvement. */
+.frame[data-idle='true'] .control { opacity: 0; pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .control { transition: opacity var(--dur-3, 320ms) var(--ease-out); }
 }
 /* Dans l'aperçu, le bouton est à l'échelle de l'écran, comme le reste. */
 .frame[data-variant='preview'] .control {
@@ -332,9 +339,9 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
+  /* Le prénom au milieu de sa zone, pas collé en haut au-dessus d'un vide. */
+  justify-content: center;
   gap: calc(var(--u) * 16);
-  padding-top: calc(var(--u) * 40);
 }
 .servingList {
   list-style: none;
@@ -351,9 +358,9 @@
   min-width: 0;
   --flap-tile: var(--ink-600);
 }
-.servingRow :global(.flap-row--tile) { gap: 0.1em; }
+.servingRow :global(.flap-row--tile) { gap: 0.06em; }
 .with {
-  font-size: calc(var(--u) * 28);
+  font-size: calc(var(--u) * 32);
   color: var(--text-muted);
   padding-left: calc(var(--u) * 4);
 }
@@ -387,8 +394,14 @@
   --flap-tile: var(--ink-700);
 }
 .waiting :global(.flap) { color: var(--accent); }
-.waitingLabel {
+.waitingText {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 16);
   padding-bottom: calc(var(--u) * 18);
+  min-width: 0;
+}
+.waitingLabel {
   font-variation-settings: 'wdth' 112, 'wght' 760;
   font-size: calc(var(--u) * 44);
   line-height: 1;
@@ -396,6 +409,16 @@
   max-width: 9ch;
   text-wrap: balance;
   color: var(--bone-100);
+}
+/* « + 1 au comptoir · 5 dans la file » : le compte du téléphone. */
+.waitingTotal {
+  font-size: calc(var(--u) * 28);
+  line-height: 1.2;
+  color: var(--text-muted);
+}
+.waitingTotal strong {
+  color: var(--bone-100);
+  font-variation-settings: 'wdth' 112, 'wght' 760;
 }
 
 /* ----- À suivre ----- */
@@ -422,45 +445,67 @@
   inset: 0;
   height: 100%;
   min-height: 0;
-  --world-top: 48%;
-  --persp-origin: 44% 16%;
+  --world-top: 30%;
+  --persp-origin: 44% 10%;
+  /* Lattes plus épaisses que sur le site : la face porte le rang et les
+     initiales en grand. Prend le pas sur le pas posé par FloorScene. */
+  --pitch: 80px !important;
+}
+/* Seuil plus bas que la latte n'est épaisse : il ne mange pas le panneau. */
+.sceneBox > .scene :global(.seuil3d) { --seuil-h: calc(var(--pitch) * 1.3); }
+/* Brouillard adouci : la cinquième latte doit encore se lire de loin. */
+.sceneBox > .scene :global(.slot3d__face) {
+  opacity: max(0.72, min(1, calc(1 - (var(--pos) - 1) * 0.06)));
 }
 /* La file prend la place de la boîte : le monde est agrandi par paliers
    (propriété scale, qui compose avec la rotation posée par FloorScene). */
-.sceneBox > .scene :global(.world3d) { scale: 0.86; }
-@container tvscene (min-width: 400px) { .sceneBox > .scene :global(.world3d) { scale: 1.08; } }
-@container tvscene (min-width: 480px) and (min-height: 420px) { .sceneBox > .scene :global(.world3d) { scale: 1.26; } }
-@container tvscene (min-width: 600px) and (min-height: 520px) { .sceneBox > .scene :global(.world3d) { scale: 1.46; } }
-@container tvscene (min-width: 720px) and (min-height: 640px) { .sceneBox > .scene :global(.world3d) { scale: 1.66; } }
-@container tvscene (min-width: 900px) and (min-height: 700px) { .sceneBox > .scene :global(.world3d) { scale: 2.1; } }
+.sceneBox > .scene :global(.world3d) { scale: calc(0.86 * var(--tv-fit, 1)); }
+/* --tv-fit (TVBoard) : au-delà de 4 lattes, le monde se resserre pour que
+   la queue reste dans le panneau ; le changement glisse. */
+@media (prefers-reduced-motion: no-preference) {
+  .sceneBox > .scene :global(.world3d) {
+    transition: translate var(--dur-4) var(--ease-slat), scale var(--dur-4) var(--ease-slat);
+  }
+}
+/* Paliers bornés par la largeur (monde de 360 px) ET par la hauteur :
+   tête à 30 % de la boîte, quatre lattes épaisses dessous (~262 px à
+   l'échelle 1) ; la queue ne touche pas le bas du panneau. */
+@container tvscene (min-width: 400px) and (min-height: 360px) { .sceneBox > .scene :global(.world3d) { scale: calc(0.9 * var(--tv-fit, 1)); } }
+@container tvscene (min-width: 440px) and (min-height: 420px) { .sceneBox > .scene :global(.world3d) { scale: calc(1 * var(--tv-fit, 1)); } }
+@container tvscene (min-width: 520px) and (min-height: 500px) { .sceneBox > .scene :global(.world3d) { scale: calc(1.16 * var(--tv-fit, 1)); } }
+@container tvscene (min-width: 600px) and (min-height: 580px) { .sceneBox > .scene :global(.world3d) { scale: calc(1.34 * var(--tv-fit, 1)); } }
+@container tvscene (min-width: 660px) and (min-height: 640px) { .sceneBox > .scene :global(.world3d) { scale: calc(1.46 * var(--tv-fit, 1)); } }
+@container tvscene (min-width: 800px) and (min-height: 740px) { .sceneBox > .scene :global(.world3d) { scale: calc(1.7 * var(--tv-fit, 1)); } }
+@container tvscene (min-width: 900px) and (min-height: 820px) { .sceneBox > .scene :global(.world3d) { scale: calc(2 * var(--tv-fit, 1)); } }
 /* Faces des lattes : la position en grand (« 01 »), les initiales à côté.
    Libellés décoratifs, courts ; le sens est porté par le texte de la scène. */
 .scene :global(.slot3d__face) > span {
   flex-direction: row;
   align-items: center;
-  gap: 16px;
+  gap: 22px;
 }
 /* Tailles dans le monde (px de FloorScene) : le monde lui-même est mis à
    l'échelle de la boîte, donc de l'écran, par les paliers ci-dessus. Une
    face fait 48 px de haut : « 01 » en occupe la majeure partie. */
 .scene :global(.slot3d__face) > span > span:first-child {
   font-variation-settings: 'wdth' 125, 'wght' 840;
-  font-size: 40px;
+  font-size: 56px;
   line-height: 1;
   letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
   overflow: visible;
 }
 .scene :global(.slot3d__face) > span > span + span {
-  font-variation-settings: 'wdth' 100, 'wght' 760;
-  font-size: 26px;
+  font-variation-settings: 'wdth' 104, 'wght' 800;
+  font-size: 42px;
   line-height: 1;
-  letter-spacing: 0.12em;
-  opacity: 0.9;
+  letter-spacing: 0.08em;
+  color: var(--bone-100);
+  opacity: 1;
 }
 .scene :global(.slot3d[data-state='ghost'] .slot3d__face) > span > span:first-child {
   font-variation-settings: 'wdth' 100, 'wght' 700;
-  font-size: 15px;
+  font-size: 24px;
   letter-spacing: 0;
 }
 

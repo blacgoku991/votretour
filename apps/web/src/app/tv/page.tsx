@@ -6,7 +6,7 @@ import { TVBoard } from '../app/[org]/ecran/TVBoard';
 import { PairTV } from './PairTV';
 
 export const metadata: Metadata = {
-  title: 'Rangvia Display',
+  title: 'Écran de salle',
   robots: { index: false, follow: false },
 };
 export const dynamic = 'force-dynamic';
