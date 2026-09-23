@@ -317,7 +317,7 @@
 
 .detailStats {
   display:grid;
-  grid-template-columns:repeat(6,minmax(0,1fr));
+  grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
   gap:10px;
 }
 .detailStat {
@@ -602,4 +602,239 @@
     background: rgba(255,75,31,.11);
   }
   .mobileAdminLinkActive > span:first-child { color: var(--accent); }
+}
+
+
+/* =====================================================================
+   CONTROL ROOM V3 — analytics, recherche globale et flotte d'écrans
+   ===================================================================== */
+.heroTools {
+  min-width: min(100%, 620px);
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+}
+
+.globalSearch {
+  width: min(100%, 620px);
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  gap: 8px;
+}
+
+.searchResults {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 0 0, rgba(255,75,31,.08), transparent 28%),
+    var(--surface-raised);
+}
+
+.searchGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 16px;
+}
+
+.searchGroupLabel {
+  display: block;
+  margin-bottom: 9px;
+  color: var(--text-faint);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 54px;
+  padding: 10px 12px;
+  border-radius: 13px;
+  border: 1px solid rgba(255,255,255,.05);
+  background: var(--surface-sunken);
+  transition: border-color var(--dur-1) var(--ease-out), transform var(--dur-1) var(--ease-out);
+}
+
+.searchRow:hover {
+  border-color: rgba(255,75,31,.22);
+  transform: translateY(-1px);
+}
+
+.searchRow strong,
+.searchRow span {
+  display: block;
+}
+
+.searchRow strong {
+  font-size: 12px;
+}
+
+.searchRow div > span {
+  margin-top: 3px;
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+.analyticsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 14px;
+}
+
+.metricTotal {
+  font-size: 30px;
+  letter-spacing: -.05em;
+  font-variant-numeric: tabular-nums;
+}
+
+.barChart {
+  height: 230px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0,1fr));
+  gap: 9px;
+  align-items: end;
+  padding: 6px 2px 0;
+}
+
+.barColumn {
+  min-width: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: 22px 1fr 20px;
+  gap: 6px;
+  align-items: end;
+  text-align: center;
+}
+
+.barValue {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.barTrack {
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  background: rgba(255,255,255,.035);
+  border: 1px solid rgba(255,255,255,.04);
+}
+
+.barFill {
+  position: absolute;
+  inset: auto 4px 4px;
+  min-height: 2px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #ff6b45, #ff4b1f);
+  box-shadow: 0 0 22px rgba(255,75,31,.16);
+}
+
+.barColumn > span {
+  color: var(--text-faint);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.offlinePulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #59616d;
+}
+
+.auditRow {
+  display: block;
+  padding: 12px 13px;
+  border-radius: 13px;
+  background: var(--surface-sunken);
+  border: 1px solid rgba(255,255,255,.04);
+}
+
+.auditRow strong {
+  display: block;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.auditRow span {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+.queueOverview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 9px;
+}
+
+.queueOverviewItem {
+  display: grid;
+  grid-template-columns: 8px minmax(0,1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 62px;
+  padding: 12px 13px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.05);
+  background: var(--surface-sunken);
+}
+
+.queueOverviewItem strong,
+.queueOverviewItem span {
+  display: block;
+}
+
+.queueOverviewItem strong {
+  font-size: 11px;
+}
+
+.queueOverviewItem div > span {
+  margin-top: 3px;
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+@media (max-width: 1180px) {
+  .queueOverview {
+    grid-template-columns: repeat(2, minmax(0,1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .analyticsGrid,
+  .searchGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .heroTools {
+    width: 100%;
+    min-width: 0;
+    justify-items: stretch;
+  }
+}
+
+@media (max-width: 620px) {
+  .globalSearch,
+  .queueOverview {
+    grid-template-columns: 1fr;
+  }
+
+  .barChart {
+    height: 190px;
+    gap: 5px;
+  }
+
+  .barTrack {
+    min-height: 95px;
+  }
 }

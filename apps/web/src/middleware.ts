@@ -69,6 +69,6 @@ export const config = {
      * publics qui doivent rester rapides (/e/… est le parcours client :
      * aucune raison d'y faire tourner l'authentification).
      */
-    '/((?!_next/static|_next/image|favicon.ico|icon|sw.js|manifest.webmanifest|\\.well-known|e/|api/client/|api/cron/|api/stripe/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|icon|sw.js|manifest.webmanifest|\\.well-known|e/|tv(?:/|$)|media/|api/client/|api/cron/|api/stripe/|api/tv/|api/event/).*)',
   ],
 };

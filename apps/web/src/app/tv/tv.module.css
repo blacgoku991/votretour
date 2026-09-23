@@ -1,0 +1,122 @@
+.pairScreen {
+  min-height: 100dvh;
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: #faf9f6;
+  background:
+    radial-gradient(circle at 15% 10%, rgba(255,75,31,.18), transparent 34%),
+    radial-gradient(circle at 88% 88%, rgba(31,169,122,.10), transparent 30%),
+    #07090d;
+}
+
+.pairGlow {
+  position: absolute;
+  inset: -40%;
+  background: conic-gradient(from 180deg, transparent, rgba(255,75,31,.035), transparent 30%);
+  animation: drift 20s linear infinite;
+}
+
+@keyframes drift { to { transform: rotate(360deg); } }
+
+.pairCard {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 560px);
+  display: grid;
+  gap: 18px;
+  padding: clamp(26px, 5vw, 46px);
+  border-radius: 30px;
+  border: 1px solid rgba(255,255,255,.09);
+  background: linear-gradient(155deg, rgba(24,29,37,.98), rgba(10,12,17,.98));
+  box-shadow: 0 40px 120px rgba(0,0,0,.5);
+}
+
+.pairMark {
+  width: 62px;
+  height: 62px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: #ff4b1f;
+  color: #fff;
+  font-size: 28px;
+  font-weight: 900;
+  box-shadow: 0 18px 50px rgba(255,75,31,.26);
+}
+
+.pairKicker {
+  margin-top: 6px;
+  color: #ff6b45;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .18em;
+}
+
+.pairCard h1 {
+  margin: -8px 0 0;
+  font-size: clamp(34px, 6vw, 58px);
+  line-height: .95;
+  letter-spacing: -.055em;
+}
+
+.pairCard p {
+  margin: 0;
+  color: #9aa3af;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.codeInput {
+  width: 100%;
+  min-height: 92px;
+  padding: 0 20px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,.11);
+  outline: none;
+  background: #0c1016;
+  color: #fff;
+  text-align: center;
+  font-size: clamp(36px, 9vw, 62px);
+  font-weight: 850;
+  letter-spacing: .22em;
+  font-variant-numeric: tabular-nums;
+}
+
+.codeInput:focus {
+  border-color: rgba(255,75,31,.55);
+  box-shadow: 0 0 0 4px rgba(255,75,31,.08);
+}
+
+.pairButton {
+  min-height: 56px;
+  border: 0;
+  border-radius: 15px;
+  background: #ff4b1f;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pairButton:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.pairCard small {
+  color: #59616d;
+  text-align: center;
+  font-size: 10px;
+}
+
+.pairError {
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 1px solid rgba(227,111,100,.22);
+  background: rgba(168,69,60,.08);
+  color: #e36f64;
+  font-size: 11px;
+}

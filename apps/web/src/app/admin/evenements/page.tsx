@@ -20,6 +20,7 @@ export default async function AdminEventsPage({
     .from('event_campaigns')
     .select(`
       id, name, status, wave_size, pass_valid_minutes, grace_minutes, public_note,
+      hero_title, logo_url, cover_url, accent_hex, rules_text, qr_label,
       started_at, ended_at, created_at, organization_id, location_id, queue_id,
       organizations(name, slug),
       locations(name, city)
@@ -68,6 +69,12 @@ export default async function AdminEventsPage({
       passValidMinutes: event.pass_valid_minutes,
       graceMinutes: event.grace_minutes,
       publicNote: event.public_note,
+      heroTitle: event.hero_title,
+      logoUrl: event.logo_url,
+      coverUrl: event.cover_url,
+      accentHex: event.accent_hex,
+      rulesText: event.rules_text,
+      qrLabel: event.qr_label,
       startedAt: event.started_at,
       endedAt: event.ended_at,
       createdAt: event.created_at,

@@ -10,6 +10,7 @@ import {
   suspendOrganization,
 } from '@/server/actions/admin';
 import { adminUpdateOrganizationV2 } from '@/server/actions/admin-v2';
+import { ImageUploadField } from '../../ImageUploadField';
 import styles from '../../admin-v2.module.css';
 
 type LocationConfig = {
@@ -251,11 +252,15 @@ export function OrganizationControlPanelV2({
               </select>
             </label>
 
-            <label className={['field', styles.span2].join(' ')}>
-              <span>Logo · URL HTTPS</span>
-              <input className="input" value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)}
-                placeholder="https://…" inputMode="url" />
-            </label>
+            <div className={styles.span2}>
+              <ImageUploadField
+                label="Logo de l’organisation"
+                value={logoUrl}
+                purpose="logo"
+                onChange={setLogoUrl}
+                helper="Téléverse une image depuis iPhone/PC ou colle une URL HTTPS."
+              />
+            </div>
 
             <label className="field">
               <span>Couleur de marque</span>
@@ -422,17 +427,25 @@ export function OrganizationControlPanelV2({
                     onChange={(e) => patchLocation('timezone', e.target.value)} />
                 </label>
 
-                <label className="field">
-                  <span>Logo local · URL</span>
-                  <input className="input" value={selectedLocation.logoUrl}
-                    onChange={(e) => patchLocation('logoUrl', e.target.value)} inputMode="url" />
-                </label>
+                <div className={styles.span2}>
+                  <ImageUploadField
+                    label="Logo de cet établissement"
+                    value={selectedLocation.logoUrl}
+                    purpose="logo"
+                    onChange={(value) => patchLocation('logoUrl', value)}
+                    compact
+                  />
+                </div>
 
-                <label className="field">
-                  <span>Couverture · URL</span>
-                  <input className="input" value={selectedLocation.coverUrl}
-                    onChange={(e) => patchLocation('coverUrl', e.target.value)} inputMode="url" />
-                </label>
+                <div className={styles.span2}>
+                  <ImageUploadField
+                    label="Couverture de cet établissement"
+                    value={selectedLocation.coverUrl}
+                    purpose="cover"
+                    onChange={(value) => patchLocation('coverUrl', value)}
+                    compact
+                  />
+                </div>
 
                 <label className="field">
                   <span>Lien avis Google</span>

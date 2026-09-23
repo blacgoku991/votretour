@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { resolveEntryPoint, findActiveTicket } from '@/server/queue';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 import { getClientSession } from '@/server/client-session';
 import { vapidPublicKey } from '@/server/notifications/webpush';
 import { ACTIVITY_LABEL } from '@/lib/copy';
@@ -50,7 +51,79 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
   const entryPoint = await resolveEntryPoint(slug);
   if (!entryPoint) notFound();
 
-  if (entryPoint.status === 'suspended') {
+  let effectiveEntryPoint = entryPoint;
+  let eventId: string | null = null;
+  let eventTheme: {
+    name: string;
+    heroTitle: string | null;
+    logoUrl: string | null;
+    coverUrl: string | null;
+    accentHex: string;
+    rulesText: string | null;
+    qrLabel: string | null;
+  } | null = null;
+
+  const requestedEventId = typeof query.event === 'string' ? query.event : null;
+  if (
+    requestedEventId
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedEventId)
+    && entryPoint.status === 'ok'
+  ) {
+    const db = supabaseAdmin();
+    const { data: event } = await db
+      .from('event_campaigns')
+      .select('id, queue_id, status, name, hero_title, logo_url, cover_url, accent_hex, rules_text, qr_label')
+      .eq('id', requestedEventId)
+      .eq('organization_id', entryPoint.organization.id)
+      .eq('location_id', entryPoint.location.id)
+      .in('status', ['live', 'paused'])
+      .maybeSingle();
+
+    if (event) {
+      const [{ data: queue }, { count: waitingCount }] = await Promise.all([
+        db.from('queues')
+          .select('id, name, mode, status, ask_client_name, client_name_required, allow_staff_choice, allow_service_choice, pause_reason')
+          .eq('id', event.queue_id)
+          .eq('organization_id', entryPoint.organization.id)
+          .eq('location_id', entryPoint.location.id)
+          .maybeSingle(),
+        db.from('queue_entries')
+          .select('id', { count: 'exact', head: true })
+          .eq('queue_id', event.queue_id)
+          .in('status', ['waiting', 'notified', 'returning', 'present', 'next', 'serving']),
+      ]);
+
+      if (queue) {
+        eventId = event.id;
+        eventTheme = {
+          name: event.name,
+          heroTitle: event.hero_title ?? null,
+          logoUrl: event.logo_url ?? null,
+          coverUrl: event.cover_url ?? null,
+          accentHex: event.accent_hex ?? '#FF4B1F',
+          rulesText: event.rules_text ?? null,
+          qrLabel: event.qr_label ?? null,
+        };
+        effectiveEntryPoint = {
+          ...entryPoint,
+          queue: {
+            id: queue.id,
+            name: queue.name,
+            mode: queue.mode,
+            status: queue.status,
+            askClientName: queue.ask_client_name,
+            clientNameRequired: queue.client_name_required,
+            allowStaffChoice: queue.allow_staff_choice,
+            allowServiceChoice: queue.allow_service_choice,
+            pauseReason: queue.pause_reason,
+            waitingCount: waitingCount ?? 0,
+          },
+        };
+      }
+    }
+  }
+
+  if (effectiveEntryPoint.status === 'suspended') {
     return (
       <main className={styles.screen} data-theme="dark">
         <div className={`client-shell ${styles.inner}`}>
@@ -69,7 +142,7 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
   // Reprise automatique : si cet appareil a déjà un ticket, on l'affiche
   // sans rien demander. Le client qui revient sur la page retrouve sa
   // place exactement là où il l'avait laissée.
-  const session = await getClientSession(entryPoint.organization.id);
+  const session = await getClientSession(effectiveEntryPoint.organization.id);
   const initialTicket = session ? await findActiveTicket(session.id) : null;
 
   const source = (() => {
@@ -84,8 +157,10 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
     <main className={styles.screen} data-theme="dark" data-accent={entryPoint.settings.brandAccent}>
       <div className={`client-shell ${styles.inner}`}>
         <ClientExperience
-          entryPoint={entryPoint}
+          entryPoint={effectiveEntryPoint}
           initialTicket={initialTicket}
+          eventId={eventId}
+          eventTheme={eventTheme}
           source={source}
           vapidPublicKey={vapidPublicKey()}
           activityLabel={ACTIVITY_LABEL[entryPoint.organization.activity] ?? null}

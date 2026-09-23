@@ -20,6 +20,7 @@ const bodySchema = z.object({
   staffId: uuidSchema.nullish(),
   serviceId: uuidSchema.nullish(),
   source: z.enum(['qr', 'nfc', 'appclip', 'link']).default('qr'),
+  eventId: uuidSchema.nullish(),
 });
 
 /**
@@ -46,16 +47,59 @@ export async function POST(request: Request) {
     if (!entryPoint || entryPoint.status !== 'ok') {
       throw new AppError('not_found', "Cette plaque ne correspond à aucun établissement.", 404);
     }
-    if (!entryPoint.queue) {
+    let targetQueue = entryPoint.queue;
+
+    if (body.eventId) {
+      const db = supabaseAdmin();
+      const { data: event } = await db
+        .from('event_campaigns')
+        .select('id, queue_id, status')
+        .eq('id', body.eventId)
+        .eq('organization_id', entryPoint.organization.id)
+        .eq('location_id', entryPoint.location.id)
+        .in('status', ['live', 'paused'])
+        .maybeSingle();
+
+      if (!event) {
+        throw new AppError('event_unavailable', "Cet événement n'est plus disponible.", 409);
+      }
+
+      const { data: eventQueue } = await db
+        .from('queues')
+        .select('id, name, mode, status, ask_client_name, client_name_required, allow_staff_choice, allow_service_choice, pause_reason')
+        .eq('id', event.queue_id)
+        .eq('organization_id', entryPoint.organization.id)
+        .eq('location_id', entryPoint.location.id)
+        .maybeSingle();
+
+      if (!eventQueue) {
+        throw new AppError('not_found', "La file de cet événement est introuvable.", 404);
+      }
+
+      targetQueue = {
+        id: eventQueue.id,
+        name: eventQueue.name,
+        mode: eventQueue.mode,
+        status: eventQueue.status,
+        askClientName: eventQueue.ask_client_name,
+        clientNameRequired: eventQueue.client_name_required,
+        allowStaffChoice: eventQueue.allow_staff_choice,
+        allowServiceChoice: eventQueue.allow_service_choice,
+        pauseReason: eventQueue.pause_reason,
+        waitingCount: 0,
+      };
+    }
+
+    if (!targetQueue) {
       throw new AppError('not_found', "Aucune file n'est rattachée à cette plaque.", 404);
     }
-    if (entryPoint.queue.status === 'closed') {
+    if (targetQueue.status === 'closed') {
       throw new AppError('queue_closed', 'La file est fermée pour le moment.', 409);
     }
-    if (entryPoint.queue.status === 'paused') {
+    if (targetQueue.status === 'paused') {
       throw new AppError('queue_paused', 'La file est momentanément en pause.', 409);
     }
-    if (entryPoint.queue.clientNameRequired && !body.name) {
+    if (targetQueue.clientNameRequired && !body.name) {
       throw new AppError('validation', 'Cet établissement demande votre prénom.', 422);
     }
 
@@ -69,7 +113,7 @@ export async function POST(request: Request) {
     const staffId = entryPoint.plate?.staffId ?? body.staffId ?? null;
 
     const result = await joinQueue({
-      queueId: entryPoint.queue.id,
+      queueId: targetQueue.id,
       clientSessionId: session.id,
       clientName: body.name ?? null,
       staffId,

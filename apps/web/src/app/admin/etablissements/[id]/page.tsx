@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { formatDateTime, formatNumber } from '@/lib/format';
 import { ACTIVITY_LABEL } from '@/lib/copy';
 import { OrganizationControlPanelV2 } from './OrganizationControlPanelV2';
+import { TVManagementPanel } from './TVManagementPanel';
 import styles from '../../admin.module.css';
 import v2 from '../../admin-v2.module.css';
 
@@ -34,6 +35,8 @@ export default async function OrganizationDetailPage({
     { data: plates },
     { data: subscription },
     { data: orgSettings },
+    { data: events },
+    { data: displayDevices },
     { count: activeEntries },
     { count: completed7d },
     { count: notifications7d },
@@ -53,6 +56,14 @@ export default async function OrganizationDetailPage({
       notify_ahead_threshold, send_completion_review, brand_accent,
       support_email, privacy_url, terms_url
     `).eq('organization_id', id).maybeSingle(),
+    db.from('event_campaigns')
+      .select('id, name, status, location_id, queue_id, accent_hex')
+      .eq('organization_id', id)
+      .order('created_at', { ascending: false }),
+    db.from('display_devices')
+      .select('id, name, status, location_id, queue_id, event_id, paired_at, last_seen_at, revoked_at')
+      .eq('organization_id', id)
+      .order('paired_at', { ascending: false }),
     db.from('queue_entries').select('id', { count: 'exact', head: true })
       .eq('organization_id', id).in('status', ['waiting','notified','returning','present','next','serving']),
     db.from('queue_entries').select('id', { count: 'exact', head: true })
@@ -104,6 +115,10 @@ export default async function OrganizationDetailPage({
         <DetailStat label="Établissements" value={formatNumber(locations?.length ?? 0)} />
         <DetailStat label="Équipe" value={formatNumber(staff?.filter((s) => s.is_active).length ?? 0)} />
         <DetailStat label="Plaques" value={formatNumber(plates?.length ?? 0)} />
+        <DetailStat
+          label="Écrans TV"
+          value={formatNumber(displayDevices?.filter((device) => device.status === 'active').length ?? 0)}
+        />
       </div>
 
       <section className={styles.adminCard}>
@@ -162,6 +177,53 @@ export default async function OrganizationDetailPage({
             stripeSubscriptionId: subscription?.stripe_subscription_id ?? null,
             periodEnd: subscription?.current_period_end ?? null,
           }}
+        />
+      </section>
+
+      <section className={styles.adminCard}>
+        <div className={styles.adminCardHead}>
+          <div>
+            <span className={styles.cardKicker}>DISPLAY FLEET</span>
+            <h2>Écrans TV & kiosques</h2>
+          </div>
+          <span className="chip chip--jade">
+            {displayDevices?.filter((device) => device.status === 'active').length ?? 0} actif(s)
+          </span>
+        </div>
+
+        <TVManagementPanel
+          organizationId={org.id}
+          organizationSlug={org.slug}
+          locations={(locations ?? []).map((location) => ({
+            id: location.id,
+            name: location.name,
+            city: location.city,
+          }))}
+          queues={(queues ?? []).map((queue) => ({
+            id: queue.id,
+            name: queue.name,
+            locationId: queue.location_id,
+            status: queue.status,
+          }))}
+          events={(events ?? []).map((event) => ({
+            id: event.id,
+            name: event.name,
+            status: event.status,
+            locationId: event.location_id,
+            queueId: event.queue_id,
+            accentHex: event.accent_hex ?? '#FF4B1F',
+          }))}
+          devices={(displayDevices ?? []).map((device) => ({
+            id: device.id,
+            name: device.name,
+            status: device.status,
+            locationId: device.location_id,
+            queueId: device.queue_id,
+            eventId: device.event_id,
+            pairedAt: device.paired_at,
+            lastSeenAt: device.last_seen_at,
+            revokedAt: device.revoked_at,
+          }))}
         />
       </section>
 

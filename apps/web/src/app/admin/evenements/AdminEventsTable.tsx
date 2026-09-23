@@ -5,6 +5,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminEventAction } from '@/server/actions/admin';
 import { adminUpdateEventCampaign } from '@/server/actions/admin-v2';
+import { ImageUploadField } from '../ImageUploadField';
 import styles from '../admin.module.css';
 import v2 from '../admin-v2.module.css';
 
@@ -16,6 +17,12 @@ type Row = {
   passValidMinutes: number;
   graceMinutes: number;
   publicNote: string | null;
+  heroTitle: string | null;
+  logoUrl: string | null;
+  coverUrl: string | null;
+  accentHex: string;
+  rulesText: string | null;
+  qrLabel: string | null;
   startedAt: string | null;
   endedAt: string | null;
   createdAt: string;
@@ -78,28 +85,50 @@ export function AdminEventsTable({ events }: { events: Row[] }) {
 
       <div className={styles.eventAdminGrid}>
         {events.map((event) => (
-          <article className={styles.eventAdminCard} key={event.id}>
+          <article
+            className={styles.eventAdminCard}
+            key={event.id}
+            style={{ borderColor: event.accentHex || undefined }}
+          >
+            {event.coverUrl && (
+              <div
+                className={v2.eventCardCover}
+                style={{ backgroundImage: 'url(' + JSON.stringify(event.coverUrl) + ')' }}
+              />
+            )}
+
             <div className={styles.eventAdminTop}>
-              <div>
-                <span className={[styles.statusDot, styles['event_' + event.status] ?? ''].join(' ')} />
-                <span className={styles.eventState}>{event.status.replace('_', ' ')}</span>
-                <h2>{event.name}</h2>
-                <p>
-                  {event.organizationName} · {event.locationName}
-                  {event.city ? ' · ' + event.city : ''}
-                </p>
+              <div className={v2.eventCardIdentity}>
+                <div className={v2.eventCardLogo}>
+                  {event.logoUrl
+                    ? <img src={event.logoUrl} alt="" />
+                    : <span style={{ color: event.accentHex }}>R</span>}
+                </div>
+                <div>
+                  <span className={[styles.statusDot, styles['event_' + event.status] ?? ''].join(' ')} />
+                  <span className={styles.eventState}>{event.status.replace('_', ' ')}</span>
+                  <h2>{event.name}</h2>
+                  <p>
+                    {event.organizationName} · {event.locationName}
+                    {event.city ? ' · ' + event.city : ''}
+                  </p>
+                </div>
               </div>
+
               <div className={v2.detailToolbar}>
                 {!['sold_out', 'ended'].includes(event.status) && (
-                  <button
-                    type="button"
-                    className="btn btn--ghost btn--sm"
-                    onClick={() => setEditing((current) => current === event.id ? null : event.id)}
-                  >
+                  <button type="button" className="btn btn--ghost btn--sm"
+                    onClick={() => setEditing((current) => current === event.id ? null : event.id)}>
                     {editing === event.id ? 'Fermer' : 'Configurer'}
                   </button>
                 )}
-                <Link className="btn btn--ghost btn--sm" href={'/admin/etablissements/' + event.organizationId}>
+                <Link className="btn btn--ghost btn--sm"
+                  href={'/ecran/' + event.organizationSlug + '?file=' + encodeURIComponent(event.queueId) + '&event=' + encodeURIComponent(event.id)}
+                  target="_blank">
+                  Écran
+                </Link>
+                <Link className="btn btn--ghost btn--sm"
+                  href={'/admin/etablissements/' + event.organizationId}>
                   Organisation
                 </Link>
               </div>
@@ -116,7 +145,9 @@ export function AdminEventsTable({ events }: { events: Row[] }) {
               <span>Vague {event.waveSize}</span>
               <span>Pass {event.passValidMinutes} min</span>
               <span>Grâce {event.graceMinutes} min</span>
-              {event.publicNote && <span>Message public actif</span>}
+              {event.heroTitle && <span>Hero personnalisé</span>}
+              {event.logoUrl && <span>Logo Event</span>}
+              {event.publicNote && <span>Message public</span>}
             </div>
 
             {editing === event.id && (
@@ -185,6 +216,12 @@ function EventConfig({
   onError: (message: string | null) => void;
 }) {
   const [name, setName] = useState(event.name);
+  const [heroTitle, setHeroTitle] = useState(event.heroTitle ?? '');
+  const [logoUrl, setLogoUrl] = useState(event.logoUrl ?? '');
+  const [coverUrl, setCoverUrl] = useState(event.coverUrl ?? '');
+  const [accentHex, setAccentHex] = useState(event.accentHex || '#FF4B1F');
+  const [rulesText, setRulesText] = useState(event.rulesText ?? '');
+  const [qrLabel, setQrLabel] = useState(event.qrLabel ?? 'Scannez pour rejoindre la file');
   const [waveSize, setWaveSize] = useState(event.waveSize);
   const [passValidMinutes, setPassValidMinutes] = useState(event.passValidMinutes);
   const [graceMinutes, setGraceMinutes] = useState(event.graceMinutes);
@@ -197,6 +234,12 @@ function EventConfig({
       const result = await adminUpdateEventCampaign({
         eventId: event.id,
         name,
+        heroTitle,
+        logoUrl,
+        coverUrl,
+        accentHex,
+        rulesText,
+        qrLabel,
         waveSize,
         passValidMinutes,
         graceMinutes,
@@ -208,7 +251,7 @@ function EventConfig({
         return;
       }
 
-      onSaved('Configuration de l’événement enregistrée.');
+      onSaved('Configuration et identité visuelle enregistrées.');
     });
   };
 
@@ -218,6 +261,33 @@ function EventConfig({
         <label className={['field', v2.eventEditWide].join(' ')}>
           <span>Nom</span>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
+        </label>
+
+        <label className={['field', v2.eventEditWide].join(' ')}>
+          <span>Titre d’accueil / écran</span>
+          <input className="input" value={heroTitle}
+            onChange={(e) => setHeroTitle(e.target.value)} maxLength={140} />
+        </label>
+
+        <div className={v2.eventEditWide}>
+          <ImageUploadField label="Logo de l’événement" value={logoUrl}
+            purpose="event-logo" onChange={setLogoUrl} compact />
+        </div>
+
+        <div className={v2.eventEditWide}>
+          <ImageUploadField label="Affiche / couverture" value={coverUrl}
+            purpose="event-cover" onChange={setCoverUrl} compact />
+        </div>
+
+        <label className="field">
+          <span>Couleur</span>
+          <div className="row g2">
+            <input type="color" value={accentHex}
+              onChange={(e) => setAccentHex(e.target.value.toUpperCase())}
+              style={{ width: 52, minHeight: 42, padding: 4, borderRadius: 10 }} />
+            <input className="input" value={accentHex}
+              onChange={(e) => setAccentHex(e.target.value.toUpperCase())} maxLength={7} />
+          </div>
         </label>
 
         <label className="field">
@@ -239,14 +309,49 @@ function EventConfig({
         </label>
 
         <label className={['field', v2.eventEditWide].join(' ')}>
+          <span>Texte QR</span>
+          <input className="input" value={qrLabel}
+            onChange={(e) => setQrLabel(e.target.value)} maxLength={120} />
+        </label>
+
+        <label className={['field', v2.eventEditWide].join(' ')}>
+          <span>Règles / consignes</span>
+          <textarea className="input" style={{ minHeight: 100, resize: 'vertical' }}
+            value={rulesText} onChange={(e) => setRulesText(e.target.value)} maxLength={2400} />
+        </label>
+
+        <label className={['field', v2.eventEditWide].join(' ')}>
           <span>Message public</span>
           <textarea className="input" style={{ minHeight: 80, resize: 'vertical' }}
             value={publicNote} onChange={(e) => setPublicNote(e.target.value)} maxLength={500} />
         </label>
       </div>
 
+      <div className={v2.eventPreview}
+        style={{
+          borderColor: accentHex,
+          backgroundImage: coverUrl
+            ? `linear-gradient(120deg, rgba(7,9,13,.92), rgba(7,9,13,.72)), url(${JSON.stringify(coverUrl)})`
+            : undefined,
+        }}>
+        <div className={v2.eventPreviewLogo}>
+          {logoUrl ? <img src={logoUrl} alt="" /> : <span>R</span>}
+        </div>
+        <div>
+          <span style={{ color: accentHex }}>APERÇU</span>
+          <h3>{heroTitle || name}</h3>
+          <p>{rulesText || qrLabel}</p>
+        </div>
+      </div>
+
       <div className={v2.eventEditActions}>
-        <button className="btn btn--solid btn--sm" type="button" disabled={pending || name.trim().length < 2}
+        <img
+          src={'/api/event/qr?event=' + encodeURIComponent(event.id)}
+          alt="QR événement"
+          style={{ width: 74, height: 74, borderRadius: 10, background: '#fff', padding: 5, marginRight: 'auto' }}
+        />
+        <button className="btn btn--solid btn--sm" type="button"
+          disabled={pending || name.trim().length < 2 || !/^#[0-9A-Fa-f]{6}$/.test(accentHex)}
           onClick={save}>
           {pending ? 'Enregistrement…' : 'Enregistrer'}
         </button>

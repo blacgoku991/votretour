@@ -3,7 +3,13 @@ name: CI
 on:
   push:
     branches: ['**']
-  pull_request:
+
+# Le push valide chaque branche. Cela évite de doubler le même build avec
+# un second run pull_request pour les branches de ce dépôt.
+# Une rafale de commits ne garde que le plus récent.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   web:
@@ -29,6 +35,14 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: service-de-ci
           NEXT_PUBLIC_SITE_URL: https://ci.votretour.test
           SESSION_HASH_SECRET: secret-de-ci-0123456789
+      - name: Valider l'image Docker de production
+        run: |
+          docker build \
+            -f apps/web/Dockerfile \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL=https://ci.supabase.co \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=anon-de-ci \
+            --build-arg NEXT_PUBLIC_SITE_URL=https://ci.rangvia.test \
+            -t rangvia-web-ci .
 
   database:
     name: Base — migrations et suite de tests SQL
