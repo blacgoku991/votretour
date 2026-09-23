@@ -1,8 +1,16 @@
 import Link from 'next/link';
 import { Wordmark } from '@/components/Wordmark';
+import { FloorScene, type FloorSlat } from '@/components/objects/FloorScene';
 import styles from './status.module.css';
 
 export const metadata = { title: 'Page introuvable', robots: { index: false } };
+
+/** Le seuil est vide : personne au comptoir, et la dernière place n'est qu'un contour. */
+const SLATS: FloorSlat[] = [
+  { id: 'a', state: 'wait' },
+  { id: 'b', state: 'wait' },
+  { id: 'c', state: 'ghost', label: '—' },
+];
 
 /**
  * 404.
@@ -15,29 +23,33 @@ export const metadata = { title: 'Page introuvable', robots: { index: false } };
 export default function NotFound() {
   return (
     <main className={styles.screen}>
-      <span className={styles.rails} aria-hidden="true" />
-      <div className={styles.panel}>
-        <Link href="/" aria-label="VotreTour"><Wordmark /></Link>
+      <div className={`shell ${styles.bar}`}>
+        <Link href="/" aria-label="Rangvia" className={styles.home}><Wordmark /></Link>
+      </div>
 
-        {/* Une file dont la dernière latte manque. */}
-        <div className={styles.art} aria-hidden="true">
-          <span className={styles.rail} />
-          <span className={styles.slat} style={{ width: '72%' }} />
-          <span className={styles.slat} style={{ width: '54%' }} />
-          <span className={`${styles.slat} ${styles.slatGhost}`} style={{ width: '36%' }} />
+      <div className={styles.stage}>
+        <div className={styles.sceneBand} aria-hidden="true">
+          <FloorScene size="sm" slats={SLATS} seuil="Comptoir" positions={false} />
         </div>
 
-        <div className="stack g3">
-          <p className="t-label">Introuvable</p>
-          <h1 className="t-title">Cette file n&apos;existe pas</h1>
-          <p className="t-body t-muted">
-            La plaque a peut-être été retirée, ou le lien est incomplet. Si vous êtes
-            dans un commerce, présentez-vous directement au comptoir : on s&apos;occupera
-            de vous.
-          </p>
-        </div>
+        <div className={`shell ${styles.body}`}>
+          <div className={styles.text}>
+            <p className="t-kicker"><span className="t-kicker__num">404</span> Introuvable</p>
+            <h1 className={`t-display ${styles.title}`}>Cette file n&apos;existe pas</h1>
+            <p className={styles.lead}>
+              La plaque a peut-être été retirée, ou le lien est incomplet. Si vous êtes
+              dans un commerce, présentez-vous directement au comptoir : on s&apos;occupera
+              de vous.
+            </p>
+            <div className={styles.actions}>
+              <Link href="/" className="btn btn--signal btn--lg">Retour à l&apos;accueil</Link>
+            </div>
+          </div>
 
-        <Link href="/" className="btn btn--ghost">Retour à l&apos;accueil</Link>
+          <div className={styles.sceneSide} aria-hidden="true">
+            <FloorScene size="lg" slats={SLATS} seuil="Comptoir" />
+          </div>
+        </div>
       </div>
     </main>
   );

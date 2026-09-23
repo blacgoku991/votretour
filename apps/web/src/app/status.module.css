@@ -1,59 +1,106 @@
-/* Écrans d'état : 404 et erreur. Même vocabulaire que le reste — un
-   rail, des lattes — pour qu'on reste dans le produit même quand ça
-   ne va pas. */
+/* Écrans d'état : 404 et erreur (§6.4). Le sol en relief, sur --floor :
+   on reste dans le produit même quand ça ne va pas. */
 
 .screen {
   min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--floor);
+  overflow-x: clip;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  height: var(--site-header-h);
+  flex: none;
+}
+.home {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  border-radius: 8px;
+}
+
+/* Le bloc (scène + texte) est centré dans la hauteur restante : pas de
+   moitié basse vide sur téléphone. */
+.stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-bottom: var(--site-header-h);
+}
+
+/* Mobile : la scène en bandeau pleine largeur, au-dessus du texte. */
+.sceneBand {
+  border-block: 1px solid var(--line);
+}
+@media (min-width: 1024px) { .sceneBand { display: none; } }
+
+.body {
   display: grid;
-  place-items: center;
-  padding: var(--sp-7) var(--sp-5);
-  position: relative;
-  overflow: hidden;
-  background: var(--surface);
+  grid-template-columns: minmax(0, 1fr);
+  padding-top: var(--sp-7);
+}
+@media (min-width: 1024px) {
+  .body {
+    grid-template-columns: minmax(0, 6fr) minmax(0, 6fr);
+    column-gap: var(--sp-9);
+    align-items: center;
+    padding-top: 0;
+  }
 }
 
-.rails {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image: repeating-linear-gradient(to bottom, var(--line) 0 1px, transparent 1px var(--step));
-  mask-image: radial-gradient(120% 70% at 50% 0%, #000 0%, transparent 70%);
-}
-
-.panel {
+.text {
   position: relative;
-  width: 100%;
-  max-width: 440px;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-5);
+  align-items: flex-start;
+  max-width: 34rem;
 }
-
-.art {
-  position: relative;
-  padding-left: var(--sp-5);
+.title { margin-top: var(--sp-4); }
+.lead {
+  margin-top: var(--gap-title);
+  font-size: clamp(1rem, 0.95rem + 0.4vw, 1.1875rem);
+  line-height: 1.55;
+  color: var(--text-muted);
+  max-width: 44ch;
+}
+.ref {
+  margin-top: var(--sp-4);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.refCode {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.actions {
   display: flex;
-  flex-direction: column;
-  gap: var(--slat-gap);
-  margin-block: var(--sp-2);
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-top: var(--sp-7);
+}
+@media (max-width: 559px) {
+  .actions { flex-direction: column; align-self: stretch; }
 }
 
-.rail {
-  position: absolute;
-  left: 0; top: 2px; bottom: 2px;
-  width: var(--rail-w);
-  border-radius: var(--rail-w);
-  background: var(--rail);
+/* Ordinateur : la scène à droite, posée sur le même sol que la page (pas
+   de cadre) ; elle prend la hauteur de la colonne. */
+.sceneSide { display: none; }
+@media (min-width: 1024px) {
+  .sceneSide {
+    display: block;
+    height: clamp(420px, 58vh, 560px);
+  }
+  /* Agrandissement statique de toute la scène (jamais du monde 3D) : la
+     file tient la colonne sans changer de géométrie. */
 }
-
-.slat {
-  height: var(--slat-h);
-  border-radius: var(--r-slat);
-  background: var(--slat);
-}
-
-/* La latte absente : c'est elle qui raconte le 404. */
-.slatGhost {
-  background: none;
-  border: 1px dashed var(--line-strong);
+@media (min-width: 1280px) {
+  .sceneSide > * { scale: 1.18; }
 }

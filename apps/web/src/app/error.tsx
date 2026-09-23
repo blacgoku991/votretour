@@ -3,7 +3,15 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { Wordmark } from '@/components/Wordmark';
+import { FloorScene, type FloorSlat } from '@/components/objects/FloorScene';
 import styles from './status.module.css';
+
+/** Une place a glissé de la file : le reste tient, rien n'est perdu. */
+const SLATS: FloorSlat[] = [
+  { id: 'a', state: 'wait' },
+  { id: 'b', state: 'fallen' },
+  { id: 'c', state: 'wait' },
+];
 
 /**
  * Écran d'erreur.
@@ -24,32 +32,37 @@ export default function ErrorScreen({
 
   return (
     <main className={styles.screen}>
-      <span className={styles.rails} aria-hidden="true" />
-      <div className={styles.panel}>
-        <Link href="/" aria-label="VotreTour"><Wordmark /></Link>
+      <div className={`shell ${styles.bar}`}>
+        <Link href="/" aria-label="Rangvia" className={styles.home}><Wordmark /></Link>
+      </div>
 
-        <div className={styles.art} aria-hidden="true">
-          <span className={styles.rail} />
-          <span className={styles.slat} style={{ width: '64%', transform: 'rotate(-1.4deg)' }} />
-          <span className={styles.slat} style={{ width: '48%', transform: 'rotate(1deg)' }} />
-          <span className={styles.slat} style={{ width: '30%', transform: 'rotate(-0.6deg)' }} />
+      <div className={styles.stage}>
+        <div className={styles.sceneBand} aria-hidden="true">
+          <FloorScene size="sm" slats={SLATS} seuil="Comptoir" positions={false} />
         </div>
 
-        <div className="stack g3">
-          <p className="t-label">Incident</p>
-          <h1 className="t-title">Quelque chose s&apos;est mal passé</h1>
-          <p className="t-body t-muted">
-            Votre file n&apos;a rien perdu : les positions sont enregistrées côté serveur.
-            Réessayez — et si cela recommence, dites-le nous.
-          </p>
-          {error.digest && (
-            <p className="t-micro t-faint">Référence de l&apos;incident : {error.digest}</p>
-          )}
-        </div>
+        <div className={`shell ${styles.body}`}>
+          <div className={styles.text}>
+            <p className="t-label">Incident</p>
+            <h1 className={`t-display ${styles.title}`}>Quelque chose a coincé.</h1>
+            <p className={styles.lead}>
+              Votre place n&apos;est pas perdue : les positions sont enregistrées côté
+              serveur. Réessayez dans un instant.
+            </p>
+            {error.digest && (
+              <p className={styles.ref}>
+                Référence de l&apos;incident : <span className={styles.refCode}>{error.digest}</span>
+              </p>
+            )}
+            <div className={styles.actions}>
+              <button type="button" className="btn btn--signal btn--lg" onClick={reset}>Réessayer</button>
+              <Link href="/" className="btn btn--ghost btn--lg">Retour à l&apos;accueil</Link>
+            </div>
+          </div>
 
-        <div className="row g2 wrap">
-          <button type="button" className="btn btn--signal" onClick={reset}>Réessayer</button>
-          <Link href="/" className="btn btn--ghost">Retour à l&apos;accueil</Link>
+          <div className={styles.sceneSide} aria-hidden="true">
+            <FloorScene size="lg" slats={SLATS} seuil="Comptoir" />
+          </div>
         </div>
       </div>
     </main>
