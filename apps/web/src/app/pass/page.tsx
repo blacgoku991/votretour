@@ -23,7 +23,7 @@ export default async function PassHomePage() {
     .from('event_access_passes')
     .select(`
       public_id, status, issued_at, valid_until, grace_until, redeemed_at,
-      event_campaigns(name, status),
+      event_campaigns(name, status, hero_title, logo_url, cover_url, accent_hex, rules_text, qr_label),
       locations(name, city, logo_url),
       queue_entries(client_name)
     `)
@@ -47,7 +47,12 @@ export default async function PassHomePage() {
       eventStatus={event?.status ?? 'ended'}
       locationName={location?.name ?? 'Établissement'}
       city={location?.city ?? null}
-      logoUrl={location?.logo_url ?? null}
+      logoUrl={event?.logo_url ?? location?.logo_url ?? null}
+      coverUrl={event?.cover_url ?? null}
+      accentHex={event?.accent_hex ?? '#FF4B1F'}
+      heroTitle={event?.hero_title ?? null}
+      rulesText={event?.rules_text ?? null}
+      qrLabel={event?.qr_label ?? null}
       clientName={entry?.client_name ?? null}
       validUntil={pass.valid_until}
       graceUntil={pass.grace_until}
