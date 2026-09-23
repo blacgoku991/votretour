@@ -496,6 +496,11 @@ export async function adminCreateDisplayPairCode(
       }
     }
 
+    await db.from('display_pair_codes')
+      .delete()
+      .lt('expires_at', new Date().toISOString())
+      .is('consumed_at', null);
+
     const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
     let code = '';
     let inserted = false;
