@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { ACTIVITY_OPTIONS } from '@/lib/copy';
 import { adminCreateOrganizationV2 } from '@/server/actions/admin-v2';
+import { ImageUploadField } from '../ImageUploadField';
 import styles from '../admin-v2.module.css';
 
 export function CreateOrganizationV2() {
@@ -138,23 +139,34 @@ export function CreateOrganizationV2() {
           </select>
         </label>
 
-        <label className="field">
-          <span>Logo organisation · URL HTTPS</span>
-          <input className="input" value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)}
-            placeholder="https://…" inputMode="url" />
-        </label>
+        <div className={styles.span2}>
+          <ImageUploadField
+            label="Logo organisation"
+            value={logoUrl}
+            purpose="logo"
+            onChange={setLogoUrl}
+            helper="Visible dans le panel, les écrans et l’identité de marque."
+          />
+        </div>
 
-        <label className="field">
-          <span>Logo établissement · URL HTTPS</span>
-          <input className="input" value={locationLogoUrl} onChange={(e) => setLocationLogoUrl(e.target.value)}
-            placeholder="https://…" inputMode="url" />
-        </label>
+        <div className={styles.span2}>
+          <ImageUploadField
+            label="Logo du premier établissement"
+            value={locationLogoUrl}
+            purpose="logo"
+            onChange={setLocationLogoUrl}
+          />
+        </div>
 
-        <label className={['field', styles.span2].join(' ')}>
-          <span>Image de couverture · URL HTTPS</span>
-          <input className="input" value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)}
-            placeholder="https://…" inputMode="url" />
-        </label>
+        <div className={styles.span2}>
+          <ImageUploadField
+            label="Image de couverture"
+            value={coverUrl}
+            purpose="cover"
+            onChange={setCoverUrl}
+            helper="Affiche / photo de marque pour les vues grand écran et futures pages publiques."
+          />
+        </div>
 
         <label className={['field', styles.span2].join(' ')}>
           <span>Adresse</span>
