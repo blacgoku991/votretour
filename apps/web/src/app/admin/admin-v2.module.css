@@ -1,0 +1,364 @@
+.creator {
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 24px;
+  padding: 22px;
+  background:
+    radial-gradient(circle at 0 0, rgba(255,75,31,.10), transparent 30%),
+    linear-gradient(145deg, #12161d, #0c0f14);
+  box-shadow: 0 30px 80px rgba(0,0,0,.22);
+}
+
+.creatorHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 18px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.creatorHead h2 {
+  margin: 5px 0 0;
+  font-size: clamp(22px, 2vw, 32px);
+  letter-spacing: -.04em;
+}
+
+.creatorHead p {
+  margin: 8px 0 0;
+  color: #8f98a5;
+  font-size: 12px;
+  max-width: 720px;
+}
+
+.eyebrow {
+  color: #ff6b45;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .17em;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.span2 {
+  grid-column: 1 / -1;
+}
+
+.switchCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 66px;
+  padding: 13px 14px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 14px;
+  background: rgba(255,255,255,.025);
+  cursor: pointer;
+}
+
+.switchCard input {
+  width: 18px;
+  height: 18px;
+  accent-color: #ff4b1f;
+}
+
+.switchCard strong,
+.switchCard small {
+  display: block;
+}
+
+.switchCard strong {
+  font-size: 12px;
+}
+
+.switchCard small {
+  margin-top: 4px;
+  color: #69737f;
+  font-size: 10px;
+}
+
+.creatorActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.creatorHint {
+  color: #69737f;
+  font-size: 10px;
+}
+
+.orgIdentity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 220px;
+}
+
+.orgLogo {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 11px;
+  background: #1a2029;
+  border: 1px solid rgba(255,255,255,.08);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.orgLogo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.orgIdentityText strong,
+.orgIdentityText span {
+  display: block;
+}
+
+.orgIdentityText span {
+  margin-top: 3px;
+  color: #69737f;
+  font-size: 9px;
+}
+
+.detailToolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.configShell {
+  display: grid;
+  gap: 18px;
+}
+
+.configTabs {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.configTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.configTab {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(255,255,255,.025);
+  color: #8f98a5;
+  font-size: 10px;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.configTabActive {
+  color: #fff;
+  border-color: rgba(255,75,31,.28);
+  background: rgba(255,75,31,.12);
+  box-shadow: inset 0 0 0 1px rgba(255,75,31,.05);
+}
+
+.configSection {
+  display: grid;
+  gap: 14px;
+}
+
+.configSectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.configSectionHeader h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.configSectionHeader p {
+  margin: 5px 0 0;
+  color: #69737f;
+  font-size: 10px;
+  max-width: 620px;
+}
+
+.previewCard {
+  display: grid;
+  grid-template-columns: 72px minmax(0,1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(255,255,255,.025);
+}
+
+.previewLogo {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: #1b212a;
+  border: 1px solid rgba(255,255,255,.08);
+  font-weight: 850;
+}
+
+.previewLogo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.previewCard strong,
+.previewCard span {
+  display: block;
+}
+
+.previewCard span {
+  margin-top: 5px;
+  color: #69737f;
+  font-size: 10px;
+}
+
+.toggleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 10px;
+}
+
+.locationSwitcher {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.locationChip {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(255,255,255,.025);
+  color: #8f98a5;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.locationChipActive {
+  color: #fff;
+  border-color: rgba(73,215,165,.28);
+  background: rgba(31,169,122,.10);
+}
+
+.saveBar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 14px;
+  background: rgba(10,13,18,.92);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 18px 50px rgba(0,0,0,.3);
+}
+
+.saveBar span {
+  color: #8f98a5;
+  font-size: 10px;
+}
+
+.dangerZone {
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(168,69,60,.28);
+  background: rgba(168,69,60,.06);
+}
+
+.dangerZone h4 {
+  margin: 0;
+  color: #e36f64;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+}
+
+.dangerZone p {
+  margin: 8px 0 12px;
+  color: #8f98a5;
+  font-size: 10px;
+}
+
+.eventEdit {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.07);
+  background: rgba(255,255,255,.02);
+}
+
+.eventEditGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 10px;
+}
+
+.eventEditWide {
+  grid-column: 1 / -1;
+}
+
+.eventEditActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@media (max-width: 820px) {
+  .formGrid,
+  .toggleGrid,
+  .eventEditGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .span2,
+  .eventEditWide {
+    grid-column: auto;
+  }
+
+  .creatorHead,
+  .creatorActions,
+  .configSectionHeader,
+  .saveBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .saveBar {
+    bottom: 8px;
+  }
+}
