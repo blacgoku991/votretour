@@ -495,3 +495,46 @@
     height: 72px;
   }
 }
+
+.eventCardCover {
+  height: 126px;
+  margin: -20px -20px 18px;
+  border-radius: 20px 20px 12px 12px;
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.eventCardCover::after {
+  content:'';
+  position:absolute;
+  inset:0;
+  background:linear-gradient(to bottom,rgba(7,9,13,.05),rgba(7,9,13,.72));
+}
+
+.eventCardIdentity {
+  display:flex;
+  align-items:flex-start;
+  gap:12px;
+  min-width:0;
+}
+
+.eventCardLogo {
+  width:46px;
+  height:46px;
+  flex:0 0 46px;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  border-radius:13px;
+  background:#181d25;
+  border:1px solid rgba(255,255,255,.08);
+  font-weight:900;
+}
+
+.eventCardLogo img {
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
