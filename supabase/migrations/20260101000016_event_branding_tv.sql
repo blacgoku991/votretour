@@ -43,7 +43,7 @@ create table if not exists public.display_pair_codes (
   event_id        uuid references public.event_campaigns(id) on delete set null,
   display_name    text not null default 'Écran TV'
                   check (length(trim(display_name)) between 1 and 80),
-  code_hash       text not null unique,
+  code_hash       text not null,
   expires_at      timestamptz not null,
   consumed_at     timestamptz,
   created_by      uuid references public.profiles(id) on delete set null,
@@ -52,6 +52,9 @@ create table if not exists public.display_pair_codes (
 
 create index if not exists display_pair_codes_lookup_idx
   on public.display_pair_codes(code_hash, expires_at)
+  where consumed_at is null;
+create unique index if not exists display_pair_codes_unconsumed_code_idx
+  on public.display_pair_codes(code_hash)
   where consumed_at is null;
 
 -- ---------------------------------------------------------------------
