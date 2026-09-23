@@ -33,7 +33,28 @@
   align-items: center;
 }
 
+.dropZone {
+  padding: 10px;
+  margin: -10px;
+  border: 1px dashed transparent;
+  border-radius: 20px;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    opacity 150ms ease;
+}
+
+.dragging {
+  border-color: rgba(255,75,31,.55);
+  background: rgba(255,75,31,.06);
+}
+
+.uploading {
+  opacity: .72;
+}
+
 .preview {
+  position: relative;
   width: 92px;
   height: 92px;
   overflow: hidden;
@@ -46,6 +67,26 @@
   font-size: 10px;
   font-weight: 760;
   text-transform: uppercase;
+  letter-spacing: .08em;
+  cursor: pointer;
+  appearance: none;
+  padding: 0;
+}
+
+.preview:disabled {
+  cursor: progress;
+}
+
+.dropOverlay {
+  position: absolute;
+  inset: 5px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: rgba(7,9,13,.82);
+  color: #fff;
+  font-style: normal;
+  font-size: 9px;
   letter-spacing: .08em;
 }
 
@@ -64,6 +105,18 @@
   min-width: 0;
   display: grid;
   gap: 8px;
+}
+
+.buttonRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dropHint {
+  color: #69737f;
+  font-size: 9px;
 }
 
 .controls small {
