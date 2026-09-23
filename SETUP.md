@@ -1079,6 +1079,42 @@ tag posé en libre accès.
 
 ---
 
+### 13.8 Faire fabriquer des plaques en série
+
+Pour commander des plaques à un fabricant — gravées d'avance, puis
+attribuées à chaque commerce à la livraison :
+
+1. **Super-admin → Stock fournisseur → Générer un lot de liens.** Donnez
+   un nom au lot, choisissez le nombre (100 par exemple), validez.
+2. Sur la page du lot, **Télécharger le CSV** : une ligne par plaque avec
+   son numéro, le code à imprimer en petit (`RV-XXXXX-XXXXX`) et l'URL à
+   graver dans la puce NFC **et** à encoder dans le QR. La **Liste d'URL**
+   (une par ligne) convient à la plupart des encodeurs NFC. La **Planche
+   QR** imprimable sert de bon à tirer.
+3. Envoyez le fichier au fabricant. Précisez : enregistrement NDEF de type
+   **URI**, puce NTAG213 ou plus, et le code `RV-…` imprimé lisiblement
+   sur chaque plaque.
+4. À la livraison, attribuez chaque plaque : **Stock fournisseur →
+   Attribuer une plaque livrée**, par son code, son numéro, ou — le plus
+   rapide — **en la scannant avec votre téléphone connecté au
+   super-admin** : l'écran propose « Attribuer cette plaque ».
+
+Tant qu'une plaque n'est pas attribuée, un client qui la scanne lit
+« Cette plaque n'est pas encore activée — présentez-vous au comptoir ».
+
+**Changer une plaque de commerce.** Retrouvez-la, puis **Réattribuer à
+une autre société** : le lien gravé ne change pas, il ouvre simplement la
+file du nouveau commerce. L'ancien commerce perd la plaque et son
+historique de scans. **Libérer** la remet en stock.
+
+> **Le domaine est gravé dans la plaque.** Les URL contiennent
+> `NEXT_PUBLIC_SITE_URL` (par exemple `https://rangvia.com`). Générez les
+> lots seulement une fois ce domaine définitif, et ne le changez plus
+> ensuite — ou gardez une redirection permanente de l'ancien vers le
+> nouveau. Sur iPhone, déclarez l'expérience App Clip avancée sur le
+> **préfixe** `https://rangvia.com/e/` : toutes les plaques, même celles
+> générées plus tard, ouvrent alors l'App Clip.
+
 ## 14. Les QR codes
 
 ### 14.1 Les obtenir
