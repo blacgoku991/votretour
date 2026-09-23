@@ -3,12 +3,12 @@ name: CI
 on:
   push:
     branches: ['**']
-  pull_request:
 
-# Une rafale de commits ne doit pas lancer dix builds Docker concurrents.
-# Seul le dernier commit d'une branche mérite d'être validé.
+# Le push valide chaque branche. Cela évite de doubler le même build avec
+# un second run pull_request pour les branches de ce dépôt.
+# Une rafale de commits ne garde que le plus récent.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  group: ci-${{ github.workflow }}-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
