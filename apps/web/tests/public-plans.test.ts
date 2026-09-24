@@ -6,9 +6,16 @@ import {
   PLANS_REVALIDATE_SECONDS,
   PLANS_TAG,
   PUBLIC_PLAN_COLUMNS,
+  SETUP_STEPS,
+  SETUP_TITLE,
   cheapestPlan,
   formatPlanPrice,
   getPublicPlans,
+  historyLabel,
+  mainPlan,
+  monthlyPriceLabel,
+  planAllowances,
+  setupFeeLabel,
   parsePublicPlan,
   parsePublicPlans,
   publicPlansUrl,
@@ -34,6 +41,7 @@ const STARTER = {
   description: 'Pour un salon, un garage ou une boutique.',
   price_month_cents: 1900,
   price_year_cents: 19000,
+  setup_fee_cents: 0,
   currency: 'EUR',
   trial_days: 14,
   max_locations: 1,
@@ -41,6 +49,20 @@ const STARTER = {
   max_plates: 2,
   max_queues: 1,
   history_days: 30,
+};
+/** L'offre unique de 0043 : 59,90 € HT/mois, 149 € HT d'installation, tout illimité. */
+const RANGVIA = {
+  ...STARTER,
+  code: 'rangvia',
+  name: 'Rangvia',
+  price_month_cents: 5990,
+  price_year_cents: 0,
+  setup_fee_cents: 14900,
+  max_locations: -1,
+  max_staff: -1,
+  max_plates: -1,
+  max_queues: -1,
+  history_days: 730,
 };
 const PRO = { ...STARTER, code: 'pro', name: 'Pro', price_month_cents: 4900, price_year_cents: 49000, max_plates: -1 };
 
@@ -59,6 +81,12 @@ describe('la requête', () => {
     expect(url.searchParams.get('is_active')).toBe('eq.true');
     expect(url.searchParams.get('is_public')).toBe('eq.true');
     expect(url.searchParams.get('order')).toBe('sort_order.asc,code.asc');
+  });
+
+  it('demande les frais d’installation, jamais leur prix Stripe', () => {
+    expect(PUBLIC_PLAN_COLUMNS).toContain('setup_fee_cents');
+    expect(new URL(publicPlansUrl('https://base.test')).searchParams.get('select')).toContain('setup_fee_cents');
+    expect(publicPlansUrl('https://base.test')).not.toMatch(/stripe_price_id_setup/);
   });
 
   it('ne transporte aucun secret ni aucune donnée interne', () => {
@@ -143,6 +171,10 @@ describe('la réponse', () => {
     ['devise inconnue', { currency: 'euro' }],
     ['quota invalide', { max_staff: -2 }],
     ['essai manquant', { trial_days: null }],
+    ['frais d’installation négatifs', { setup_fee_cents: -1 }],
+    ['frais d’installation décimaux', { setup_fee_cents: 149.5 }],
+    ['frais d’installation en texte', { setup_fee_cents: '14900' }],
+    ['frais d’installation nuls au sens SQL', { setup_fee_cents: null }],
   ])('écarte une ligne douteuse : %s', (_label, patch) => {
     expect(parsePublicPlan({ ...STARTER, ...patch })).toBeNull();
     expect(parsePublicPlans([{ ...STARTER, ...patch }, PRO])?.map((p) => p.code)).toEqual(['pro']);
@@ -183,5 +215,62 @@ describe('l’affichage', () => {
     const free = parsePublicPlan({ ...STARTER, code: 'decouverte', price_month_cents: 0, price_year_cents: 0 });
     expect(free).not.toBeNull();
     if (free) expect(cheapestPlan([PRO, free, STARTER])?.code).toBe('decouverte');
+  });
+});
+
+describe('l’offre unique (0043)', () => {
+  it('lit les frais d’installation tels que la base les donne', () => {
+    expect(parsePublicPlan(RANGVIA)?.setup_fee_cents).toBe(14900);
+  });
+
+  it('une ligne sans la clé (appel direct, sans la colonne) vaut « pas de frais »', () => {
+    // La requête demande toujours la colonne : si elle manquait en base,
+    // PostgREST refuserait tout (400 → null). L'absence ne vient donc que
+    // d'un appel sans elle.
+    const { setup_fee_cents: _omitted, ...withoutFee } = RANGVIA;
+    expect(parsePublicPlan(withoutFee)?.setup_fee_cents).toBe(0);
+  });
+
+  it('l’offre affichée est la première publique, comme sur /tarifs', () => {
+    const plans = parsePublicPlans([RANGVIA, STARTER]);
+    expect(mainPlan(plans)?.code).toBe('rangvia');
+    expect(mainPlan([])).toBeNull();
+    expect(mainPlan(null)).toBeNull();
+  });
+
+  it('écrit le prix et les frais en HT, frais « une fois »', () => {
+    const plan = parsePublicPlan(RANGVIA)!;
+    expect(monthlyPriceLabel(plan)).toBe('59,90\u00a0€\u00a0HT/mois');
+    expect(setupFeeLabel(plan)).toBe('149\u00a0€\u00a0HT d’installation, une fois');
+    expect(setupFeeLabel({ setup_fee_cents: 0, currency: 'EUR' })).toBeNull();
+    expect(monthlyPriceLabel({ price_month_cents: 0, currency: 'EUR' })).toBe('Gratuit');
+  });
+
+  it('dit ce que comprend l’abonnement d’après les quotas réels', () => {
+    expect(planAllowances(parsePublicPlan(RANGVIA)!)).toEqual([
+      'Établissements, professionnels, plaques et files sans limite',
+      '2\u00a0ans d’historique',
+    ]);
+    // Des quotas chiffrés gardent chacun leur ligne ; l'illimité est regroupé.
+    expect(planAllowances({ max_locations: 1, max_staff: 3, max_plates: -1, max_queues: 1, history_days: 30 })).toEqual([
+      'Plaques sans limite',
+      '1\u00a0établissement',
+      '3\u00a0professionnels',
+      '1\u00a0file',
+      '30\u00a0jours d’historique',
+    ]);
+    expect(historyLabel(365)).toBe('1\u00a0an d’historique');
+    expect(historyLabel(-1)).toBe('Historique sans limite');
+    expect(historyLabel(1)).toBe('1\u00a0jour d’historique');
+  });
+
+  it('présente l’installation telle que le propriétaire la vend, sans promesse de profil', () => {
+    expect(SETUP_TITLE).toBe('Installation et configuration de votre métier par l’équipe Rangvia');
+    expect(SETUP_STEPS).toHaveLength(3);
+    const text = SETUP_STEPS.map((s) => `${s.key} ${s.text}`).join(' ');
+    // Apostrophes typographiques, et aucune fonction de profil non livrée
+    // (atelier, devis, table, guichet…) promise par l'installation.
+    expect(text).not.toMatch(/'/);
+    expect(text).not.toMatch(/devis|immatriculation|table|guichet|atelier/i);
   });
 });

@@ -6,19 +6,65 @@
   gap: var(--sp-3); flex-wrap: wrap;
   padding: var(--sp-4) var(--sp-5);
 }
-.planTitle { min-width: 0; }
-.planName { font-variation-settings: 'wght' 660; font-size: 0.9375rem; }
+.planTitle { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.planName {
+  display: flex; align-items: baseline; gap: 10px;
+  font-variation-settings: 'wght' 660; font-size: 0.9375rem;
+}
+.planCode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+.planPrices { font-size: 0.875rem; color: var(--text-muted); }
+.planPrices :global(.t-num) { color: var(--text); font-variation-settings: 'wght' 680; }
+.planChips { justify-content: flex-start; }
+
+/* Offre retirée : en retrait, lisible (abonnements et audit y renvoient). */
+.retired .planName,
+.retired .planPrices { color: var(--text-muted); }
 
 .planForm {
   padding: var(--sp-4) var(--sp-5) var(--sp-5);
   border-top: 1px solid var(--line);
   background: var(--surface-sunken);
-  display: flex; flex-direction: column; gap: var(--sp-4);
+  display: flex; flex-direction: column; gap: var(--sp-5);
+}
+
+.group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex; flex-direction: column; gap: var(--sp-3);
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--sp-3);
 }
 .grid .input { min-height: 42px; }
+
+.retiredList > summary {
+  cursor: pointer;
+  padding: var(--sp-4) var(--sp-5);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  list-style: none;
+}
+.retiredList > summary::-webkit-details-marker { display: none; }
+.retiredList > summary::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  margin-right: 10px;
+  vertical-align: middle;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.retiredList[open] > summary { border-bottom: 1px solid var(--line); }
+
+.none { padding: var(--sp-4) var(--sp-5); }
+.group > legend { margin-bottom: var(--sp-3); }

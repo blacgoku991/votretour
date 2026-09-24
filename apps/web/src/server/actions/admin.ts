@@ -92,14 +92,27 @@ export async function reactivateOrganization(
   }
 }
 
+/**
+ * Un identifiant de prix Stripe (« price_… »), ou rien. Contrôlé ici parce
+ * qu'une coquille (un identifiant de produit « prod_… », un espace collé)
+ * ne se verrait qu'au moment où un commerçant veut payer.
+ */
+const stripePriceId = z.string().trim().max(120)
+  .regex(/^price_[A-Za-z0-9]+$/, 'Un identifiant de prix Stripe commence par « price_ ».')
+  .nullish();
+
 const planSchema = z.object({
   planId: z.string().uuid(),
   name: z.string().trim().min(1).max(60).optional(),
   tagline: z.string().trim().max(160).nullish(),
   priceMonthCents: z.number().int().min(0).max(10_000_000).optional(),
   priceYearCents: z.number().int().min(0).max(100_000_000).optional(),
-  stripePriceIdMonth: z.string().trim().max(120).nullish(),
-  stripePriceIdYear: z.string().trim().max(120).nullish(),
+  /** Frais d'installation HT, payés une fois au premier abonnement (0043). */
+  setupFeeCents: z.number().int().min(0).max(10_000_000).optional(),
+  stripePriceIdMonth: stripePriceId,
+  stripePriceIdYear: stripePriceId,
+  /** Prix Stripe PONCTUEL des frais d'installation : sans lui, le paiement est refusé. */
+  stripePriceIdSetup: stripePriceId,
   maxLocations: z.number().int().min(-1).max(10_000).optional(),
   maxStaff: z.number().int().min(-1).max(10_000).optional(),
   maxPlates: z.number().int().min(-1).max(10_000).optional(),
@@ -120,7 +133,9 @@ export async function updatePlan(
     const map: Record<string, string> = {
       name: 'name', tagline: 'tagline',
       priceMonthCents: 'price_month_cents', priceYearCents: 'price_year_cents',
+      setupFeeCents: 'setup_fee_cents',
       stripePriceIdMonth: 'stripe_price_id_month', stripePriceIdYear: 'stripe_price_id_year',
+      stripePriceIdSetup: 'stripe_price_id_setup',
       maxLocations: 'max_locations', maxStaff: 'max_staff', maxPlates: 'max_plates',
       maxQueues: 'max_queues', historyDays: 'history_days',
       isActive: 'is_active', isPublic: 'is_public',
@@ -802,7 +817,11 @@ const adminCreateOrganizationSchema = z.object({
   ]).default('other'),
   locationName: z.string().trim().min(1).max(120),
   queueMode: z.enum(['shared','per_staff']).default('shared'),
-  planCode: z.enum(['starter','pro','business']).default('starter'),
+  // Une seule offre depuis 0043 (`rangvia`). Un ancien code (« starter »,
+  // « pro », « business ») envoyé par un formulaire d'avant reste accepté :
+  // l'offre n'étant plus active, provision_organization retombe d'elle-même
+  // sur l'offre unique.
+  planCode: z.string().trim().regex(/^[a-z][a-z0-9_]{1,30}$/).default('rangvia'),
 });
 
 /**

@@ -1,182 +1,228 @@
-'use client';
-
-import { useState } from 'react';
 import Link from 'next/link';
 import { FlapNumber, FlapText } from '@/components/FlapNumber';
-import styles from '../../marketing.module.css';
+import {
+  FREE_PRICE_LABEL,
+  SETUP_STEPS,
+  SETUP_TITLE,
+  formatPlanPrice,
+  planAllowances,
+  type PublicPlanOffer,
+} from '@/lib/public-plans';
+import styles from './tarifs.module.css';
 
 /**
- * Tableau des offres : une ligne par offre, accrochée au rail (jamais des
- * cartes). La bascule Mensuel / Annuel fait TOMBER les prix (volet à
- * palettes) ; le texte lu par les lecteurs d'écran est le prix complet.
+ * L'OFFRE UNIQUE (0043) : 59,90 € HT par mois, plus 149 € HT
+ * d'installation, une fois. Plus de packs, plus de bascule mensuel/annuel,
+ * plus de « le plus choisi » : une seule ligne au départ, en tête de file.
+ *
+ * Deux colonnes :
+ *  - le TICKET : le prix en volets (les tuiles du tableau des départs),
+ *    la latte des frais d'installation, l'appel à l'essai ;
+ *  - le DÉTAIL : ce que comprend l'installation (SETUP_STEPS, la même
+ *    promesse que les pages métier et l'espace Abonnement), puis ce que
+ *    comprend l'abonnement, tiré des quotas RÉELS de l'offre.
+ *
+ * Composant serveur : aucun JavaScript propre (les volets sont statiques,
+ * rendus au serveur). Chaque prix est lu en toutes lettres par les
+ * lecteurs d'écran (« 59,90 € par mois, hors taxes »), une seule fois.
  */
 
-export interface PublicPlan {
-  code: string;
-  name: string;
-  description: string | null;
-  price_month_cents: number;
-  price_year_cents: number;
-  currency: string;
-  trial_days: number;
-  max_locations: number;
-  max_staff: number;
-  max_plates: number;
-  max_queues: number;
-  history_days: number;
-}
-
-type Period = 'month' | 'year';
-
-/** Mois offerts par l'annuel, calculés d'après les prix (jamais écrits en dur). */
-export function monthsOffered(plan: Pick<PublicPlan, 'price_month_cents' | 'price_year_cents'>): number {
-  const { price_month_cents: m, price_year_cents: y } = plan;
-  if (!(m > 0) || !(y > 0)) return 0;
-  const n = Math.floor(12 - y / m + 1e-9);
-  return n >= 1 ? n : 0;
-}
-
-function priceParts(cents: number, currency: string) {
-  const digits = cents % 100 === 0 ? 0 : 2;
-  const parts = new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).formatToParts(cents / 100);
-  // Montant groupé comme le texte (« 1 290 ») : chaque groupe de milliers
-  // devient une rangée de tuiles, séparée de la suivante par un blanc.
-  const amount = new Intl.NumberFormat('fr-FR', {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(cents / 100);
-  const groups = amount.split(/\s+/).filter(Boolean);
-  const symbol = parts.find((p) => p.type === 'currency')?.value ?? currency;
-  const full = parts.map((p) => p.value).join('').replace(/\s+/g, '\u00a0').trim();
-  return { amount, groups, symbol, full };
+/** Toujours inclus, sans supplément : ce que l'abonnement ne facture jamais à l'unité. */
+function included(appClip: boolean) {
+  return [
+    {
+      key: 'Aucun SMS',
+      text: appClip
+        ? 'Les notifications passent par l’App Clip iPhone ou le navigateur : rien à payer à l’unité.'
+        : 'Les notifications passent par le navigateur du téléphone : rien à payer à l’unité.',
+    },
+    {
+      key: 'Aucune application',
+      text: 'Pour vos clients : ni compte, ni mot de passe, ni e‑mail obligatoire.',
+    },
+    {
+      key: 'Le temps réel',
+      text: 'Les positions se mettent à jour toutes seules, sur tous les écrans.',
+    },
+  ] as const;
 }
 
 /**
- * Le prix en volets : un groupe de tuiles par tranche de milliers. Groupes
- * comptés depuis la droite (19 → 190 → 1 290 : les unités restent les
- * unités) ; le texte lu est le prix complet, une seule fois.
+ * Montant découpé pour les tuiles : les euros par groupes de milliers
+ * (« 1 290 » → deux groupes), les centimes à part (« 90 », ou `null`
+ * pour un montant rond), et le texte complet (« 59,90 € »).
  */
-function PriceTiles({ groups, label }: { groups: string[]; label: string }) {
+export function priceParts(cents: number, currency: string) {
+  const units = Math.floor(cents / 100);
+  const rest = cents % 100;
+  const groups = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 })
+    .format(units).split(/\s+/).filter(Boolean);
+  const symbol = new Intl.NumberFormat('fr-FR', { style: 'currency', currency })
+    .formatToParts(0).find((p) => p.type === 'currency')?.value ?? currency;
+  return {
+    groups,
+    decimals: rest === 0 ? null : String(rest).padStart(2, '0'),
+    symbol,
+    full: formatPlanPrice(cents, currency),
+  };
+}
+
+/** Des tuiles de chiffres, décoratives : le prix est lu une fois, en toutes lettres, par l'appelant. */
+function Tiles({ digits, first }: { digits: string; first: boolean }) {
+  return <FlapNumber static tile value={Number(digits)} pad={first ? 1 : digits.length} label="" size="1em" />;
+}
+
+/**
+ * Le prix en volets, comme sur un tableau des départs : les euros en
+ * grandes tuiles (un groupe par tranche de milliers), les centimes en
+ * petites tuiles hissées en exposant, l'unité dessous. Un seul texte lu.
+ */
+function PriceTiles({ cents, currency, spoken, unit }: {
+  cents: number; currency: string; spoken: string; unit: string;
+}) {
+  const { groups, decimals, symbol } = priceParts(cents, currency);
   return (
-    <>
-      <span className="sr-only">{label}</span>
-      {groups.map((group, i) => {
-        const key = `g${groups.length - 1 - i}`;
-        return /^\d+$/.test(group) ? (
-          <FlapNumber key={key} static tile value={Number(group)} pad={i > 0 ? group.length : 1} label="" size="1em" />
-        ) : (
-          <FlapText key={key} static fixed tile text={group} label="" size="1em" stagger={36} />
-        );
-      })}
-    </>
+    <p className={styles.price}>
+      <span className="sr-only">{spoken}</span>
+      <span className={styles.priceTiles} aria-hidden="true">
+        {groups.map((group, i) => <Tiles key={`g${groups.length - 1 - i}`} digits={group} first={i === 0} />)}
+      </span>
+      <span className={styles.priceSide} aria-hidden="true">
+        {decimals && (
+          <span className={styles.priceCents}>
+            <span className={styles.priceComma}>,</span>
+            <FlapText static fixed tile text={decimals} label="" size="1em" />
+          </span>
+        )}
+        <span className={styles.priceUnit}>
+          <span className={styles.priceSymbol}>{symbol}</span>
+          <span className={styles.pricePer}>{unit}</span>
+        </span>
+      </span>
+    </p>
   );
 }
 
-function limits(plan: PublicPlan): string[] {
-  const n = (v: number, one: string, many: string, unlimited: string) =>
-    v < 0 ? unlimited : `${v} ${v > 1 ? many : one}`;
-  return [
-    n(plan.max_locations, 'établissement', 'établissements', 'Établissements illimités'),
-    n(plan.max_staff, 'professionnel', 'professionnels', 'Professionnels illimités'),
-    n(plan.max_plates, 'plaque NFC / QR', 'plaques NFC / QR', 'Plaques illimitées'),
-    n(plan.max_queues, 'file', 'files', 'Files illimitées'),
-    `${plan.history_days} jour${plan.history_days > 1 ? 's' : ''} d’historique`,
-  ];
-}
+export function PricingBoard({ plan, appClip }: { plan: PublicPlanOffer | null; appClip: boolean }) {
+  // Base injoignable ou aucune offre publique : jamais de prix inventé.
+  if (!plan) {
+    return (
+      <div className={styles.empty}>
+        <p className="t-board">Tarifs momentanément indisponibles</p>
+        <p className="t-small t-muted">
+          Les prix n’ont pas pu être lus. Réessayez dans un instant, ou créez votre file&nbsp;: l’essai ne demande
+          aucun moyen de paiement.
+        </p>
+      </div>
+    );
+  }
 
-export function PricingBoard({ plans }: { plans: PublicPlan[] }) {
-  const [period, setPeriod] = useState<Period>('month');
-
-  const bestOffer = Math.max(0, ...plans.map(monthsOffered));
+  const monthly = priceParts(plan.price_month_cents, plan.currency);
+  const free = formatPlanPrice(plan.price_month_cents, plan.currency) === FREE_PRICE_LABEL;
+  const setup = plan.setup_fee_cents > 0 ? priceParts(plan.setup_fee_cents, plan.currency) : null;
+  const allowances = planAllowances(plan);
+  const trial = plan.trial_days;
 
   return (
-    <div className={styles.board}>
-      <div className={styles.boardBar}>
-        <div className="seg" role="group" aria-label="Période de facturation">
-          <button type="button" aria-pressed={period === 'month'} onClick={() => setPeriod('month')}>
-            Mensuel
-          </button>
-          <button type="button" aria-pressed={period === 'year'} onClick={() => setPeriod('year')}>
-            Annuel
-          </button>
-        </div>
-        {bestOffer >= 1 && (
-          <p className={styles.boardNote}>
-            À l’année : jusqu’à {bestOffer} mois offert{bestOffer > 1 ? 's' : ''}
+    <div className={styles.offer}>
+      {/* ------------------------------------------------ Le ticket */}
+      <div className={styles.ticket}>
+        <p className={styles.ticketHead}>
+          <span className="t-label">L’offre</span>
+          <span className={`t-board ${styles.ticketName}`}>{plan.name}</span>
+        </p>
+
+        {free ? (
+          <p className={styles.price}>
+            <span className={styles.priceFree}>{FREE_PRICE_LABEL}</span>
+          </p>
+        ) : (
+          <PriceTiles
+            cents={plan.price_month_cents}
+            currency={plan.currency}
+            spoken={`${monthly.full} par mois, hors taxes`}
+            unit="/mois HT"
+          />
+        )}
+
+        {setup && (
+          <p className={styles.setup}>
+            <span className={styles.setupPlus} aria-hidden="true">+</span>
+            <span className="sr-only">{`plus ${setup.full} hors taxes de frais d’installation, payés une fois`}</span>
+            <span className={styles.setupTiles} aria-hidden="true">
+              {setup.groups.map((group, i) => (
+                <Tiles key={`g${setup.groups.length - 1 - i}`} digits={group} first={i === 0} />
+              ))}
+              {setup.decimals && <FlapText static fixed tile text={`,${setup.decimals}`} label="" size="1em" />}
+            </span>
+            <span className={styles.setupText} aria-hidden="true">
+              <span className={styles.setupAmount}>{setup.symbol}&nbsp;HT d’installation</span>
+              <span className={styles.setupOnce}>une fois, avec le premier mois</span>
+            </span>
           </p>
         )}
+
+        <div className={styles.ticketActions}>
+          <Link href="/inscription" className="btn btn--signal btn--lg">
+            {trial > 0 ? `Essayer ${trial} jours` : 'Ouvrir ma file'}
+          </Link>
+          <ul className={styles.terms}>
+            {trial > 0 && <li>Essai sans carte bancaire</li>}
+            <li>Sans engagement</li>
+            <li>Résiliable à tout moment</li>
+          </ul>
+        </div>
       </div>
 
-      <ol className={`rail-list ${styles.plans}`}>
-        {plans.map((plan, index) => {
-          const featured = index === 1;
-          const cents = period === 'month' ? plan.price_month_cents : plan.price_year_cents;
-          const price = priceParts(cents, plan.currency);
-          const yearly = priceParts(plan.price_year_cents, plan.currency);
-          const offered = monthsOffered(plan);
-          const unit = period === 'month' ? '/mois HT' : '/an HT';
-          const spoken = `${price.full} ${period === 'month' ? 'par mois' : 'par an'}, hors taxes`;
-          return (
-            <li key={plan.code} className={`${styles.plan} ${featured ? `is-self ${styles.planFeatured}` : ''}`}>
-              <div className={styles.planHead}>
-                <h2 className={styles.planName}>
-                  <span className="t-board">{plan.name}</span>
-                  {featured && <span className={`chip chip--signal ${styles.planChip}`}>Le plus choisi</span>}
-                </h2>
-                <p className={styles.price}>
-                  {/* Calé à gauche, à l'aplomb du nom de l'offre. */}
-                  <span className={styles.priceDigits}>
-                    <PriceTiles groups={price.groups} label={spoken} />
-                  </span>
-                  <span className={styles.priceUnit} aria-hidden="true">
-                    <span className={styles.priceSymbol}>{price.symbol}</span>
-                    <span className={styles.pricePer}>{unit}</span>
-                  </span>
-                </p>
-                <p className={styles.priceNote}>
-                  {period === 'year' ? (
-                    offered >= 1 ? (
-                      <span className={styles.offered}>soit {offered} mois offert{offered > 1 ? 's' : ''}</span>
-                    ) : (
-                      <span>Facturé une fois par an</span>
-                    )
-                  ) : plan.price_year_cents > 0 ? (
-                    <span>ou {yearly.full} par an</span>
-                  ) : (
-                    <span>Sans engagement</span>
-                  )}
-                </p>
-              </div>
+      {/* ------------------------------------------------ Le détail */}
+      <div className={styles.detail}>
+        {setup && (
+          <section className={styles.group} aria-labelledby="installation">
+            <header className={styles.groupHead}>
+              <h2 id="installation" className={styles.groupTitle}>
+                <span className="t-kicker__num" aria-hidden="true">01</span>
+                <span className="t-board">L’installation</span>
+              </h2>
+              <p className={styles.groupPrice}>{setup.full}&nbsp;HT, une fois</p>
+            </header>
+            <p className={styles.groupLead}>{SETUP_TITLE}.</p>
+            <ol className={`rail-list ${styles.steps}`}>
+              {SETUP_STEPS.map((step, i) => (
+                <li key={step.key} style={{ ['--i' as string]: i } as React.CSSProperties}>
+                  <span className={styles.stepKey}>{step.key}</span>
+                  <span className={styles.stepText}>{step.text}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
 
-              <div className={styles.planBody}>
-                {plan.description && <p className={styles.planDesc}>{plan.description}</p>}
-                <ul className={styles.limits}>
-                  {limits(plan).map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className={styles.planAction}>
-                <Link
-                  href="/inscription"
-                  className={featured ? 'btn btn--signal' : 'btn btn--ghost'}
-                >
-                  {/* Nom accessible propre à chaque offre, qui COMMENCE par le
-                      libellé visible (commande vocale : « Essayer 14 jours »). */}
-                  Essayer {plan.trial_days} jours
-                  <span className="sr-only">, offre {plan.name}</span>
-                </Link>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
+        <section className={styles.group} aria-labelledby="abonnement">
+          <header className={styles.groupHead}>
+            <h2 id="abonnement" className={styles.groupTitle}>
+              <span className="t-kicker__num" aria-hidden="true">{setup ? '02' : '01'}</span>
+              <span className="t-board">L’abonnement</span>
+            </h2>
+            <p className={styles.groupPrice}>
+              {free ? FREE_PRICE_LABEL : <>{monthly.full}&nbsp;HT par mois</>}
+            </p>
+          </header>
+          <p className={styles.groupLead}>Tout compris, pour toute votre équipe.</p>
+          <ul className={`rail-list ${styles.steps}`}>
+            {allowances.map((line, i) => (
+              <li key={line} className={styles.allowance} style={{ ['--i' as string]: i + 3 } as React.CSSProperties}>
+                <span className={styles.stepKey}>{line}</span>
+              </li>
+            ))}
+            {included(appClip).map((item, i) => (
+              <li key={item.key} style={{ ['--i' as string]: i + 3 + allowances.length } as React.CSSProperties}>
+                <span className={styles.stepKey}>{item.key}</span>
+                <span className={styles.stepText}>{item.text}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
     </div>
   );
 }

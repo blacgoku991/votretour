@@ -3,97 +3,78 @@ import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { Plaque } from '@/components/objects/Plaque';
 import { appClipPublished } from '@/lib/seo/site';
-import { PricingBoard, type PublicPlan } from './PricingBoard';
+import { PUBLIC_PLAN_COLUMNS, mainPlan, parsePublicPlans } from '@/lib/public-plans';
+import { PricingBoard } from './PricingBoard';
 import styles from '../../marketing.module.css';
+import own from './tarifs.module.css';
 
 // L'App Clip n'est cité qu'une fois PUBLIÉ sur l'App Store
 // (NEXT_PUBLIC_APP_CLIP_PUBLIE, figé au build) : avant, on ne promet que
 // ce qu'un commerce obtient vraiment en s'inscrivant.
 const APP_CLIP = appClipPublished();
 
+// Aucun chiffre ici : le prix vit en base (modifiable dans /admin/offres),
+// une description figée le contredirait au premier changement.
 export const metadata: Metadata = {
   title: 'Tarifs',
   description: APP_CLIP
-    ? 'Des offres simples pour une file d’attente virtuelle\u00a0: App Clip iPhone, QR code, plaque NFC et avis Google inclus.'
-    : 'Des offres simples pour une file d’attente virtuelle\u00a0: QR code, plaque NFC, notifications et avis Google inclus.',
+    ? 'Une seule offre, tout compris : l’installation de votre métier par l’équipe Rangvia, puis un abonnement mensuel. App Clip iPhone, QR code, plaque NFC et notifications inclus.'
+    : 'Une seule offre, tout compris : l’installation de votre métier par l’équipe Rangvia, puis un abonnement mensuel. QR code, plaque NFC et notifications inclus.',
 };
 // Les offres sont lues avec le client serveur privilégié : rendu au runtime
 // pour ne jamais injecter SUPABASE_SERVICE_ROLE_KEY pendant le build Docker.
 export const dynamic = 'force-dynamic';
 
-const INCLUDED = [
-  {
-    key: 'Aucun SMS',
-    text: APP_CLIP
-      ? 'Les notifications passent par l’App Clip iPhone ou le navigateur\u00a0: rien à payer à l’unité.'
-      : 'Les notifications passent par le navigateur du téléphone\u00a0: rien à payer à l’unité.',
-  },
-  {
-    key: 'Aucune application à installer',
-    text: 'Pour vos clients : ni compte, ni mot de passe, ni e-mail obligatoire.',
-  },
-  {
-    key: 'Le temps réel',
-    text: 'Les positions se mettent à jour toutes seules, sur tous les écrans.',
-  },
-  {
-    key: 'Vos QR et vos affiches',
-    text: 'Générés à la demande, prêts à imprimer.',
-  },
-] as const;
-
 const FAQ = [
   {
-    q: 'Dois-je commander des plaques\u202f?',
-    a: 'Non. Un QR imprimé suffit pour démarrer. Si vous voulez des plaques NFC gravées, vous pouvez en faire la demande depuis votre espace : nous revenons vers vous avec un devis avant toute production.',
+    q: 'À quoi servent les frais d’installation ?',
+    a: 'À ce que votre file soit prête le premier jour. L’équipe Rangvia active votre métier, règle avec vous horaires, équipe et prestations, et prépare vos QR codes. Ils sont facturés une seule fois, avec votre premier mois d’abonnement.',
   },
   {
-    q: "Faut-il une carte bancaire pour l’essai\u202f?",
-    a: "Non. L’essai démarre dès la création de votre file, sans moyen de paiement.",
+    q: 'Les paie-t-on à nouveau si l’on revient ?',
+    a: 'Non. L’installation se règle une fois pour toutes, au premier abonnement de votre commerce. Si vous résiliez puis revenez, vous ne la payez pas une deuxième fois.',
   },
   {
-    q: "Et si je change d’offre\u202f?",
-    a: 'Le changement est immédiat et le prorata est calculé automatiquement.',
+    q: 'Faut-il une carte bancaire pour l’essai ?',
+    a: 'Non. L’essai démarre dès la création de votre file, sans moyen de paiement. Vous ne payez rien avant de souscrire l’abonnement.',
   },
   {
-    q: 'Puis-je résilier à tout moment\u202f?',
-    a: "Oui, depuis votre espace. La résiliation prend effet à la fin de la période en cours, et vos données restent accessibles jusqu’à cette date.",
+    q: 'Les prix sont-ils hors taxes ?',
+    a: 'Oui. Tous les prix affichés sur Rangvia sont hors taxes ; la TVA s’y ajoute.',
   },
   {
-    q: "Mes données m’appartiennent-elles\u202f?",
-    a: 'Oui. Vous choisissez la durée de conservation ; au-delà, les prénoms de vos clients sont effacés automatiquement.',
+    q: 'Dois-je commander des plaques ?',
+    a: 'Non. Un QR imprimé suffit pour démarrer. Si vous voulez des plaques NFC gravées, vous pouvez en faire la demande depuis votre espace : nous revenons vers vous avec un devis avant toute production.',
+  },
+  {
+    q: 'Puis-je résilier à tout moment ?',
+    a: 'Oui, depuis votre espace. La résiliation prend effet à la fin de la période en cours, et vos données restent accessibles jusqu’à cette date.',
+  },
+  {
+    q: 'Mes données m’appartiennent-elles ?',
+    a: 'Oui. Vous choisissez la durée de conservation ; au-delà, les prénoms de vos clients sont effacés automatiquement.',
   },
 ] as const;
 
 export default async function PricingPage() {
-  const { data } = await supabaseAdmin()
+  // Les mêmes colonnes que les pages métier (PUBLIC_PLAN_COLUMNS), passées
+  // au même filtre : une ligne douteuse ne s'affiche nulle part, et la
+  // base injoignable n'affiche aucun prix plutôt qu'un prix faux.
+  const { data, error } = await supabaseAdmin()
     .from('plans')
-    .select('code, name, tagline, description, price_month_cents, price_year_cents, currency, trial_days, max_locations, max_staff, max_plates, max_queues, history_days')
+    .select(PUBLIC_PLAN_COLUMNS.join(', '))
     .eq('is_active', true).eq('is_public', true).order('sort_order');
-  const plans: PublicPlan[] = (data ?? []).map((p) => ({
-    code: p.code,
-    name: p.name,
-    description: p.description,
-    price_month_cents: p.price_month_cents,
-    price_year_cents: p.price_year_cents,
-    currency: p.currency,
-    trial_days: p.trial_days,
-    max_locations: p.max_locations,
-    max_staff: p.max_staff,
-    max_plates: p.max_plates,
-    max_queues: p.max_queues,
-    history_days: p.history_days,
-  }));
+  const plan = error ? null : mainPlan(parsePublicPlans(data));
 
   return (
     <main id="contenu" className={styles.pricing}>
-      <header className={`shell ${styles.intro}`}>
+      <header className={`shell ${styles.intro} ${own.intro}`}>
         <p className="t-label">Tarifs</p>
-        <h1 className={`t-hero ${styles.introTitle}`}>Une file ouverte, un prix clair</h1>
+        <h1 className={`t-hero ${styles.introTitle}`}>Une offre. Tout compris.</h1>
         <p className={`t-lead ${styles.introLead}`}>
-          {APP_CLIP
-            ? 'Tout est inclus dans chaque offre\u00a0: l’App Clip iPhone, le QR code, l’URL NFC, les notifications et le lien d’avis Google. Seuls les volumes changent.'
-            : 'Tout est inclus dans chaque offre\u00a0: le QR code, l’URL NFC, les notifications et le lien d’avis Google. Seuls les volumes changent.'}
+          L’équipe Rangvia installe votre file et la règle pour votre métier. Ensuite, un seul
+          abonnement&nbsp;: {APP_CLIP ? 'l’App Clip iPhone, ' : ''}le QR code, l’URL NFC, les notifications
+          et toute votre équipe.
         </p>
         {/* Maillage : le même prix pour tous, et une page par métier pour
             voir ce que la file devient chez soi. */}
@@ -102,28 +83,13 @@ export default async function PricingPage() {
         </p>
       </header>
 
-      <section className="shell" aria-label="Offres">
-        <PricingBoard plans={plans} />
+      <section className="shell" aria-label="L’offre Rangvia">
+        <PricingBoard plan={plan} appClip={APP_CLIP} />
       </section>
 
-      <section className={`shell ${styles.split}`} aria-labelledby="inclus">
+      <section className={`shell ${styles.split} ${own.questions}`} aria-labelledby="questions">
         <div className={styles.splitHead}>
-          <p className="t-kicker"><span className="t-kicker__num">01</span> Dans chaque offre</p>
-          <h2 id="inclus" className={`t-title ${styles.splitTitle}`}>Ce qui est toujours inclus</h2>
-        </div>
-        <ol className={`rail-list board ${styles.included}`}>
-          {INCLUDED.map((item) => (
-            <li key={item.key}>
-              <span className="t-board">{item.key}</span>
-              <span className={styles.includedText}>{item.text}</span>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section className={`shell ${styles.split}`} aria-labelledby="questions">
-        <div className={styles.splitHead}>
-          <p className="t-kicker"><span className="t-kicker__num">02</span> Avant de vous lancer</p>
+          <p className="t-kicker"><span className="t-kicker__num">03</span> Avant de vous lancer</p>
           <h2 id="questions" className={`t-title ${styles.splitTitle}`}>Questions fréquentes</h2>
         </div>
         <div className={styles.faq}>

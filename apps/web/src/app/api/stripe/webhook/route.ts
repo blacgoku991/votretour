@@ -13,13 +13,17 @@ export const dynamic = 'force-dynamic';
  * Trois garde-fous, parce qu'un webhook est un point d'entrée public :
  *
  *  1. SIGNATURE vérifiée sur le corps BRUT. Sans elle, n'importe qui
- *     pourrait offrir l'offre Business à n'importe quelle organisation.
+ *     pourrait offrir un abonnement (ou son installation) à n'importe quelle
+ *     organisation.
  *  2. IDEMPOTENCE : chaque événement est enregistré avec une contrainte
  *     d'unicité. Stripe rejoue volontiers le même événement ; on ne le
  *     traite qu'une fois.
  *  3. On répond 200 même sur erreur de traitement, après avoir tracé
  *     l'incident : sinon Stripe rejoue indéfiniment un événement qui ne
  *     passera jamais.
+ *
+ * Les frais d'installation (offre unique, 0043) sont horodatés ici, et
+ * seulement ici : voir markSetupFeePaid.
  */
 export async function POST(request: Request) {
   if (!stripeConfigured() || !env.stripe.webhookSecret) {
@@ -83,10 +87,26 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
     case 'checkout.session.completed': {
       const session = event.data.object;
       const organizationId = session.metadata?.organization_id;
-      if (!organizationId || !session.subscription) return;
+      if (!organizationId) return;
 
+      // Les frais d'installation d'abord : ils sont réglés dès que la
+      // première facture l'est, quoi qu'il arrive ensuite à l'abonnement.
+      await markSetupFeePaid(organizationId, session);
+
+      if (!session.subscription) return;
       const subscription = await stripe().subscriptions.retrieve(session.subscription as string);
       await applySubscription(organizationId, subscription);
+      break;
+    }
+
+    // Paiement différé (prélèvement SEPA…) : la session est « complétée »
+    // avant d'être payée. Les frais ne sont horodatés qu'ici, une fois
+    // l'argent confirmé.
+    case 'checkout.session.async_payment_succeeded': {
+      const session = event.data.object;
+      const organizationId = session.metadata?.organization_id;
+      if (!organizationId) return;
+      await markSetupFeePaid(organizationId, session);
       break;
     }
 
@@ -114,6 +134,34 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
     default:
       break;
   }
+}
+
+/**
+ * FRAIS D'INSTALLATION RÉGLÉS (0043) : `subscriptions.setup_fee_paid_at`.
+ *
+ * Seulement pour une session qui les portait (`setup_fee = '1'`, posé par
+ * startCheckout côté serveur) et que Stripe dit payée — ou sans paiement
+ * dû, quand un code promotionnel couvre toute la facture : l'installation
+ * est alors réglée, à 0 €. Une session encore « unpaid » (prélèvement en
+ * cours) attend `checkout.session.async_payment_succeeded`.
+ *
+ * Horodatée UNE fois : le filtre `setup_fee_paid_at is null` rend le
+ * rejeu d'un événement (ou l'arrivée des deux événements) sans effet, et
+ * garde la première heure. C'est cette colonne qui empêche de facturer
+ * l'installation une seconde fois.
+ */
+async function markSetupFeePaid(organizationId: string, session: Stripe.Checkout.Session): Promise<void> {
+  if (session.mode !== 'subscription' || session.metadata?.setup_fee !== '1') return;
+  if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') return;
+
+  const { error } = await supabaseAdmin()
+    .from('subscriptions')
+    .update({ setup_fee_paid_at: new Date().toISOString() })
+    .eq('organization_id', organizationId)
+    .is('setup_fee_paid_at', null);
+  // Levée : l'erreur est tracée par POST (billing_events.error et
+  // system_errors) au lieu de passer en silence.
+  if (error) throw new Error(`Frais d’installation non horodatés : ${error.message}`);
 }
 
 async function organizationFromCustomer(customerId: string | null): Promise<string | null> {

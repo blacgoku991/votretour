@@ -1263,13 +1263,29 @@ scénario ci-dessus et l'isolation multi-tenant vue depuis les rôles `anon`,
 Sans Stripe, toutes les organisations restent en période d'essai et l'interface
 le dit franchement. Le produit est pleinement utilisable ainsi.
 
-### 16.1 Créer les produits
+### 16.1 Créer le produit et ses deux prix
+
+Rangvia se vend en **une seule offre** : 59,90 € HT par mois, plus 149 € HT
+de frais d'installation payés une fois, au premier abonnement. Les prix du
+site sont **hors taxes** : créez-les hors taxes dans Stripe aussi.
 
 1. **[dashboard.stripe.com](https://dashboard.stripe.com)** →
-   **Produits** → **+ Ajouter un produit**
-2. Un produit par offre : *Starter*, *Pro*, *Business*.
-3. Pour chacun, créez **deux tarifs récurrents** : mensuel et annuel.
-4. Notez les identifiants de tarif — ils commencent par `price_`.
+   **Catalogue de produits** → **+ Ajouter un produit** : *Rangvia*.
+2. Premier prix, l'**abonnement** : **Récurrent**, **Mensuel**, **59,90 EUR**,
+   comportement fiscal **Hors taxes** (*exclusive*).
+3. Sur le même produit, **+ Ajouter un autre prix**, l'**installation** :
+   **Ponctuel** (*one-off*), **149,00 EUR**, **Hors taxes**. Libellé conseillé :
+   « Installation et configuration de votre métier par l'équipe Rangvia ».
+4. Notez les deux identifiants de prix — ils commencent par `price_`.
+
+**La TVA** : des prix « hors taxes » n'ajoutent la TVA à la facture que si
+Stripe sait la calculer (**Paramètres → Taxes**, Stripe Tax, ou un taux de
+TVA). Tant que ce n'est pas réglé, les factures sortent sans TVA : à valider
+avec votre comptable avant le premier paiement réel.
+
+Pas de prix annuel : l'offre unique n'en a pas. Les anciennes offres
+(*Starter*, *Pro*, *Business*) sont retirées du site mais conservées en base ;
+ne leur créez rien.
 
 ### 16.2 Les clés
 
@@ -1286,6 +1302,8 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_…
 2. URL : `https://votre-domaine/api/stripe/webhook`
 3. Événements à écouter :
    - `checkout.session.completed`
+   - `checkout.session.async_payment_succeeded` (paiements différés, SEPA :
+     c'est lui qui confirme alors le paiement de l'installation)
    - `customer.subscription.created`
    - `customer.subscription.updated`
    - `customer.subscription.deleted`
@@ -1293,22 +1311,41 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_…
 4. Copiez le **secret de signature** (`whsec_…`) dans `STRIPE_WEBHOOK_SECRET`.
 
 La signature est vérifiée sur le corps **brut** de la requête. Sans elle,
-n'importe qui pourrait offrir l'offre Business à n'importe quelle organisation.
+n'importe qui pourrait offrir un abonnement à n'importe quelle organisation, ou
+marquer son installation comme payée.
 
-### 16.4 Renseigner les tarifs
+### 16.4 Coller les deux prix
 
-**`/admin` → Offres & abonnements** → **Modifier** sur chaque offre → collez
-les identifiants `price_…`.
+**`/admin` → Offres & abonnements** → offre **Rangvia** → **Modifier** :
 
-Tant qu'une offre n'a pas de tarif Stripe, elle affiche **Tarif Stripe
-manquant** et le bouton de paiement reste indisponible — plutôt que de mener
-vers une erreur.
+| Champ | Valeur |
+|---|---|
+| Abonnement (€ HT / mois) | `59,90` |
+| Stripe · prix mensuel | le `price_…` **récurrent** de l'étape 16.1 |
+| Installation (€ HT) | `149` |
+| Stripe · prix d'installation | le `price_…` **ponctuel** de l'étape 16.1 |
+
+Enregistrez : `/tarifs` et les pages métier affichent le nouveau prix
+immédiatement.
+
+Tant qu'un prix Stripe manque, l'offre affiche **Prix Stripe mensuel
+manquant** ou **Prix Stripe d'installation manquant**, et le paiement est
+**refusé** avec un message clair : jamais un abonnement encaissé sans ses
+frais d'installation par erreur.
+
+L'installation n'est facturée **qu'au premier abonnement** d'un commerce :
+le webhook horodate son paiement (colonne `subscriptions.setup_fee_paid_at`,
+visible dans la colonne **Installation** du tableau des abonnements), et un
+commerce qui résilie puis revient ne la repaie pas.
 
 ### 16.5 Tester
 
 En mode test, utilisez la carte `4242 4242 4242 4242`, une date future et
-n'importe quel CVC. Vérifiez ensuite que l'offre a bien changé dans
-**Abonnement**.
+n'importe quel CVC. Depuis **Abonnement** → **Activer mon abonnement**, la
+page de paiement Stripe doit montrer **deux lignes** (59,90 € par mois et
+149 € une fois). Après paiement, **Abonnement** affiche *Actif* et
+*Installation réglée le …*. Résiliez puis réactivez : la seconde page de
+paiement ne montre plus que l'abonnement.
 
 ---
 

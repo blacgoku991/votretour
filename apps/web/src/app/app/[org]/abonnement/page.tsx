@@ -5,6 +5,15 @@ import { stripeConfigured } from '@/server/stripe';
 import { PageHeader } from '@/components/Page';
 import { FlapText } from '@/components/FlapNumber';
 import { formatDate, formatPrice, formatNumber } from '@/lib/format';
+import { appClipPublished } from '@/lib/seo/site';
+import {
+  PUBLIC_PLAN_COLUMNS,
+  SETUP_STEPS,
+  SETUP_TITLE,
+  mainPlan,
+  parsePublicPlans,
+  planAllowances,
+} from '@/lib/public-plans';
 import { BillingActions } from './BillingActions';
 import { TrialFlap } from './TrialFlap';
 import styles from './billing.module.css';
@@ -21,35 +30,31 @@ const STATUS_LABEL: Record<string, string> = {
   paused: 'En pause',
 };
 
+/** Un abonnement Stripe encore vivant : on n'en propose pas un second (startCheckout le refuse aussi). */
+const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due', 'paused']);
+
 interface PlanRow {
-  id?: string; code: string; name: string; tagline: string | null;
+  code: string; name: string; tagline: string | null;
   max_locations: number; max_staff: number; max_plates: number; max_queues: number;
   history_days: number; price_month_cents: number; currency: string;
-}
-
-function plural(n: number, one: string, many: string): string {
-  return n > 1 ? many : one;
-}
-
-/** « 3 établissements · 12 professionnels · plaques illimitées · 180 jours d'historique » */
-function limitsOf(p: PlanRow): string {
-  const text = [
-    p.max_locations < 0 ? 'établissements illimités' : `${p.max_locations} ${plural(p.max_locations, 'établissement', 'établissements')}`,
-    p.max_staff < 0 ? 'professionnels illimités' : `${p.max_staff} ${plural(p.max_staff, 'professionnel', 'professionnels')}`,
-    p.max_plates < 0 ? 'plaques illimitées' : `${p.max_plates} ${plural(p.max_plates, 'plaque', 'plaques')}`,
-    `${p.history_days} jours d’historique`,
-  ].join(' · ');
-  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /**
  * ABONNEMENT.
  *
- * L'offre en cours est une ligne de tableau des départs (prix en volet),
- * la consommation des jauges-rails (remplissage en scaleX, cuivre à
- * 100 %), les offres et les factures des listes-rails. Aucune valeur
- * relative à l'heure n'est calculée ici : les jours d'essai restants le
- * sont dans le navigateur, après montage (TrialFlap).
+ * Une seule offre depuis 0043 : aucun choix de pack. La page dit
+ *  - l'offre en cours (une ligne de tableau des départs, prix en volet),
+ *    l'essai, le renouvellement, et où en sont les frais d'installation :
+ *    réglés (date posée par le webhook Stripe) ou dus une fois, avec le
+ *    premier mois ;
+ *  - la consommation (jauges-rails : remplissage en scaleX, cuivre à 100 %) ;
+ *  - tant qu'aucun abonnement Stripe n'est vivant : ce que l'on réglera à
+ *    l'activation, ligne à ligne, le total, et le bouton qui ouvre le
+ *    paiement. Les montants viennent de l'offre en base : jamais écrits ici ;
+ *  - les factures (portail Stripe).
+ *
+ * Aucune valeur relative à l'heure n'est calculée ici : les jours d'essai
+ * restants le sont dans le navigateur, après montage (TrialFlap).
  */
 export default async function BillingPage({
   params, searchParams,
@@ -65,11 +70,14 @@ export default async function BillingPage({
   const organizationId = access.organization.organization_id;
   const db = supabaseAdmin();
 
-  const [{ data: subscription }, { data: plans }, counts] = await Promise.all([
+  const [{ data: subscription }, { data: offers }, counts] = await Promise.all([
     db.from('subscriptions')
-      .select('status, billing_interval, current_period_end, trial_ends_at, cancel_at_period_end, stripe_subscription_id, plans(*)')
+      .select('status, billing_interval, current_period_end, trial_ends_at, cancel_at_period_end, stripe_subscription_id, setup_fee_paid_at, plans(*)')
       .eq('organization_id', organizationId).maybeSingle(),
-    db.from('plans').select('*').eq('is_active', true).eq('is_public', true).order('sort_order'),
+    // L'offre publique, lue comme /tarifs et les pages métier : mêmes
+    // colonnes, même filtre, la première dans l'ordre d'affichage.
+    db.from('plans').select(PUBLIC_PLAN_COLUMNS.join(', '))
+      .eq('is_active', true).eq('is_public', true).order('sort_order'),
     (async () => {
       const [locations, staff, plates, queues] = await Promise.all([
         db.from('locations').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId),
@@ -86,14 +94,27 @@ export default async function BillingPage({
 
   const planRaw = subscription?.plans;
   const plan = (Array.isArray(planRaw) ? planRaw[0] : planRaw) as PlanRow | undefined;
+  const offer = mainPlan(parsePublicPlans(offers));
 
   const billingEnabled = stripeConfigured();
   const canManage = access.can('billing.manage');
-  const status = subscription?.status ?? '';
+  const status: string = subscription?.status ?? '';
   const statusChip =
     status === 'active' ? 'chip chip--jade'
     : status === 'past_due' ? 'chip chip--brique'
     : 'chip chip--copper';
+
+  const liveStripe = Boolean(subscription?.stripe_subscription_id) && LIVE_STATUSES.has(status);
+  const setupPaidAt: string | null = subscription?.setup_fee_paid_at ?? null;
+  // Les frais d'installation se règlent une fois, au premier abonnement :
+  // dus tant que le webhook n'a pas horodaté leur paiement (même règle que
+  // startCheckout).
+  const setupDue = Boolean(offer && offer.setup_fee_cents > 0 && !setupPaidAt);
+  // Ancienne offre retirée du catalogue, gardée par un abonnement payé.
+  const legacy = Boolean(plan && offer && plan.code !== offer.code && liveStripe);
+  const included = appClipPublished()
+    ? 'App Clip iPhone, QR, NFC et notifications inclus'
+    : 'QR, NFC et notifications inclus';
 
   return (
     <div className={`shell ${styles.page}`}>
@@ -105,12 +126,12 @@ export default async function BillingPage({
       {paiement === 'ok' && (
         <div className="banner">
           <span className="pip pip--live" />
-          <span>Paiement enregistré. Votre offre se met à jour dès confirmation par Stripe.</span>
+          <span>Paiement enregistré. Votre abonnement se met à jour dès confirmation par Stripe.</span>
         </div>
       )}
       {paiement === 'annule' && (
         <div className="banner banner--warn">
-          <span>Paiement annulé. Votre offre actuelle reste en place.</span>
+          <span>Paiement annulé. Rien n’a été prélevé, votre période en cours continue.</span>
         </div>
       )}
 
@@ -123,7 +144,14 @@ export default async function BillingPage({
               <span className="t-board">{plan?.name ?? 'Aucune offre'}</span>
               {status && <span className={statusChip}>{STATUS_LABEL[status] ?? status}</span>}
             </div>
-            <p className={styles.text}>{plan?.tagline ?? 'Choisissez une offre ci-dessous.'}</p>
+            <div className={styles.planText}>
+              <p className={styles.text}>{plan?.tagline ?? 'L’offre Rangvia, tout compris.'}</p>
+              {legacy && (
+                <p className={styles.included}>
+                  Offre retirée du catalogue, maintenue telle quelle pour votre abonnement.
+                </p>
+              )}
+            </div>
             {plan && (
               <p className={styles.price}>
                 <FlapText static text={formatPrice(plan.price_month_cents, plan.currency)} size="2rem" />
@@ -155,6 +183,20 @@ export default async function BillingPage({
               <span />
             </li>
           )}
+
+          {setupPaidAt && (
+            <li>
+              <div className={styles.key}>
+                <span className={`t-board ${styles.keyMuted}`}>Installation</span>
+                <span className="chip chip--jade">Réglée</span>
+              </div>
+              <p className={styles.text}>
+                Réglée le <strong className="t-num">{formatDate(setupPaidAt)}</strong>. Elle ne vous sera plus
+                facturée, même si vous résiliez puis revenez.
+              </p>
+              <span />
+            </li>
+          )}
         </ol>
       </section>
 
@@ -162,8 +204,8 @@ export default async function BillingPage({
         <div className="banner banner--warn">
           <span>
             {access.user.isPlatformAdmin
-              ? 'Stripe n’est pas configuré sur cette installation : toutes les organisations fonctionnent en période d’essai. Voir SETUP.md, section Stripe, pour activer la facturation.'
-              : 'La facturation en ligne n’est pas encore activée : votre période d’essai continue, sans rien à payer.'}
+              ? 'Stripe n’est pas configuré sur cette installation : toutes les organisations fonctionnent en période d’essai. Voir SETUP.md, section Stripe, pour activer la facturation.'
+              : 'La facturation en ligne n’est pas encore activée : votre période d’essai continue, sans rien à payer.'}
           </span>
         </div>
       )}
@@ -173,7 +215,7 @@ export default async function BillingPage({
         <section className={styles.block} aria-labelledby="consommation">
           <div>
             <h2 id="consommation" className={`t-label ${styles.head}`}>Votre consommation</h2>
-            <p className={styles.desc}>Comptée en direct sur votre organisation ; une jauge cuivre signale une limite atteinte.</p>
+            <p className={styles.desc}>Comptée en direct sur votre organisation ; une jauge cuivre signale une limite atteinte.</p>
           </div>
           <ol className={`rail-list ${styles.usage}`}>
             <UsageRow label="Établissements" used={counts.locations} limit={plan.max_locations} index={0} />
@@ -188,47 +230,74 @@ export default async function BillingPage({
         </section>
       )}
 
-      {/* ---------------- Offres ---------------- */}
-      <section className={styles.block} aria-labelledby="offres">
-        <div>
-          <h2 id="offres" className={`t-label ${styles.head}`}>Les offres</h2>
-          <p className={styles.desc}>Changez d’offre à tout moment ; le prorata est géré par Stripe.</p>
-        </div>
-        <ol className={`rail-list board ${styles.board}`}>
-          {((plans ?? []) as PlanRow[]).map((p) => {
-            const current = p.code === plan?.code;
-            return (
-              <li key={p.id ?? p.code} className={current ? 'is-self' : undefined}>
-                <div className={styles.key}>
-                  <span className="t-board">{p.name}</span>
-                  {current && <span className="chip chip--signal">Actuelle</span>}
-                </div>
+      {/* ---------------- Activation : une offre, un total ---------------- */}
+      {offer && !liveStripe && (
+        <section className={styles.block} aria-labelledby="activer">
+          <div>
+            <h2 id="activer" className={`t-label ${styles.head}`}>Activer l’abonnement</h2>
+            <p className={styles.desc}>
+              Une seule offre, rien à choisir. Voici, ligne à ligne, ce que vous réglerez à l’activation.
+            </p>
+          </div>
+          <ol className={`rail-list board ${styles.board} ${styles.bill}`}>
+            <li>
+              <span className="t-board">Abonnement</span>
+              <div className={styles.planText}>
+                <p className={styles.limits}>{planAllowances(offer).join(' · ')}</p>
+                <p className={styles.included}>{included}</p>
+              </div>
+              <p className={styles.price}>
+                <FlapText static text={formatPrice(offer.price_month_cents, offer.currency)} size="2rem" />
+                <span className={styles.per}>/ mois HT</span>
+              </p>
+            </li>
+            {setupDue && (
+              <li>
+                <span className="t-board">Installation</span>
                 <div className={styles.planText}>
-                  {p.tagline && <p className={styles.text}>{p.tagline}</p>}
-                  <p className={styles.limits}>{limitsOf(p)}</p>
-                  <p className={styles.included}>App Clip iPhone, QR, NFC et avis Google inclus</p>
+                  <p className={styles.limits}>{SETUP_TITLE}.</p>
+                  <ul className={styles.steps}>
+                    {SETUP_STEPS.map((step) => <li key={step.key}>{step.key}</li>)}
+                  </ul>
                 </div>
-                <div className={styles.planAside}>
-                  <p className={styles.price}>
-                    <FlapText static text={formatPrice(p.price_month_cents, p.currency)} size="2rem" />
-                    <span className={styles.per}>/ mois HT</span>
-                  </p>
-                  {canManage && !current && billingEnabled && (
-                    <BillingActions
-                      organizationId={organizationId}
-                      planCode={p.code}
-                      hasSubscription={Boolean(subscription?.stripe_subscription_id)}
-                      billingEnabled={billingEnabled}
-                      variant="choose"
-                      label={`Passer à ${p.name}`}
-                    />
-                  )}
-                </div>
+                <p className={styles.price}>
+                  <FlapText static text={formatPrice(offer.setup_fee_cents, offer.currency)} size="2rem" />
+                  <span className={styles.per}>HT, une fois</span>
+                </p>
               </li>
-            );
-          })}
-        </ol>
-      </section>
+            )}
+            <li className={`is-self ${styles.total}`}>
+              <span className="t-board">Premier paiement</span>
+              <p className={styles.text}>
+                {setupDue
+                  ? 'Le premier mois et l’installation, sur une seule facture. Ensuite, l’abonnement seul, chaque mois.'
+                  : 'Le premier mois. Ensuite, le même montant chaque mois.'}
+                {' '}Montants hors taxes, TVA en sus.
+              </p>
+              <div className={styles.planAside}>
+                <p className={styles.price}>
+                  <FlapText
+                    static
+                    text={formatPrice(offer.price_month_cents + (setupDue ? offer.setup_fee_cents : 0), offer.currency)}
+                    size="2rem"
+                  />
+                  <span className={styles.per}>HT</span>
+                </p>
+                {canManage && billingEnabled && (
+                  <BillingActions
+                    organizationId={organizationId}
+                    planCode={offer.code}
+                    hasSubscription={false}
+                    billingEnabled={billingEnabled}
+                    variant="choose"
+                    label="Activer mon abonnement"
+                  />
+                )}
+              </div>
+            </li>
+          </ol>
+        </section>
+      )}
 
       {/* ---------------- Factures ---------------- */}
       {canManage && (
@@ -239,7 +308,7 @@ export default async function BillingPage({
               <span className={`t-board ${styles.keyMuted}`}>Factures</span>
               <p className={styles.text}>
                 Vos factures et votre moyen de paiement sont conservés par Stripe, dans un espace
-                sécurisé : téléchargement, historique et changement de carte.
+                sécurisé : téléchargement, historique et changement de carte.
               </p>
               <div className={styles.planAside}>
                 <BillingActions

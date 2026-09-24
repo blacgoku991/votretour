@@ -4,12 +4,13 @@ import { requirePlatformAdmin } from '@/server/auth';
 import { stripeConfigured } from '@/server/stripe';
 import { Section } from '@/components/Page';
 import { formatNumber, formatPrice, formatDate } from '@/lib/format';
-import { PlanEditor } from './PlanEditor';
+import { PlanEditor, type EditablePlan } from './PlanEditor';
 import { AdminHero, AdminStat, AdminStats } from '../AdminKit';
 import { ScrollTable } from '../ScrollTable';
 import { SUBSCRIPTION_STATUS_LABEL, labelOf } from '../labels';
 import { monthlyRecurringCents } from '../revenue';
 import styles from '../admin.module.css';
+import plansStyles from './plans.module.css';
 
 export const metadata: Metadata = { title: 'Offres & abonnements', robots: { index: false } };
 export const dynamic = 'force-dynamic';
@@ -23,7 +24,7 @@ export default async function AdminPlansPage() {
   const [{ data: plans }, { data: subscriptions }] = await Promise.all([
     db.from('plans').select('*').order('sort_order'),
     db.from('subscriptions')
-      .select('organization_id, status, billing_interval, current_period_end, trial_ends_at, organizations(name), plans(name, code)')
+      .select('organization_id, status, billing_interval, current_period_end, trial_ends_at, setup_fee_paid_at, organizations(name), plans(name, code)')
       .order('created_at', { ascending: false }).limit(200),
   ]);
 
@@ -46,12 +47,22 @@ export default async function AdminPlansPage() {
     };
   }));
 
+  // Une offre en vente (0043), les anciennes retirées mais conservées :
+  // abonnements, audit et événements Stripe y renvoient.
+  const allPlans = (plans ?? []) as EditablePlan[];
+  const onSale = allPlans.filter((p) => p.is_active || p.is_public);
+  const retired = allPlans.filter((p) => !p.is_active && !p.is_public);
+  const subscribersOf = (code: string) => rows.filter((s) => {
+    const plan = Array.isArray(s.plans) ? s.plans[0] : s.plans;
+    return plan?.code === code;
+  }).length;
+
   return (
     <div className={`shell ${styles.page}`}>
       <AdminHero
         kicker="FACTURATION"
         title="Offres & abonnements"
-        description="Les tarifs et quotas sont modifiables ici : aucun redéploiement n’est nécessaire."
+        description="Le prix, l’installation et les quotas de l’offre se modifient ici : aucun redéploiement n’est nécessaire."
       />
 
       {!stripeConfigured() && (
@@ -83,10 +94,27 @@ export default async function AdminPlansPage() {
         />
       </AdminStats>
 
-      <Section title="Offres" description="-1 signifie illimité.">
-        {(plans ?? []).map((plan) => (
-          <PlanEditor key={plan.id} plan={plan as never} />
+      <Section
+        title="L’offre"
+        description="Une seule offre en vente : l’abonnement mensuel et l’installation, payée une fois au premier abonnement. Prix hors taxes."
+      >
+        {onSale.map((plan) => (
+          <PlanEditor key={plan.id} plan={plan} subscribers={subscribersOf(plan.code)} />
         ))}
+        {onSale.length === 0 && (
+          <p className={`t-small t-muted ${plansStyles.none}`}>Aucune offre en vente : le site n’affiche aucun prix.</p>
+        )}
+        {retired.length > 0 && (
+          <details className={plansStyles.retiredList}>
+            <summary>
+              {retired.length} ancienne{retired.length > 1 ? 's' : ''} offre{retired.length > 1 ? 's' : ''} retirée{retired.length > 1 ? 's' : ''},
+              conservée{retired.length > 1 ? 's' : ''} pour les abonnements et l’historique
+            </summary>
+            {retired.map((plan) => (
+              <PlanEditor key={plan.id} plan={plan} subscribers={subscribersOf(plan.code)} />
+            ))}
+          </details>
+        )}
       </Section>
 
       <Section title="Abonnements">
@@ -99,6 +127,7 @@ export default async function AdminPlansPage() {
                 <th scope="col">État</th>
                 <th scope="col">Période</th>
                 <th scope="col">Échéance</th>
+                <th scope="col">Installation</th>
               </tr>
             </thead>
             <tbody>
@@ -123,6 +152,11 @@ export default async function AdminPlansPage() {
                     <td>{subscription.billing_interval === 'year' ? 'Annuel' : 'Mensuel'}</td>
                     <td>
                       {formatDate(subscription.current_period_end ?? subscription.trial_ends_at)}
+                    </td>
+                    <td>
+                      {subscription.setup_fee_paid_at
+                        ? <>Réglée le {formatDate(subscription.setup_fee_paid_at)}</>
+                        : <span className="t-muted">À régler</span>}
                     </td>
                   </tr>
                 );

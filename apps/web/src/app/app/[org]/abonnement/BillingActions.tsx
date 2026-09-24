@@ -11,7 +11,7 @@ export function BillingActions({
   hasSubscription: boolean;
   billingEnabled: boolean;
   variant?: 'manage' | 'choose';
-  /** Libellé du bouton « choose » (ex. « Passer à Business »). */
+  /** Libellé du bouton « choose » (ex. « Activer mon abonnement »). */
   label?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +29,7 @@ export function BillingActions({
   if (variant === 'choose' && planCode) {
     return (
       <div className="stack g2">
-        <button type="button" className="btn btn--outline-signal" disabled={pending}
+        <button type="button" className="btn btn--signal" disabled={pending}
           onClick={() => go(() => startCheckout({ organizationId, planCode, interval: 'month' }))}>
           {pending ? 'Ouverture…' : (label ?? 'Choisir cette offre')}
         </button>
@@ -48,7 +48,7 @@ export function BillingActions({
       ) : (
         <p className="t-small t-muted">
           {billingEnabled
-            ? 'Choisissez une offre ci-dessous pour activer la facturation.'
+            ? 'Vos factures apparaîtront ici dès l’activation de votre abonnement.'
             : 'La facturation est désactivée sur cette installation.'}
         </p>
       )}

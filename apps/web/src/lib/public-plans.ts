@@ -37,9 +37,10 @@ export const PLANS_REVALIDATE_SECONDS = 3600;
 export const PLANS_TIMEOUT_MS = 4000;
 
 /**
- * Colonnes lues, dans l'ordre. Ce sont celles de `/tarifs` (PricingBoard),
- * plus l'accroche : une page métier et la page des tarifs montrent la même
- * offre avec les mêmes chiffres.
+ * Colonnes lues, dans l'ordre. `/tarifs` lit exactement les mêmes (voir
+ * `PUBLIC_PLAN_COLUMNS` dans sa requête) : une page métier et la page des
+ * tarifs montrent la même offre avec les mêmes chiffres, frais
+ * d'installation compris (0043, offre unique).
  */
 export const PUBLIC_PLAN_COLUMNS = [
   'code',
@@ -48,6 +49,7 @@ export const PUBLIC_PLAN_COLUMNS = [
   'description',
   'price_month_cents',
   'price_year_cents',
+  'setup_fee_cents',
   'currency',
   'trial_days',
   'max_locations',
@@ -72,6 +74,8 @@ export interface PublicPlanOffer {
   price_month_cents: number;
   /** Prix annuel HT, en centimes ; 0 si l'offre n'a pas d'annuel. */
   price_year_cents: number;
+  /** Frais d'installation HT, en centimes, payés une fois au premier abonnement ; 0 si aucun. */
+  setup_fee_cents: number;
   /** Code ISO 4217 (« EUR »). */
   currency: string;
   trial_days: number;
@@ -138,6 +142,13 @@ export function parsePublicPlan(row: unknown): PublicPlanOffer | null {
   // chiffre des deux côtés.
   const month = wholeNumber(r.price_month_cents, 0);
   const year = wholeNumber(r.price_year_cents, 0);
+  // Les frais d'installation sont TOUJOURS demandés par la requête
+  // (PUBLIC_PLAN_COLUMNS) : si la colonne manquait en base, PostgREST
+  // refuserait la requête entière (400, donc `null`, aucun prix). Une clé
+  // absente ne vient donc que d'un appel direct, sans la colonne : elle
+  // vaut « pas de frais ». Une valeur présente mais douteuse (négative,
+  // décimale, texte, null) écarte la ligne, comme un prix douteux.
+  const setup = r.setup_fee_cents === undefined ? 0 : wholeNumber(r.setup_fee_cents, 0);
   const trial = wholeNumber(r.trial_days, 0);
   const locations = quota(r.max_locations);
   const staff = quota(r.max_staff);
@@ -146,7 +157,8 @@ export function parsePublicPlan(row: unknown): PublicPlanOffer | null {
   const history = quota(r.history_days);
 
   if (
-    code === null || name === null || currency === null || month === null || year === null || trial === null
+    code === null || name === null || currency === null || month === null || year === null || setup === null
+    || trial === null
     || locations === null || staff === null || plates === null || queues === null || history === null
   ) {
     return null;
@@ -159,6 +171,7 @@ export function parsePublicPlan(row: unknown): PublicPlanOffer | null {
     description: text(r.description),
     price_month_cents: month,
     price_year_cents: year,
+    setup_fee_cents: setup,
     currency,
     trial_days: trial,
     max_locations: locations,
@@ -270,6 +283,23 @@ export function formatPlanPrice(cents: number, currency: string): string {
     .replace(/\s/g, '\u00a0');
 }
 
+/**
+ * L'offre du site : la première offre publique, dans l'ordre d'affichage
+ * (`sort_order`). Depuis 0043, il n'y en a qu'une (`rangvia`) ; si le
+ * super-admin en publiait une seconde par erreur, les pages montreraient
+ * toujours la même, celle qu'il a rangée en tête, plutôt qu'une grille de
+ * packs que le site ne vend plus. `null` sans offre.
+ */
+export function mainPlan<T extends Pick<PublicPlanOffer, 'code'>>(plans: readonly T[] | null | undefined): T | null {
+  return plans && plans.length > 0 ? plans[0]! : null;
+}
+
+/** « 149 € HT d’installation, une fois » ; `null` si l'offre n'a pas de frais. */
+export function setupFeeLabel(plan: Pick<PublicPlanOffer, 'setup_fee_cents' | 'currency'>): string | null {
+  if (!(plan.setup_fee_cents > 0)) return null;
+  return `${formatPlanPrice(plan.setup_fee_cents, plan.currency)}\u00a0HT d’installation, une fois`;
+}
+
 /** L'offre la moins chère au mois, pour un « dès … HT/mois » ; `null` sans offre. */
 export function cheapestPlan(plans: readonly PublicPlanOffer[]): PublicPlanOffer | null {
   let best: PublicPlanOffer | null = null;
@@ -277,4 +307,86 @@ export function cheapestPlan(plans: readonly PublicPlanOffer[]): PublicPlanOffer
     if (!best || plan.price_month_cents < best.price_month_cents) best = plan;
   }
   return best;
+}
+
+/** « 59,90 € HT/mois », ou « Gratuit » seul pour une offre à 0 €. */
+export function monthlyPriceLabel(plan: Pick<PublicPlanOffer, 'price_month_cents' | 'currency'>): string {
+  const price = formatPlanPrice(plan.price_month_cents, plan.currency);
+  return price === FREE_PRICE_LABEL ? FREE_PRICE_LABEL : `${price} HT/mois`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Ce que comprennent l'installation et l'abonnement                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * L'INSTALLATION, telle que le propriétaire la vend : « Installation et
+ * configuration de votre métier par l'équipe Rangvia ». Trois temps, vrais
+ * dès l'inscription quel que soit le métier : on n'y promet aucune
+ * fonction de profil (atelier, table, guichet) que la page du métier ne
+ * promettrait pas elle-même (lib/profiles/capabilities.ts). Partagé par
+ * /tarifs, les pages métier et l'espace Abonnement : la même promesse,
+ * mot pour mot, partout où les frais sont affichés.
+ */
+export const SETUP_TITLE = 'Installation et configuration de votre métier par l’équipe Rangvia';
+
+export const SETUP_STEPS = [
+  {
+    key: 'Votre métier, activé',
+    text: 'L’équipe Rangvia règle votre file sur votre activité : la façon d’appeler, ce que voit votre client, ce qui s’affiche à l’écran.',
+  },
+  {
+    key: 'Vos réglages, posés avec vous',
+    text: 'Horaires, équipe, prestations, règle d’absence : réglés ensemble une fois, pour que vous n’ayez plus à y penser.',
+  },
+  {
+    key: 'Prêt à ouvrir',
+    text: 'Votre QR code, vos affiches et votre URL NFC, prêts à imprimer et à poser au comptoir.',
+  },
+] as const;
+
+/** « établissements, professionnels et plaques » */
+function joinFr(words: readonly string[]): string {
+  if (words.length <= 1) return words.join('');
+  return `${words.slice(0, -1).join(', ')} et ${words[words.length - 1]}`;
+}
+
+/** « 2 ans d’historique », « 30 jours d’historique », « Historique sans limite ». */
+export function historyLabel(days: number): string {
+  if (days < 0) return 'Historique sans limite';
+  if (days >= 365 && days % 365 === 0) {
+    const years = days / 365;
+    return `${years} an${years > 1 ? 's' : ''} d’historique`;
+  }
+  return `${days} jour${days > 1 ? 's' : ''} d’historique`;
+}
+
+/**
+ * CE QUE PERMET L'ABONNEMENT, tiré des quotas RÉELS de l'offre (jamais
+ * écrit en dur : le super-admin les change dans /admin/offres). Les quotas
+ * illimités (-1) sont regroupés en une ligne — « Établissements,
+ * professionnels, plaques et files sans limite » — plutôt que quatre fois
+ * « illimité » ; un quota chiffré garde sa ligne (« 3 professionnels »).
+ */
+export function planAllowances(
+  plan: Pick<PublicPlanOffer, 'max_locations' | 'max_staff' | 'max_plates' | 'max_queues' | 'history_days'>,
+): string[] {
+  const quotas = [
+    { n: plan.max_locations, one: 'établissement', many: 'établissements' },
+    { n: plan.max_staff, one: 'professionnel', many: 'professionnels' },
+    { n: plan.max_plates, one: 'plaque', many: 'plaques' },
+    { n: plan.max_queues, one: 'file', many: 'files' },
+  ];
+  const lines: string[] = [];
+  const unlimited: string[] = [];
+  for (const q of quotas) {
+    if (q.n < 0) unlimited.push(q.many);
+    else lines.push(`${q.n} ${q.n > 1 ? q.many : q.one}`);
+  }
+  if (unlimited.length > 0) {
+    const text = `${joinFr(unlimited)} sans limite`;
+    lines.unshift(text.charAt(0).toUpperCase() + text.slice(1));
+  }
+  lines.push(historyLabel(plan.history_days));
+  return lines;
 }
