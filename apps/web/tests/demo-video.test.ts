@@ -58,9 +58,15 @@ const entry = (): DemoVideoEntry => {
 };
 
 describe('manifeste videos.json', () => {
-  it('est vide tant qu’aucune vidéo n’a été tournée sur le vrai produit', () => {
-    expect(JSON.parse(read('lib/metiers/videos.json'))).toEqual([]);
-    for (const { slug } of publishedMetiers()) expect(videoForMetier(slug), slug).toBeNull();
+  it('ne contient que des vidéos tournées pour un métier publié, toutes lisibles', () => {
+    // Le manifeste est écrit par scripts/demo/montage.mjs, jamais à la main :
+    // chaque entrée vise un métier publié et passe la lecture défensive.
+    const raw = JSON.parse(read('lib/metiers/videos.json')) as { metier: string }[];
+    const published = new Set(publishedMetiers().map(({ slug }) => slug));
+    for (const entry of raw) {
+      expect(published.has(entry.metier), entry.metier).toBe(true);
+      expect(videoForMetier(entry.metier), entry.metier).not.toBeNull();
+    }
   });
 
   it('lit une entrée complète', () => {

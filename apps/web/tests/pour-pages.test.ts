@@ -13,7 +13,7 @@ import { FinalCta } from '@/components/metiers/FinalCta';
 import { asSentence, metierOgAlt, metierOgLead, ogTitleLines, profileOpenOnPages } from '@/components/metiers/model';
 import { ogTitleSize } from '@/lib/seo/og';
 import { PlansStrip, startingPrice } from '@/components/metiers/PlansStrip';
-import { parseVideoEntry } from '@/components/video/manifest';
+import { parseVideoEntry, videoForMetier } from '@/components/video/manifest';
 import { CORE } from '@/lib/metiers/capabilities';
 import { METIERS, PROFILE_BASE, publishedMetiers } from '@/lib/metiers/registry';
 import { renderable, selectPublishedMetiers } from '@/lib/metiers/select';
@@ -230,8 +230,9 @@ describe('le gabarit rendu', () => {
         expect(html).toContain('aria-label="Fil d’Ariane"');
         expect(html).toMatch(/href="\/pour"[^>]*>Métiers</);
         const page = selectPublishedMetiers().find((p) => p.slug === slug)!;
-        // Aucune vidéo au manifeste : pas de section vidéo, jamais une vidéo générique.
-        expect(html).not.toContain('id="demo"');
+        // Section vidéo seulement si le manifeste en a une pour CE métier ; jamais
+        // une vidéo générique, et aucun élément <video> avant le clic.
+        expect(html.includes('id="demo"'), slug).toBe(videoForMetier(slug) !== null);
         expect(html).not.toMatch(/<video\b/);
         // Les titres de section, dans l'ordre déclaré par le registre.
         const expectedIds: Record<string, string> = {
