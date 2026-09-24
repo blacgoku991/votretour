@@ -18,7 +18,9 @@
 # dépendent d'aucun des deux ordres (0041 : les dix premiers commerces du
 # pied de page ; 0042 : le métier d'une file attribué par le super-admin,
 # create_location redéfinie, toujours au passage ; 0043 : offre unique
-# et frais d’installation). Elles sont appliquées
+# et frais d’installation ; 0044 : rattrapage des écrans TV appairés,
+# pour une base passée par la première version de 0016 de la branche
+# ChatGPT, sans effet sur une base neuve). Elles sont appliquées
 # en dernier dans les deux ordres, en production comme sur une base neuve.
 #
 # Tant qu'une plage est vide, les deux ordres coïncident : le script est
