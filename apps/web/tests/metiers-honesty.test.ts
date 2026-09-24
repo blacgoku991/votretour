@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CORE, shippedCapabilities } from '@/lib/metiers/capabilities';
-import { METIERS, PROFILE_SETTING_LABEL, getMetier } from '@/lib/metiers/registry';
+import { METIERS, PRODUCT_TEXT, PROFILE_BASE, PROFILE_SETTING_LABEL, getMetier } from '@/lib/metiers/registry';
 import { pageTexts, renderable, requirementList } from '@/lib/metiers/select';
 import type { Capability, MetierPage } from '@/lib/metiers/types';
 import { PROFILES } from '@/lib/profiles';
@@ -12,6 +14,10 @@ import {
 } from '@/lib/profiles/capabilities';
 import { PARTY_MAX_LIMIT, REVIEW_DELAY_MAX, REVIEW_DELAY_MIN, defaultProfileOptions } from '@/lib/profiles/options';
 import { WORKSHOP_STAGES } from '@/lib/profiles/stages';
+import type { QueueProfile } from '@/lib/profiles/types';
+
+const SRC = fileURLToPath(new URL('../src/', import.meta.url));
+const read = (path: string) => readFileSync(`${SRC}${path}`, 'utf8');
 
 /**
  * HONNÊTETÉ — une page métier ne promet que ce qu'un commerçant qui
@@ -21,6 +27,12 @@ import { WORKSHOP_STAGES } from '@/lib/profiles/stages';
  *     pas encore ouvert n'apparaît pas, et la page reste complète.
  *  2. Aucune fausse note, aucun faux avis, aucun chiffre inventé.
  *  3. Pas d'App Clip tant qu'il n'est pas publié.
+ *  4. La notification promise porte sa réserve pour l'iPhone, avec les
+ *     mots que l'écran du client affiche vraiment.
+ *  5. Une capacité secondaire (devis, étiquette, avis différé) n'allume
+ *     rien sans le socle de son profil : toutes les combinaisons sont
+ *     rejouées.
+ *  6. Une page ne se contredit pas (touche « Absent » et réglage conseillé).
  */
 
 const PROFILE_CAPS = Object.keys(CAPABILITY_PROFILE) as ProfileCapability[];
@@ -349,6 +361,194 @@ describe('App Clip', () => {
     for (const m of METIERS) {
       const withoutClip = new Set<Capability>([...shipped].filter((c) => c !== 'channel.app_clip'));
       expect(joined(renderable(m, withoutClip)), m.slug).not.toMatch(APP_CLIP);
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* 5. La notification sur iPhone                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Toutes les pages promettent que le client est prévenu. C'est vrai sur
+ * Android ; dans Safari sur iPhone, le produit répond `ios_needs_pwa` et
+ * l'écran du client affiche « Notifications indisponibles ici ». Une page
+ * publiée qui promet une notification porte donc la réserve, dans une
+ * réponse de sa FAQ, et avec les mots que l'écran affiche vraiment.
+ */
+const NOTIF_PROMISE = /\bprévenue?s?\b|\bnotifications?\b|l’avertit|\b(?:le|la|les) prévient\b/i;
+/** Une réponse qui dit PAR QUOI le client est prévenu. */
+const CHANNEL_CLAIM = /notification (?:du navigateur|gratuite)|par une notification/i;
+const UNAVAILABLE = plain(PRODUCT_TEXT.notifIndispo.text);
+const PUBLISHED = METIERS.filter((m) => m.published);
+
+/** La réserve sans App Clip : l'iPhone, et le libellé réel de l'écran du client, cité. */
+const reserveToday = (answer: string): boolean =>
+  /iPhone/.test(answer) && plain(answer).includes(`« ${UNAVAILABLE} »`);
+/** Avec l'App Clip publié : sur iPhone, c'est lui qui prévient. */
+const reserveWithClip = (answer: string): boolean => /iPhone/.test(answer) && APP_CLIP.test(answer);
+
+describe('la notification sur iPhone', () => {
+  it('le produit fait bien ce que dit la réserve (push-client et écran du client)', () => {
+    // Dans Safari (pas en web app installée), l'iPhone n'a pas le chemin Web Push…
+    const push = read('lib/push-client.ts');
+    expect(push).toMatch(/if \(isIos && !standalone\) return \{ supported: false, reason: 'ios_needs_pwa' \}/);
+    // … et l'écran du client affiche alors le libellé cité, dans le même bloc.
+    const client = read(PRODUCT_TEXT.notifIndispo.file);
+    const block = /if \(state === 'unavailable' \|\| state === 'denied'\) \{([\s\S]*?)\n  \}\n/.exec(client)?.[1] ?? '';
+    expect(block, 'bloc « notifications indisponibles » introuvable').toContain(UNAVAILABLE);
+    expect(block).toContain("reason === 'ios_needs_pwa'");
+    expect(client).toMatch(/setReason\(support\.reason\)/);
+  });
+
+  it.each([
+    ['aujourd’hui', NONE],
+    ['tout livré, App Clip non publié', ALL],
+  ] as const)('toute page publiée qui promet une notification porte la réserve (%s)', (_label, shipped) => {
+    for (const m of PUBLISHED) {
+      const page = renderable(m, shipped);
+      if (!NOTIF_PROMISE.test(plain(joined(page)))) continue;
+      const answers = page.faq.map((f) => f.a);
+      expect(answers.some(reserveToday), `${m.slug} promet une notification sans réserve pour l’iPhone`).toBe(true);
+    }
+  });
+
+  it.each([
+    ['aujourd’hui', NONE],
+    ['tout livré, App Clip non publié', ALL],
+    ['tout livré, App Clip publié', ALL_WITH_CLIP],
+  ] as const)('une réponse qui nomme le canal de la notification porte elle-même la réserve (%s)', (_label, shipped) => {
+    // Une réponse de FAQ se lit seule (résultat enrichi de Google) : elle
+    // ne peut pas compter sur la question d'à côté.
+    const clip = shipped.has('channel.app_clip');
+    for (const m of METIERS) {
+      for (const f of renderable(m, shipped).faq) {
+        if (!CHANNEL_CLAIM.test(plain(f.a))) continue;
+        expect(clip ? reserveWithClip(f.a) : reserveToday(f.a), `${m.slug} : « ${f.q} »`).toBe(true);
+      }
+    }
+  });
+
+  it('aucune page ne renvoie à l’écran d’accueil, ni ne prête à l’écran du client un texte qu’il n’affiche pas', () => {
+    const client = read(PRODUCT_TEXT.notifIndispo.file);
+    for (const m of METIERS) {
+      for (const shipped of [NONE, ALL, ALL_WITH_CLIP]) {
+        expect(plain(joined(renderable(m, shipped))), m.slug).not.toMatch(/écran d’accueil|l’écran du client le lui explique/i);
+      }
+      // Aujourd'hui, chaque phrase qui fait parler l'écran du client cite
+      // un texte que ClientExperience affiche vraiment.
+      for (const text of texts(renderable(m, NONE))) {
+        for (const sentence of plain(text).split(/(?<=[.!?])\s+/)) {
+          if (!/l’écran du client/i.test(sentence)) continue;
+          const quoted = [...sentence.matchAll(/«\s*([^»]*?)\s*»/g)].map((x) => x[1] ?? '');
+          expect(quoted.length, `${m.slug} : « ${sentence} » ne cite pas l’écran`).toBeGreaterThan(0);
+          for (const q of quoted) expect(client, `${m.slug} : « ${q} » absent de l’écran du client`).toContain(q);
+        }
+      }
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* 6. Toutes les combinaisons de capacités d'un profil                  */
+/* ------------------------------------------------------------------ */
+
+function subsets<T>(items: readonly T[]): T[][] {
+  return items.reduce<T[][]>((acc, item) => [...acc, ...acc.map((s) => [...s, item])], [[]]);
+}
+
+/**
+ * Les touches propres à un profil : ni celles du poste d'aujourd'hui, ni
+ * celles qui sont AUSSI un état lu par le client (« En réparation » est à
+ * la fois une touche et une étape de son écran : la citer comme état ne
+ * promet aucun bouton).
+ */
+function profileTouches(profile: QueueProfile): Set<string> {
+  const def = PROFILES[profile];
+  const walkin = new Set<string>([PROFILES.walkin.vocab.complete, PROFILES.walkin.vocab.start ?? '', PROFILES.walkin.vocab.call]);
+  const clientSide = new Set<string>(def.stages.flatMap((s) => [s.client, s.short]));
+  return new Set(
+    [def.vocab.complete, def.vocab.start, def.vocab.call, ...def.stages.map((s) => s.staff)]
+      .filter((t): t is string => typeof t === 'string' && !walkin.has(t) && !clientSide.has(t))
+      .map(plain),
+  );
+}
+
+describe('capacités d’un profil, dans toutes leurs combinaisons', () => {
+  const profiles = Object.keys(PROFILE_BASE) as QueueProfile[];
+
+  it('chaque profil à capacités a un socle, et le socle est fait de ses capacités', () => {
+    const withCaps = new Set(Object.values(CAPABILITY_PROFILE));
+    expect(new Set(profiles)).toEqual(withCaps);
+    for (const profile of profiles) {
+      for (const c of PROFILE_BASE[profile] ?? []) expect(CAPABILITY_PROFILE[c], c).toBe(profile);
+    }
+  });
+
+  it.each(profiles)('%s : sans le socle complet, la page reste celle d’aujourd’hui ; avec, chaque promesse suit sa capacité', (profile) => {
+    const base = PROFILE_BASE[profile] ?? [];
+    const caps = PROFILE_CAPS.filter((c) => CAPABILITY_PROFILE[c] === profile);
+    const touches = profileTouches(profile);
+    for (const subset of subsets(caps)) {
+      const shipped = new Set<Capability>([...CORE, ...subset]);
+      const complete = base.every((c) => subset.includes(c));
+      const label = `[${subset.join(', ') || 'aucune'}]`;
+      for (const m of METIERS) {
+        const page = renderable(m, shipped);
+        if (!complete || page.profile !== profile) {
+          // Une capacité isolée n'allume rien : ni un argument « devis »
+          // au-dessus d'un comptoir « Terminer », ni une touche absente.
+          expect(page, `${m.slug} ${label}`).toEqual(renderable(m, NONE));
+          continue;
+        }
+        const text = plain(joined(page));
+        for (const c of caps) {
+          const { slug, marks } = MARKERS[c];
+          if (slug !== m.slug) continue;
+          for (const mark of marks) {
+            expect(has(text, mark), `${m.slug} ${label} : « ${String(mark)} » (${c})`).toBe(subset.includes(c));
+          }
+        }
+        // Une touche du métier citée entre guillemets est une touche du comptoir affiché.
+        const keys = new Set(page.counter.map((r) => plain(r.key)));
+        for (const t of texts(page)) {
+          for (const [, quoted = ''] of plain(t).matchAll(/«\s*([^»]*?)\s*»/g)) {
+            if (touches.has(quoted)) expect(keys.has(quoted), `${m.slug} ${label} : « ${quoted} » hors du comptoir`).toBe(true);
+          }
+        }
+      }
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* 7. Une page ne se contredit pas                                      */
+/* ------------------------------------------------------------------ */
+
+describe('cohérence interne', () => {
+  /** Ce que dit la touche « Absent » pour chaque politique conseillée. */
+  const POLICY_WORDS: Record<string, RegExp> = {
+    move_back: /recul/i,
+    hold: /de côté/i,
+    remove: /sort de la (?:file|liste)|sortir/i,
+  };
+
+  it.each([
+    ['aujourd’hui', NONE],
+    ['tout livré', ALL],
+  ] as const)('la touche « Absent » décrit la politique conseillée sur la même page, ou renvoie au réglage (%s)', (_label, shipped) => {
+    const absentKey = plain(PRODUCT_TEXT.absent.text);
+    for (const m of METIERS) {
+      const page = renderable(m, shipped);
+      const row = page.counter.find((r) => plain(r.key) === absentKey);
+      const setting = page.settings.find((s) => s.ref.source === 'queues' && s.ref.column === 'absent_policy');
+      if (!row || !setting || setting.ref.source !== 'queues') continue;
+      const text = plain(row.text);
+      if (/selon votre réglage/i.test(text)) continue;
+      const policy = String(setting.ref.value);
+      for (const [other, words] of Object.entries(POLICY_WORDS)) {
+        expect(words.test(text), `${m.slug} : « ${row.text} » face à « ${setting.value} »`).toBe(other === policy);
+      }
     }
   });
 });

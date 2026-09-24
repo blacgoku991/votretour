@@ -71,6 +71,13 @@ describe('slugs et publication', () => {
     expect(metierPath('garages')).toBe('/pour/garages');
   });
 
+  it('publishedMetiers ne rend que { slug, updatedAt } : aucune condition, aucun repli à afficher par erreur', () => {
+    for (const entry of publishedMetiers()) {
+      expect(Object.keys(entry).sort()).toEqual(['slug', 'updatedAt']);
+      expect(entry.updatedAt).toBe(getMetier(entry.slug)?.updatedAt);
+    }
+  });
+
   it('selectPublishedMetiers suit publishedMetiers, dans le même ordre', () => {
     expect(selectPublishedMetiers().map((p) => p.slug)).toEqual(publishedMetiers().map((m) => m.slug));
   });
@@ -155,7 +162,7 @@ describe('sections et maillage', () => {
   });
 
   it('une page publiée a au moins un voisin publié, et ne lie jamais une page non publiée', () => {
-    for (const m of publishedMetiers()) {
+    for (const m of METIERS.filter((metier) => metier.published)) {
       const page = renderable(m, TODAY);
       expect(page.related.length, m.slug).toBeGreaterThan(0);
       for (const link of page.related) {

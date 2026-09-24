@@ -78,8 +78,9 @@ describe('ce que lit le moteur de recherche', () => {
   });
 
   it('une description dit l’essentiel sans être tronquée', () => {
+    // [SEO § 12.1] : entre 120 et 160 caractères.
     for (const p of pages(TODAY)) {
-      expect(p.seo.description.length, p.seo.description).toBeGreaterThanOrEqual(110);
+      expect(p.seo.description.length, p.seo.description).toBeGreaterThanOrEqual(120);
       expect(p.seo.description.length, p.seo.description).toBeLessThanOrEqual(160);
       expect(p.seo.description, p.slug).toMatch(/[.!?]$/);
     }
@@ -141,5 +142,62 @@ describe('chaque page tient par ses propres textes', () => {
       const common = [...mine].filter((t) => others.has(t));
       expect(common.length / mine.size, `${p.slug} : ${common.join(' | ')}`).toBeLessThanOrEqual(0.1);
     }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Similarité : le garde-fou de [SEO § 12.1]                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Jaccard sur les trigrammes de mots, entre deux pages, blocs partagés
+ * exclus (questions communes). Une page « recherche et remplace » qui ne
+ * changerait qu'un nom de métier dépasserait largement le seuil ; les
+ * pages d'aujourd'hui restent sous 0,15.
+ */
+const JACCARD_MAX = 0.35;
+
+function trigrams(page: MetierPage): Set<string> {
+  const shared = new Set(
+    Object.values(SHARED_FAQ).flatMap((f) => [fr(f.q), fr(f.a), ...('fallback' in f ? [fr(f.fallback.q), fr(f.fallback.a)] : [])]),
+  );
+  const words = pageTexts(page)
+    .filter((t) => !shared.has(t))
+    .join(' ')
+    .replace(/[  ]/g, ' ')
+    .toLocaleLowerCase('fr')
+    .split(/[^\p{L}\p{N}’-]+/u)
+    .filter(Boolean);
+  const out = new Set<string>();
+  for (let i = 0; i + 2 < words.length; i += 1) out.add(`${words[i]} ${words[i + 1]} ${words[i + 2]}`);
+  return out;
+}
+
+function jaccard(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
+  let common = 0;
+  for (const x of a) if (b.has(x)) common += 1;
+  const union = a.size + b.size - common;
+  return union === 0 ? 0 : common / union;
+}
+
+describe('similarité entre pages', () => {
+  it.each(SETS)(`deux pages ont moins de ${JACCARD_MAX} de trigrammes de mots en commun (%s)`, (_label, shipped) => {
+    const all = pages(shipped).map((p) => ({ slug: p.slug, grams: trigrams(p) }));
+    for (let i = 0; i < all.length; i += 1) {
+      for (let j = i + 1; j < all.length; j += 1) {
+        const a = all[i]!;
+        const b = all[j]!;
+        expect(jaccard(a.grams, b.grams), `${a.slug} / ${b.slug}`).toBeLessThan(JACCARD_MAX);
+      }
+    }
+  });
+
+  it('le garde-fou voit bien une page recopiée en changeant le métier', () => {
+    // Sans ce contrôle, le test ci-dessus pourrait passer par construction.
+    const [a] = pages(TODAY);
+    expect(a).toBeDefined();
+    if (!a) return;
+    const clone: MetierPage = JSON.parse(JSON.stringify(a).replace(/barbier/gi, 'toiletteur')) as MetierPage;
+    expect(jaccard(trigrams(a), trigrams(clone))).toBeGreaterThan(JACCARD_MAX);
   });
 });

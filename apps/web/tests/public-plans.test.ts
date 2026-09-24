@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  FREE_PRICE_LABEL,
   PLANS_REVALIDATE_SECONDS,
   PLANS_TAG,
   PUBLIC_PLAN_COLUMNS,
@@ -122,8 +123,18 @@ describe('la réponse', () => {
     expect(JSON.stringify(plan)).not.toContain('price_secret');
   });
 
+  it('garde une offre gratuite, comme /tarifs qui affiche toute offre active et publique', () => {
+    // La base l'autorise (`check (price_month_cents >= 0)`) : l'écarter ici
+    // ferait diverger la page métier et la page des tarifs.
+    const tarifs = readFileSync(fileURLToPath(new URL('../src/app/(marketing)/tarifs/page.tsx', import.meta.url)), 'utf8');
+    expect(tarifs).toContain(".eq('is_active', true).eq('is_public', true)");
+    expect(tarifs).not.toMatch(/price_month_cents\s*>|\.gt\(\s*'price_month_cents'/);
+    const free = { ...STARTER, code: 'decouverte', name: 'Découverte', price_month_cents: 0, price_year_cents: 0 };
+    expect(parsePublicPlan(free)?.price_month_cents).toBe(0);
+    expect(parsePublicPlans([free, STARTER])?.map((p) => p.code)).toEqual(['decouverte', 'starter']);
+  });
+
   it.each([
-    ['prix mensuel nul', { price_month_cents: 0 }],
     ['prix négatif', { price_month_cents: -100 }],
     ['prix décimal', { price_month_cents: 19.5 }],
     ['prix en texte', { price_month_cents: '1900' }],
@@ -159,9 +170,18 @@ describe('l’affichage', () => {
     expect(formatPlanPrice(1900, 'EUR')).not.toMatch(/[ \u202f]/);
   });
 
+  it('écrit « Gratuit » pour une offre à 0 €, jamais « 0 € »', () => {
+    expect(FREE_PRICE_LABEL).toBe('Gratuit');
+    expect(formatPlanPrice(0, 'EUR')).toBe('Gratuit');
+    expect(formatPlanPrice(1, 'EUR')).toBe('0,01\u00a0€');
+  });
+
   it('trouve l’offre d’entrée, ou rien', () => {
     const plans: PublicPlanOffer[] = [PRO, STARTER];
     expect(cheapestPlan(plans)?.code).toBe('starter');
     expect(cheapestPlan([])).toBeNull();
+    const free = parsePublicPlan({ ...STARTER, code: 'decouverte', price_month_cents: 0, price_year_cents: 0 });
+    expect(free).not.toBeNull();
+    if (free) expect(cheapestPlan([PRO, free, STARTER])?.code).toBe('decouverte');
   });
 });

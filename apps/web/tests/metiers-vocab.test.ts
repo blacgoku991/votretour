@@ -107,9 +107,35 @@ function quotations(text: string): string[] {
 
 const PROFILE_OF = (page: MetierPage): QueueProfile => page.profile;
 
+const escapeRe = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Le libellé est-il AFFICHÉ par ce fichier ? Une sous-chaîne ne suffit
+ * pas : « Mode » se trouve dans `advanceMode`, « Présent » dans un
+ * commentaire. On exige un littéral entier : une chaîne (`'Mode'`,
+ * `"Mode"`, `` `Mode` ``), ou un texte JSX entre deux balises (`>Mode<`,
+ * éventuellement sur sa propre ligne, ou suivi d'une expression `{…}`).
+ */
+function displaysLiteral(source: string, text: string): boolean {
+  const t = escapeRe(text);
+  const quoted = new RegExp(`(['"\`])${t}\\1`);
+  const jsx = new RegExp(`(?:>|^)[ \\t]*${t}[ \\t]*(?:<|\\{|$)`, 'm');
+  return quoted.test(source) || jsx.test(source);
+}
+
 describe('les libellés du produit d’aujourd’hui existent encore, mot pour mot', () => {
   it.each(Object.entries(PRODUCT_TEXT))('%s', (_key, { text, file }) => {
-    expect(read(file), `${file} n’affiche plus « ${text} »`).toContain(text);
+    expect(displaysLiteral(read(file), text), `${file} n’affiche plus « ${text} »`).toBe(true);
+  });
+
+  it('une sous-chaîne d’identifiant ou de commentaire ne compte pas', () => {
+    expect(displaysLiteral("const advanceMode = 'call_next';", 'Mode')).toBe(false);
+    expect(displaysLiteral('// Présent : le client est revenu', 'Présent')).toBe(false);
+    expect(displaysLiteral("label: 'Mode',", 'Mode')).toBe(true);
+    expect(displaysLiteral('<span>Mode</span>', 'Mode')).toBe(true);
+    expect(displaysLiteral('  <label>\n    Grâce\n  </label>', 'Grâce')).toBe(true);
+    expect(displaysLiteral('<b>Grâce</b>{\' \'}', 'Grâce')).toBe(true);
+    expect(displaysLiteral('<b>Grâce période</b>', 'Grâce')).toBe(false);
   });
 });
 

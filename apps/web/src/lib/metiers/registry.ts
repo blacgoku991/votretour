@@ -11,7 +11,9 @@ import { PARTY_MAX_LIMIT, REVIEW_DELAY_MAX, REVIEW_DELAY_MIN, defaultProfileOpti
 import { displayRegistration, maskRegistration } from '@/lib/profiles/registration';
 import { WORKSHOP_STAGES } from '@/lib/profiles/stages';
 import { formatTicketNo } from '@/lib/profiles/ticket';
-import type { ProfileStage, StageDef } from '@/lib/profiles/types';
+import type { ProfileCapability } from '@/lib/profiles/capabilities';
+import type { ProfileStage, QueueProfile, StageDef } from '@/lib/profiles/types';
+import type { SitemapMetier } from '@/lib/seo/crawl';
 import type { Conditional, FaqContent, Metier, Plain } from './types';
 
 /**
@@ -76,6 +78,7 @@ export const PRODUCT_TEXT = {
   partir: { text: 'Vous pouvez partir, on vous rappelle.', file: CLIENT },
   peuImporte: { text: 'Peu importe', file: CLIENT },
   surPlace: { text: 'Je verrai sur place', file: CLIENT },
+  notifIndispo: { text: 'Notifications indisponibles ici', file: CLIENT },
   // Événements
   vagueSuivante: { text: 'Ouvrir la vague suivante', file: EVENTS },
   pauseAppels: { text: 'Pause appels', file: EVENTS },
@@ -184,9 +187,13 @@ const REPAIR = workshopStage('in_repair');
 const READY = workshopStage('ready');
 
 /**
- * Le rail d'atelier sans l'étape « Devis » : le devis est une capacité à
- * part (`profile.garage.quote`), et la réparation d'appareils n'en a pas
- * encore. Un visuel ne doit pas promettre ce que la page tait.
+ * Le rail d'atelier sans l'étape « Devis ». Au garage, le devis est une
+ * capacité à part (`profile.garage.quote`) ; en réparation, le profil
+ * `device` sait déjà faire des devis (`quotes: true` par défaut), mais le
+ * contrat des capacités (lot P1) n'a pas de `profile.repair.quote` : la
+ * page réparation n'en parle donc pas. Le jour où cette capacité existe,
+ * on l'ajoute au contrat, puis ici. Un visuel ne doit pas promettre ce que
+ * la page tait.
  */
 const WORKSHOP_LANES = WORKSHOP_STAGES.filter((s) => s.key !== 'quote_pending').map((s) => ({
   label: s.short,
@@ -196,6 +203,8 @@ const WORKSHOP_LANES = WORKSHOP_STAGES.filter((s) => s.key !== 'quote_pending').
 /** Textes réels des notifications (lieu fictif, jamais affiché ici). */
 const AHEAD_ONE = notificationCopy('ahead_one', { locationName: '' }).body;
 const VISIT_DONE = notificationCopy('visit_completed', { locationName: '' }).title;
+/** Ce que lit le client d'un atelier une fois son véhicule ou son appareil rendu. */
+const WORKSHOP_DONE = profileNotificationCopy('visit_completed', { profile: 'vehicle', locationName: '' }).title;
 const TABLE_AHEAD_ONE = profileNotificationCopy('ahead_one', { profile: 'table', locationName: '' }).body;
 const DESK_AHEAD_ONE = profileNotificationCopy('ahead_one', { profile: 'desk', locationName: '' }).body;
 
@@ -243,17 +252,34 @@ const serving = (who: string): string => `${STAFF_STATUS_LABEL.serving} · avec 
 /* ------------------------------------------------------------------ */
 
 /**
+ * LA RÉSERVE DE L'IPHONE. Chaque page promet que le client est « prévenu
+ * quand son tour approche » ; c'est vrai sur Android, pas dans Safari sur
+ * iPhone : `lib/push-client.ts` y répond `ios_needs_pwa`, et l'écran du
+ * client affiche alors « Notifications indisponibles ici » (le libellé est
+ * cité, donc relu dans ClientExperience par `metiers-vocab`). La page dit
+ * ce que fait le produit, rien de plus : ni « ajoutez-la à l'écran
+ * d'accueil » (l'écran du client ne l'explique pas, et le parcours n'a
+ * pas été vérifié de bout en bout sur un vrai iPhone), ni App Clip tant
+ * qu'il n'est pas publié. `metiers-honesty` exige cette réserve sur toute
+ * page publiée qui promet une notification.
+ */
+const IPHONE_RESERVE = `Sur iPhone, le navigateur ne propose pas cette notification ; l’écran du client affiche alors ${q(t('notifIndispo'))}, et sa page se met à jour toute seule tant qu’elle reste ouverte.`;
+
+/**
  * Questions communes à plusieurs pages. Exportées pour que le test
  * d'unicité les écarte : une page doit tenir par ses questions propres.
+ * Les deux premières portent la réserve de l'iPhone : une page qui en
+ * cite une n'a rien d'autre à ajouter pour être honnête sur la
+ * notification.
  */
 export const SHARED_FAQ = {
   app: {
     q: 'Vos clients doivent-ils installer une application ?',
-    a: 'Non. Sur iPhone, l’App Clip s’ouvre d’un geste en approchant le téléphone de la plaque, sans rien installer ; sur Android, le navigateur suffit. Ni compte, ni mot de passe, ni e-mail.',
+    a: 'Non. Sur iPhone, l’App Clip s’ouvre d’un geste en approchant le téléphone de la plaque, sans rien installer, et c’est lui qui reçoit la notification ; sur Android, le navigateur suffit. Ni compte, ni mot de passe, ni e-mail.',
     requires: 'channel.app_clip',
     fallback: {
       q: 'Vos clients doivent-ils installer une application ?',
-      a: 'Non. Ils scannent le QR code ou approchent leur téléphone de la plaque NFC, et la file s’ouvre dans leur navigateur, sur iPhone comme sur Android. Ni compte, ni mot de passe, ni e-mail.',
+      a: `Non. Ils scannent le QR code ou approchent leur téléphone de la plaque NFC, et la file s’ouvre dans leur navigateur, sur iPhone comme sur Android. Ni compte, ni mot de passe, ni e-mail. Sur Android, c’est le navigateur qui les prévient quand leur tour approche. ${IPHONE_RESERVE}`,
     },
   },
   notification: {
@@ -262,7 +288,7 @@ export const SHARED_FAQ = {
     requires: 'channel.app_clip',
     fallback: {
       q: 'Comment le client est-il prévenu ?',
-      a: 'Par une notification du navigateur, gratuite, qu’il active d’un geste en rejoignant la file. Sur iPhone, Safari ne l’autorise que si la page est ajoutée à l’écran d’accueil, et l’écran du client le lui explique ; sinon, sa page se met à jour toute seule tant qu’elle reste ouverte. Aucun SMS, donc rien à payer à l’unité.',
+      a: `Sur Android, par une notification du navigateur, gratuite, qu’il active d’un geste en rejoignant la file. ${IPHONE_RESERVE} Aucun SMS, donc rien à payer à l’unité.`,
     },
   },
   data: {
@@ -287,9 +313,9 @@ const barbiers: Metier = {
   updatedAt: REVISED,
   nav: { label: 'Barbiers', short: 'Barbier' },
   intent: {
-    primary: 'file d’attente barbier',
+    primary: 'file d’attente virtuelle barbier',
     variants: [
-      'file d’attente virtuelle barbier',
+      'file d’attente barbier',
       'barbershop sans rendez-vous file d’attente',
       'ticket d’attente barbier',
       'liste d’attente barbier',
@@ -491,7 +517,7 @@ const salons: Metier = {
   updatedAt: REVISED,
   nav: { label: 'Salons de coiffure', short: 'Salon' },
   intent: {
-    primary: 'file d’attente salon de coiffure',
+    primary: 'file d’attente virtuelle salon de coiffure',
     variants: [
       'file d’attente virtuelle coiffeur',
       'coiffeur sans rendez-vous attente',
@@ -689,6 +715,21 @@ const salons: Metier = {
   related: ['barbiers', 'boutiques', 'restaurants'],
 };
 
+/**
+ * SOCLE D'UN PROFIL. Une page enrichie change d'un bloc : séquence,
+ * comptoir, réglages et appel final passent ensemble du passage au
+ * fauteuil au métier. Une promesse secondaire (le devis, l'étiquette de
+ * clé, l'avis différé) n'a de sens qu'au-dessus de ce socle : ses blocs
+ * portent donc `withBase(capacité, SOCLE)`. Sinon, « Le devis validé à
+ * distance » s'afficherait au-dessus d'un comptoir « Terminer · Absent ».
+ * `metiers-honesty` rejoue toutes les combinaisons de capacités de chaque
+ * profil.
+ */
+const withBase = (capability: ProfileCapability, base: readonly ProfileCapability[]): readonly ProfileCapability[] => [
+  capability,
+  ...base.filter((c) => c !== capability),
+];
+
 /** Capacités qui font d'une file de réception un vrai atelier. */
 const GARAGE_WORKSHOP = ['profile.garage.dropoff', 'profile.garage.vehicle_ready'] as const;
 
@@ -699,9 +740,9 @@ const garages: Metier = {
   updatedAt: REVISED,
   nav: { label: 'Garages et centres auto', short: 'Garage' },
   intent: {
-    primary: 'gestion file d’attente garage',
+    primary: 'ticket d’attente garage',
     variants: [
-      'ticket d’attente garage',
+      'gestion file d’attente garage',
       'file d’attente garage sans rendez-vous',
       'accueil atelier sans rendez-vous',
       'file d’attente centre auto pneus',
@@ -710,7 +751,7 @@ const garages: Metier = {
     problems: ['clients qui appellent pour savoir si la voiture est prête', 'comptoir de réception encombré le matin'],
   },
   seo: {
-    title: 'Gestion de la file d’attente pour garages',
+    title: 'Ticket d’attente et file virtuelle pour garages',
     description:
       'L’accueil atelier sans attente au comptoir : vos clients prennent leur place d’un scan et suivent tout sur leur téléphone. Centres auto compris.',
     ogTitle: 'Un garage où personne ne fait la queue au comptoir',
@@ -796,7 +837,7 @@ const garages: Metier = {
         title: `${q(VEHICLE.complete)}, puis l’avis Google.`,
         body: 'Vous lui rendez ses clés : un appui, la fiche se ferme, et son téléphone affiche un merci avec un bouton vers la fiche Google du garage.',
         benefit: 'L’avis se laisse clés en main.',
-        state: VEHICLE.clientTurn,
+        state: WORKSHOP_DONE,
       },
     ],
     fallback: {
@@ -980,27 +1021,27 @@ const garages: Metier = {
   arguments: [
     {
       key: `Fini les ${q(SPOKEN[2])}`,
-      requires: 'profile.garage.vehicle_ready',
+      requires: GARAGE_WORKSHOP,
       text: `Le client reçoit ${q(VEHICLE.clientTurn)} au moment où vous touchez ${q(VEHICLE.call)} : le téléphone de l’accueil sonne moins.`,
     },
     {
       key: 'Le devis validé à distance',
-      requires: 'profile.garage.quote',
+      requires: withBase('profile.garage.quote', GARAGE_WORKSHOP),
       text: 'Le client accepte ou refuse depuis son téléphone, et l’heure de sa réponse reste sur la fiche.',
     },
     {
       key: 'Un parking qui se libère',
-      requires: 'profile.garage.vehicle_ready',
+      requires: GARAGE_WORKSHOP,
       text: 'Prévenu dès que sa voiture est prête, le client sait quand revenir la chercher.',
     },
     {
       key: 'L’étiquette de clé',
-      requires: 'profile.garage.key_tag',
+      requires: withBase('profile.garage.key_tag', GARAGE_WORKSHOP),
       text: 'Un QR imprimé relie la clé, la voiture et le client : il suit sa réparation sans rien saisir.',
     },
     {
       key: 'Des plaques jamais en clair',
-      requires: 'profile.garage.vehicle_ready',
+      requires: GARAGE_WORKSHOP,
       text: 'L’écran du hall affiche les véhicules prêts avec les trois derniers caractères de l’immatriculation, rien de plus.',
     },
     {
@@ -1023,10 +1064,9 @@ const garages: Metier = {
     },
   ],
   faq: [
-    SHARED_FAQ.app,
     {
       q: 'Je peux inscrire un client qui a appelé ?',
-      requires: 'profile.garage.dropoff',
+      requires: GARAGE_WORKSHOP,
       a: 'Oui. La réception crée la fiche du véhicule depuis le poste (immatriculation, modèle, motif), et le client la suit ensuite sur son téléphone.',
       fallback: {
         q: 'Je peux inscrire un client qui a appelé ?',
@@ -1035,7 +1075,7 @@ const garages: Metier = {
     },
     {
       q: 'Combien de temps gardez-vous ses informations ?',
-      requires: 'profile.garage.dropoff',
+      requires: GARAGE_WORKSHOP,
       a: 'Le temps de la réparation, puis la durée de conservation que vous choisissez : au-delà, prénom, immatriculation et détails de la fiche sont effacés automatiquement. Rangvia ne demande ni téléphone, ni e-mail, ni numéro de châssis.',
       fallback: {
         q: 'Combien de temps gardez-vous ses informations ?',
@@ -1048,17 +1088,17 @@ const garages: Metier = {
       requires: 'channel.app_clip',
       fallback: {
         q: 'Prévenez-vous par SMS ?',
-        a: 'Non : pas de SMS, donc rien à payer à l’unité. Le client est prévenu par une notification du navigateur. Sur iPhone, Safari l’autorise quand la page est ajoutée à l’écran d’accueil ; sinon, sa page se met à jour toute seule tant qu’elle reste ouverte.',
+        a: `Non : pas de SMS, donc rien à payer à l’unité, et rien à installer. Sur Android, le client est prévenu par une notification du navigateur, qu’il active d’un geste en prenant sa place. ${IPHONE_RESERVE}`,
       },
     },
     {
       q: 'Et si la réparation dure plusieurs jours ?',
-      requires: 'profile.garage.dropoff',
+      requires: GARAGE_WORKSHOP,
       a: 'La fiche reste active une semaine après sa dernière étape. Si le client a activé ses notifications, il est prévenu des étapes importantes, même le lendemain.',
     },
     {
       q: 'Le client peut-il refuser un devis ?',
-      requires: 'profile.garage.quote',
+      requires: withBase('profile.garage.quote', GARAGE_WORKSHOP),
       a: 'Oui. Il accepte ou refuse depuis son téléphone, et vous voyez sa réponse avec l’heure. Cet accord ne remplace pas un devis signé si vous en exigez un.',
     },
     {
@@ -1172,7 +1212,7 @@ const reparation: Metier = {
         title: `${q(DEVICE.complete)} : le dossier se ferme.`,
         body: 'Vous lui rendez son appareil : le dossier se ferme, et son téléphone lui propose de laisser un avis sur votre fiche Google.',
         benefit: 'L’avis se laisse quand l’écran est comme neuf.',
-        state: DEVICE.clientTurn,
+        state: WORKSHOP_DONE,
       },
     ],
     fallback: {
@@ -1333,17 +1373,17 @@ const reparation: Metier = {
     },
     {
       key: `${q(DEVICE.clientTurn)} en un geste`,
-      requires: 'profile.repair.device_ready',
+      requires: REPAIR_WORKSHOP,
       text: 'Le client est prévenu dès que la réparation est finie : il vient chercher son appareil sans appeler avant.',
     },
     {
       key: 'Un numéro de dossier',
-      requires: 'profile.repair.dropoff',
+      requires: REPAIR_WORKSHOP,
       text: 'Le client, le poste et l’écran de la boutique parlent du même numéro : fini les confusions entre deux appareils du même modèle.',
     },
     {
       key: 'Aucun code demandé',
-      requires: 'profile.repair.dropoff',
+      requires: REPAIR_WORKSHOP,
       text: 'Rangvia ne demande jamais le code de déverrouillage, et l’écran du client le rappelle au moment du dépôt.',
     },
     {
@@ -1368,7 +1408,7 @@ const reparation: Metier = {
     },
     {
       q: 'Que voit le client sur son téléphone ?',
-      requires: 'profile.repair.dropoff',
+      requires: REPAIR_WORKSHOP,
       a: `Son numéro de dossier et l’étape en cours : ${frenchList([RECEIVED.short, DIAGNOSIS.short, REPAIR.short, READY.short].map((s) => s.toLowerCase()))}. Aucune heure estimée : une réparation ne se chronomètre pas à l’avance.`,
       fallback: {
         q: 'Que voit le client sur son téléphone ?',
@@ -1382,12 +1422,12 @@ const reparation: Metier = {
     },
     {
       q: 'Et si le client me confie son seul téléphone ?',
-      requires: 'profile.repair.dropoff',
+      requires: REPAIR_WORKSHOP,
       a: 'Les notifications arrivent sur l’appareil qui a servi au dépôt. S’il vous laisse son seul téléphone, il garde son numéro de dossier et repasse au moment que vous lui indiquez : le dossier, lui, avance quand même sur le poste.',
     },
     {
       q: 'Demandez-vous le code de déverrouillage ?',
-      requires: 'profile.repair.dropoff',
+      requires: REPAIR_WORKSHOP,
       a: 'Jamais. Rangvia ne le demande pas, et l’écran du client rappelle de ne pas le saisir. Si vous en avez besoin pour un test, demandez-le de vive voix.',
     },
     {
@@ -1629,7 +1669,7 @@ const restaurants: Metier = {
         },
         {
           key: t('absent'),
-          text: 'Personne à l’appel ? Le groupe est mis de côté, et vous le remettez en file s’il revient.',
+          text: 'Personne à l’appel ? Avec le réglage conseillé, le groupe sort de la liste et la table va au suivant.',
         },
         { key: t('ajouter'), text: 'Un groupe sans smartphone s’inscrit à l’accueil, par son prénom.' },
       ],
@@ -1704,17 +1744,17 @@ const restaurants: Metier = {
     },
     {
       key: 'Le bon groupe, dans l’ordre',
-      requires: 'profile.restaurant.table_ready',
+      requires: TABLE_LIST,
       text: 'Une table de quatre se libère : Rangvia propose le premier groupe qui y tient, sans sauter personne sans votre accord.',
     },
     {
       key: 'Les couverts d’avance',
-      requires: 'profile.restaurant.party_size',
+      requires: TABLE_LIST,
       text: 'Vous savez combien de couverts attendent, et combien vous en avez installé ce soir.',
     },
     {
       key: 'L’avis au bon moment',
-      requires: 'profile.restaurant.delayed_review',
+      requires: withBase('profile.restaurant.delayed_review', TABLE_LIST),
       text: 'La demande d’avis Google part après le repas, jamais au moment où l’on s’assoit.',
     },
     {
@@ -1738,12 +1778,12 @@ const restaurants: Metier = {
     },
     {
       q: 'Et les grandes tablées ?',
-      requires: 'profile.restaurant.party_size',
+      requires: TABLE_LIST,
       a: `Le client indique jusqu’à ${PARTY_MAX} couverts par défaut, un maximum que vous pouvez porter à ${PARTY_MAX_LIMIT}. Au-delà, il est invité à se présenter à l’accueil.`,
     },
     {
       q: 'La demande d’avis Google arrive-t-elle pendant le repas ?',
-      requires: 'profile.restaurant.delayed_review',
+      requires: withBase('profile.restaurant.delayed_review', TABLE_LIST),
       a: `Non. Elle part ${REVIEW_DELAY} minutes après que vous avez installé le groupe, un délai réglable de ${REVIEW_DELAY_MIN} à ${REVIEW_DELAY_MAX} minutes. Vous pouvez aussi la désactiver.`,
       fallback: {
         q: 'La demande d’avis Google arrive-t-elle pendant le repas ?',
@@ -2044,12 +2084,12 @@ const guichets: Metier = {
     },
     {
       key: 'Des numéros, pas des noms',
-      requires: 'profile.counter.ticket_number',
+      requires: DESK_CALLS,
       text: `Au guichet, on appelle ${TICKET(42)}, pas un prénom : la confidentialité de chacun est préservée.`,
     },
     {
       key: 'Le bon guichet',
-      requires: 'profile.counter.desk_number',
+      requires: DESK_CALLS,
       text: 'L’écran de la salle et le téléphone indiquent où se présenter, guichet par guichet.',
     },
     {
@@ -2075,6 +2115,15 @@ const guichets: Metier = {
       fallback: {
         q: 'Peut-on afficher la file sur un écran ?',
         a: 'Oui : ouvrez l’écran de la salle dans le navigateur d’une télévision ou d’un écran connecté. Il affiche la personne reçue et les suivantes en initiales, en direct.',
+      },
+    },
+    {
+      q: 'Comment la personne sait-elle que son tour approche ?',
+      requires: 'channel.app_clip',
+      a: 'Par une notification gratuite, sans SMS : dans le navigateur sur Android, dans l’App Clip sur iPhone. Sa page suit la file en direct, et l’écran de la salle aussi.',
+      fallback: {
+        q: 'Comment la personne sait-elle que son tour approche ?',
+        a: `Sur Android, une notification du navigateur la prévient, sans SMS : elle l’active d’un geste en prenant sa place. ${IPHONE_RESERVE} L’écran de la salle, lui, montre où en est la file.`,
       },
     },
     {
@@ -2431,10 +2480,29 @@ export function getMetier(slug: string): Metier | undefined {
 }
 
 /**
- * Les métiers PUBLIÉS, dans l'ordre du registre. C'est la source du
- * sitemap (`{ slug, updatedAt }`), de `generateStaticParams` et du
- * maillage : un métier non publié n'a ni route, ni URL, ni lien.
+ * Les métiers PUBLIÉS, dans l'ordre du registre, réduits à `{ slug,
+ * updatedAt }` : c'est la source du sitemap et de `generateStaticParams`.
+ * Un métier non publié n'a ni route, ni URL, ni lien.
+ *
+ * Volontairement une PROJECTION : l'objet brut du registre transporte ses
+ * conditions et ses replis, et une page (l'index `/pour`, par exemple) qui
+ * l'afficherait montrerait des promesses non livrées. Pour du texte, passer
+ * par `selectPublishedMetiers()` (select.ts), qui résout les capacités.
  */
-export function publishedMetiers(): Metier[] {
-  return METIERS.filter((m) => m.published);
+export function publishedMetiers(): SitemapMetier[] {
+  return METIERS.filter((m) => m.published).map((m) => ({ slug: m.slug, updatedAt: m.updatedAt }));
 }
+
+/**
+ * Le SOCLE de chaque profil : les capacités qui, ensemble, font basculer
+ * une page du passage au fauteuil au métier. Exporté pour les tests, qui
+ * rejouent toutes les combinaisons de capacités d'un profil : tant que le
+ * socle n'est pas complet, la page est celle d'aujourd'hui, au caractère
+ * près.
+ */
+export const PROFILE_BASE: Readonly<Partial<Record<QueueProfile, readonly ProfileCapability[]>>> = {
+  vehicle: GARAGE_WORKSHOP,
+  device: REPAIR_WORKSHOP,
+  table: TABLE_LIST,
+  desk: DESK_CALLS,
+};

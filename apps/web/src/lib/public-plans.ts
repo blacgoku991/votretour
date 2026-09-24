@@ -120,7 +120,7 @@ function quota(value: unknown): number | null {
 
 /**
  * Une ligne de la base, validée champ par champ ; `null` si elle ne
- * ressemble pas à une offre affichable (prix mensuel nul ou absent, code
+ * ressemble pas à une offre affichable (prix absent ou négatif, code
  * invalide, devise inconnue…). Les champs inconnus sont ignorés : même si
  * la requête changeait, rien d'autre que ces colonnes ne sortirait d'ici.
  */
@@ -131,9 +131,12 @@ export function parsePublicPlan(row: unknown): PublicPlanOffer | null {
   const code = typeof r.code === 'string' && CODE_RE.test(r.code) ? r.code : null;
   const name = text(r.name);
   const currency = typeof r.currency === 'string' && CURRENCY_RE.test(r.currency) ? r.currency : null;
-  // Une offre publique à 0 € n'existe pas chez Rangvia : c'est une ligne
-  // mal saisie, pas une offre gratuite à promettre.
-  const month = wholeNumber(r.price_month_cents, 1);
+  // 0 est accepté, comme en base (`check (price_month_cents >= 0)`) et
+  // comme sur /tarifs, qui affiche toute offre active et publique : si le
+  // super-admin publie une offre gratuite, les pages métier la montrent
+  // aussi (« Gratuit », voir formatPlanPrice), et « dès … » reste le même
+  // chiffre des deux côtés.
+  const month = wholeNumber(r.price_month_cents, 0);
   const year = wholeNumber(r.price_year_cents, 0);
   const trial = wholeNumber(r.trial_days, 0);
   const locations = quota(r.max_locations);
@@ -245,11 +248,17 @@ export async function getPublicPlans(source: PublicPlansSource = defaultSource()
 /* Affichage                                                            */
 /* ------------------------------------------------------------------ */
 
+/** Libellé d'une offre à 0 € : un prix nul se dit en toutes lettres. */
+export const FREE_PRICE_LABEL = 'Gratuit';
+
 /**
  * « 29 € », « 1 290 € », « 24,90 € » : montant en français, sans
- * décimales quand elles sont nulles, espaces insécables compris.
+ * décimales quand elles sont nulles, espaces insécables compris. Une offre
+ * à 0 € s'écrit « Gratuit » : la page métier affiche alors « Gratuit »
+ * plutôt que « dès 0 € HT/mois ».
  */
 export function formatPlanPrice(cents: number, currency: string): string {
+  if (cents === 0) return FREE_PRICE_LABEL;
   const digits = cents % 100 === 0 ? 0 : 2;
   return new Intl.NumberFormat('fr-FR', {
     style: 'currency',
