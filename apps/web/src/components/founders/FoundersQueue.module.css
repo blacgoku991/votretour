@@ -1,0 +1,299 @@
+/* =====================================================================
+   LES DIX PREMIERS COMMERCES — tickets pendus au rail du pied de page.
+   ---------------------------------------------------------------------
+   Le vocabulaire du pied : un rail, des encoches, des objets en relief
+   (tranche dure sous l'objet, aucune ombre floue). Ordinateur : deux
+   rangées de cinq, chaque rangée sous son rail. Téléphone : une pile
+   accrochée à un rail vertical, comme la file du produit.
+
+   Deux étages par place : le <li> (.ticket) porte le rail et l'encoche,
+   immobiles ; la carte (.card) est le ticket lui-même, et c'est elle seule
+   qui bouge. Aucun dégradé ; seules transform et opacity s'animent.
+   ===================================================================== */
+
+.founders {
+  margin-top: var(--sp-9);
+}
+
+.head {
+  display: grid;
+  gap: 12px;
+  max-width: 60ch;
+}
+.title {
+  font-variation-settings: 'wdth' 112, 'wght' 760;
+  font-size: clamp(1.375rem, 1.1rem + 1vw, 1.875rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  color: var(--text);
+}
+.lead {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/* Couleurs d'une place libre : la place fantôme du produit. */
+.founders {
+  --free-line: color-mix(in oklab, var(--accent) 42%, transparent);
+  --free-perf: var(--line);
+  --perf: color-mix(in oklab, var(--text) 16%, transparent);
+}
+
+/* ---------------------------------------------------------------------
+   La pile (téléphone) : un rail vertical à gauche, une encoche par ticket.
+   --------------------------------------------------------------------- */
+.tickets {
+  --notch-h: 14px;
+  position: relative;
+  list-style: none;
+  margin: var(--sp-7) 0 0;
+  padding: 0 0 0 var(--sp-5);
+  display: grid;
+  gap: 10px;
+}
+.tickets::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+
+.ticket {
+  position: relative;
+  display: grid;
+}
+/* L'encoche : du rail jusqu'au ticket. */
+.ticket::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--sp-5) * -1);
+  top: 50%;
+  width: var(--sp-5);
+  height: 2px;
+  translate: 0 -50%;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.ticket[data-kind='free']::before {
+  height: 0;
+  background: none;
+  border-top: 2px dashed var(--free-line);
+}
+
+.card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: stretch;
+  min-height: 64px;
+  border-radius: var(--r-slat);
+  background: var(--slat);
+  box-shadow: var(--edge-light), 0 3px 0 var(--slat-edge);
+  color: var(--text);
+  /* Les tuiles du numéro, plus sombres que le ticket : on lit « 07 » d'abord. */
+  --flap-tile: var(--ink-800);
+}
+
+.num {
+  --flap-size: 1.875rem;
+  align-self: center;
+  padding: 0 14px;
+  /* Tuiles encre dans les deux thèmes (un tableau d'affichage est un
+     objet) : le chiffre reste os, même dans le tableau de bord clair. */
+  color: var(--bone-100);
+}
+
+/* La perforation : un pointillé entre le talon (le numéro) et le corps
+   (le commerce), comme sur un ticket de file d'attente. */
+.body {
+  display: grid;
+  gap: 6px;
+  align-content: center;
+  min-width: 0;
+  padding: 12px 16px;
+  border-left: 2px dashed var(--perf);
+}
+
+.name {
+  font-variation-settings: 'wdth' 108, 'wght' 720;
+  font-size: 1rem;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.city {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Place libre : rien n'y est inventé, son numéro et le mot « libre ». */
+.ticket[data-kind='free'] .card {
+  background: transparent;
+  box-shadow: none;
+  outline: 2px dashed var(--free-line);
+  outline-offset: -2px;
+  --flap-tile: transparent;
+}
+.ticket[data-kind='free'] .num { opacity: 0.55; color: var(--text); }
+.ticket[data-kind='free'] .num :global(.flap--tile) {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text) 22%, transparent);
+}
+.ticket[data-kind='free'] .num :global(.flap--tile)::after { display: none; }
+.ticket[data-kind='free'] .body { border-color: var(--free-perf); }
+.freeLabel {
+  font-size: 0.875rem;
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+.foot {
+  margin-top: var(--sp-6);
+  max-width: 68ch;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.footLink {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+/* ---------------------------------------------------------------------
+   Ordinateur (≥ 760 px) : deux rangées de cinq. Chaque place dessine sa
+   part du rail (jusqu'à la place voisine) et son encoche verticale ; bout
+   à bout, cela fait un rail continu par rangée.
+   --------------------------------------------------------------------- */
+@media (min-width: 760px) {
+  .tickets {
+    --gap-x: 12px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    column-gap: var(--gap-x);
+    row-gap: calc(var(--notch-h) + 28px);
+    padding: calc(var(--notch-h) + 2px) 0 0;
+  }
+  .tickets::before { display: none; }
+
+  /* Le rail de la rangée, au-dessus de la place, jusqu'à la suivante. */
+  .ticket::before,
+  .ticket[data-kind='free']::before {
+    left: 0;
+    right: calc(var(--gap-x) * -1);
+    top: calc((var(--notch-h) + 2px) * -1);
+    width: auto;
+    height: 2px;
+    translate: none;
+    border: 0;
+    border-radius: 0;
+    background: var(--rail);
+  }
+  .ticket:nth-child(5n + 1)::before { border-radius: 2px 0 0 2px; }
+  .ticket:nth-child(5n)::before { right: 0; border-radius: 0 2px 2px 0; }
+  /* L'encoche verticale : du rail au bord du ticket. */
+  .ticket::after {
+    content: '';
+    position: absolute;
+    left: 22px;
+    top: calc(var(--notch-h) * -1);
+    width: 2px;
+    height: var(--notch-h);
+    background: var(--rail);
+  }
+  .ticket[data-kind='free']::after {
+    width: 0;
+    background: none;
+    border-left: 2px dashed var(--free-line);
+  }
+
+  .card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 150px;
+  }
+  .num {
+    --flap-size: 2.25rem;
+    align-self: start;
+    padding: 16px 16px 14px;
+  }
+  .body {
+    align-content: end;
+    padding: 12px 16px 16px;
+    border-left: 0;
+    border-top: 2px dashed var(--perf);
+  }
+  .ticket[data-kind='free'] .body { border-color: var(--free-perf); }
+}
+
+/* ---------------------------------------------------------------------
+   Aperçu (réglages) : un ticket seul, dessiné comme sur ordinateur, sans
+   rail ni encoche, quelle que soit la largeur.
+   --------------------------------------------------------------------- */
+.preview {
+  width: min(100%, 220px);
+  --perf: color-mix(in oklab, var(--text) 16%, transparent);
+  --free-line: color-mix(in oklab, var(--accent) 42%, transparent);
+  --free-perf: var(--line);
+}
+.preview::before,
+.preview::after { display: none; }
+.preview .card {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 140px;
+  animation: none;
+}
+.preview .num {
+  --flap-size: 2rem;
+  align-self: start;
+  padding: 14px 14px 12px;
+}
+.preview .body {
+  align-content: end;
+  padding: 12px 14px 14px;
+  border-left: 0;
+  border-top: 2px dashed var(--perf);
+}
+.preview[data-kind='free'] .body { border-color: var(--free-perf); }
+
+/* ---------------------------------------------------------------------
+   Mouvement : chaque ticket se balance jusqu'à sa place en entrant à
+   l'écran, pendu à son encoche, un peu après son voisin de gauche. CSS
+   seul, le défilement sert d'horloge ; rien sans animation-timeline ni en
+   mouvement réduit (les tickets sont alors simplement à leur place).
+   --------------------------------------------------------------------- */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) and (min-width: 760px) {
+    .card {
+      transform-origin: 23px calc(var(--notch-h) * -1);
+      animation: ticket-hang linear both;
+      animation-timeline: view();
+      animation-range: entry calc(var(--i, 0) * 5%) entry calc(75% + var(--i, 0) * 5%);
+    }
+  }
+}
+@keyframes ticket-hang {
+  from { opacity: 0; transform: rotate(-6deg) translateY(-8px); }
+  55%  { opacity: 1; }
+  to   { opacity: 1; transform: none; }
+}

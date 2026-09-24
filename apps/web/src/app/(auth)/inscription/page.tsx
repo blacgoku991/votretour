@@ -1,16 +1,28 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { ACTIVITY_LABEL } from '@/lib/copy';
+import { parseActivityParam } from '@/app/bienvenue/metiers';
 import { SignupForm } from './SignupForm';
 import { AuthFrame } from '../AuthFrame';
 import { SignupPanel } from '../panels';
 import styles from '../auth.module.css';
+import local from './signup.module.css';
 
 export const metadata: Metadata = {
   title: 'Créer un compte',
   robots: { index: false },
 };
 
-export default function SignupPage() {
+export default async function SignupPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ activite?: string | string[] }>;
+}) {
+  // `?activite=garage` (appel à l'action d'une page métier) : liste blanche,
+  // la même que l'onboarding ; une valeur inconnue est ignorée, sans erreur.
+  const activity = parseActivityParam((await searchParams).activite);
+  const activityLabel = activity ? ACTIVITY_LABEL[activity] : null;
+
   return (
     <AuthFrame
       switchHref="/connexion"
@@ -30,9 +42,15 @@ export default function SignupPage() {
         <p className={`t-lead ${styles.lead}`}>
           Trois minutes&nbsp;: un compte, un établissement, et votre plaque est prête.
         </p>
+        {activityLabel && (
+          <p className={local.metier}>
+            <span className={local.metierSlat}>{activityLabel}</span>
+            <span className={local.metierHint}>Métier présélectionné, modifiable à l’étape suivante.</span>
+          </p>
+        )}
       </div>
 
-      <SignupForm />
+      <SignupForm activity={activity} />
 
       <div className={styles.outro}>
         <p className={`t-micro ${styles.legal}`}>

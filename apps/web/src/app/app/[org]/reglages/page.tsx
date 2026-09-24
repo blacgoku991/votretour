@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { requireOrgAccess } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { isLegacyProfile } from '@/lib/profiles';
+import { getFoundersPlace } from '@/server/founders';
 import { SettingsManager } from './SettingsManager';
 
 export const metadata: Metadata = { title: 'Réglages', robots: { index: false } };
@@ -46,7 +47,7 @@ export default async function SettingsPage({
         : Promise.resolve({ data: [] }),
       // Profils métier : l'activité (suggestion d'un métier), les fiches
       // (une fiche = un guichet) et les modèles de messages retouchés.
-      db.from('organizations').select('activity').eq('id', organizationId).maybeSingle(),
+      db.from('organizations').select('activity, name').eq('id', organizationId).maybeSingle(),
       current
         ? db.from('staff').select('id, display_name, desk_label, is_active')
             .eq('location_id', current.id).order('sort_order').order('created_at')
@@ -59,6 +60,13 @@ export default async function SettingsPage({
       // métier d'une file au passage (jamais pour un simple barbier).
       db.from('queues').select('id, profile').eq('organization_id', organizationId),
     ]);
+
+  // Premiers commerces : ce que montrerait le ticket (nom et ville du premier
+  // établissement actif qui en a une, comme founders_showcase en 0041) et
+  // la place actuelle dans la file des volontaires.
+  const foundersOptIn = (settings as { founders_opt_in?: boolean } | null)?.founders_opt_in === true;
+  const foundersCity = list.find((l) => l.is_active && typeof l.city === 'string' && l.city.trim() !== '')?.city?.trim() ?? null;
+  const foundersPlace = foundersOptIn ? await getFoundersPlace(organizationId) : null;
 
   const orgHasProfiledQueue = ((orgQueues ?? []) as { id: string; profile: string | null }[])
     .some((q) => !isLegacyProfile(q.profile));
@@ -80,6 +88,12 @@ export default async function SettingsPage({
       selectedQueueId={file ?? null}
       hours={(hours ?? []) as never}
       services={(services ?? []) as never}
+      founders={{
+        optIn: foundersOptIn,
+        place: foundersPlace,
+        name: ((organization?.name as string | undefined) ?? access.organization.name).trim(),
+        city: foundersCity,
+      }}
     />
   );
 }

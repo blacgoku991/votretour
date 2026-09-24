@@ -1,0 +1,54 @@
+/* =====================================================================
+   RÉGLAGES — « Premiers commerces sur Rangvia » : l'aperçu du ticket et
+   la phrase qui dit où en est le commerce. Le ticket est à gauche, posé
+   sur le sol (marquage en pointillé) ; il passe au-dessus du texte sous
+   560 px.
+   ===================================================================== */
+
+.row {
+  display: grid;
+  gap: var(--sp-5);
+  align-items: center;
+  /* Même retrait que les lignes de réglage (SettingRow) du panneau. */
+  padding: 20px;
+}
+@media (min-width: 560px) {
+  .row { grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-7); }
+}
+
+.stage {
+  display: grid;
+  place-items: center;
+  width: 244px;
+  max-width: 100%;
+  padding: 12px;
+  border-radius: var(--r-card);
+  background: var(--surface-sunken);
+}
+
+.text {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.label {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.status {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--text);
+  max-width: 56ch;
+  text-wrap: pretty;
+}
+.hint {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  max-width: 56ch;
+}

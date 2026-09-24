@@ -2,14 +2,20 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import QRCode from 'qrcode';
 import { SiteHeader, SiteFooter } from '@/components/SiteChrome';
-import { hasLegalNotice } from '@/lib/legal';
 import { Reveal } from '@/components/motion/Reveal';
 import { Plaque } from '@/components/objects/Plaque';
 import { Story } from '@/components/home/story/Story';
+import { buildHomeStoryCopy } from '@/components/home/story/copy';
 import { AppClipPhone } from '@/components/home/AppClipPhone';
 import { DropsWaves } from '@/components/home/DropsWaves';
 import { DropPass } from '@/components/home/DropPass';
+import { MetierRows } from '@/components/metiers/MetierRows';
+import { DemoVideo } from '@/components/video/DemoVideo';
+import { videoForMetier, type DemoVideoEntry } from '@/components/video/manifest';
+import { selectPublishedMetiers } from '@/lib/metiers/select';
+import { appClipPublished } from '@/lib/seo/site';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { siteFooterData } from '@/server/founders';
 import { env } from '@/lib/env';
 import { formatPrice } from '@/lib/format';
 import styles from './home.module.css';
@@ -69,8 +75,33 @@ function volume(n: number, singular: string, plural: string, unlimited: string):
   return `${n}\u00a0${n > 1 ? plural : singular}`;
 }
 
+/** La vidéo de l'accueil : celle des barbiers, la même scène « Barber House » que l'histoire. */
+const HOME_VIDEO_METIER = 'barbiers';
+
+function withoutTeaser(video: DemoVideoEntry | null): DemoVideoEntry | null {
+  if (!video) return null;
+  const { teaser: _teaser, ...files } = video.files;
+  return { ...video, files };
+}
+
+/** Cible du lien « Passer l'animation » de l'histoire (`Story`, défaut). */
+const AFTER_STORY_ID = 'apres-histoire';
+
 export default async function HomePage() {
-  const [{ data: plans }, qrSvg] = await Promise.all([
+  // L'App Clip n'est cité qu'une fois PUBLIÉ sur l'App Store : l'étape 1
+  // de l'histoire le dit ou non, et la section App Clip n'existe qu'alors.
+  const appClip = appClipPublished();
+  const metiers = selectPublishedMetiers();
+  // Sans l'aperçu en boucle (teaser) : l'accueil porte déjà la séquence 3D,
+  // et rien de la vidéo ne se charge avant le clic, hormis son affiche.
+  const video = withoutTeaser(videoForMetier(HOME_VIDEO_METIER));
+  // La première section après l'histoire reçoit la cible du lien
+  // d'évitement : la vidéo si elle existe, sinon l'App Clip, sinon le comptoir.
+  const afterStory: 'video' | 'clip' | 'counter' = video ? 'video' : appClip ? 'clip' : 'counter';
+  const skipTarget = (section: typeof afterStory) =>
+    afterStory === section ? { id: AFTER_STORY_ID, tabIndex: -1 } : {};
+
+  const [{ data: plans }, qrSvg, footer] = await Promise.all([
     supabaseAdmin()
       .from('plans')
       .select('code, name, tagline, price_month_cents, currency, trial_days, max_locations, max_staff, max_plates')
@@ -84,6 +115,7 @@ export default async function HomePage() {
       errorCorrectionLevel: 'M',
       color: { dark: '#0B0E13', light: '#0000' },
     }),
+    siteFooterData(),
   ]);
 
   return (
@@ -92,35 +124,56 @@ export default async function HomePage() {
 
       <main id="contenu" className={styles.main}>
         {/* ============ 1. L'histoire : héros, scène collante, six étapes ============ */}
-        <Story />
+        <Story copy={buildHomeStoryCopy({ appClip })} skipTargetId={AFTER_STORY_ID} />
 
-        {/* ============ 2. App Clip ============ */}
-        <section id="apres-histoire" className={styles.clip} aria-labelledby="clip-titre" tabIndex={-1}>
-          <div className={`shell ${styles.clipInner}`}>
-            <div className={styles.clipText}>
-              <p className="t-label">Sur iPhone</p>
-              <h2 id="clip-titre" className={`t-display ${styles.h2}`}>
-                <span className={styles.nowrap}>Rien à installer.</span> Vraiment.
-              </h2>
-              <p className={`t-body t-muted ${styles.body}`}>
-                Votre client approche son iPhone de la plaque : l’App Clip s’ouvre en une
-                seconde, sans passer par l’App Store. Il rejoint la file, range son téléphone, et
-                reçoit une notification native quand son tour approche.
-              </p>
-              <ul className={`rail-list ${styles.points}`}>
-                {APP_CLIP_POINTS.map((point) => (
-                  <li key={point}>{point}</li>
-                ))}
-              </ul>
+        {/* ============ 2. En vrai, en une minute : la vidéo barbiers ============ */}
+        {video && (
+          <section className={styles.demo} aria-labelledby="demo-titre" {...skipTarget('video')}>
+            <div className="shell">
+              <header className={styles.sectionHead}>
+                <p className="t-label">En vrai, en une minute</p>
+                <h2 id="demo-titre" className={`t-display ${styles.h2}`}>
+                  La même file, filmée sur le vrai produit.
+                </h2>
+                <p className={`t-lead ${styles.leadAfter}`}>
+                  Un barbier fictif, un vrai poste, un vrai téléphone&nbsp;: ce que vos clients et vous
+                  verrez, sans retouche. La vidéo ne se charge qu’à votre clic.
+                </p>
+              </header>
+              <DemoVideo video={video} subject="Barbiers" className={styles.demoVideo} />
             </div>
-            <div className={styles.clipVisual}>
-              <AppClipPhone />
-            </div>
-          </div>
-        </section>
+          </section>
+        )}
 
-        {/* ============ 3. Côté comptoir : tableau des départs ============ */}
-        <section className={styles.counter} aria-labelledby="comptoir-titre">
+        {/* ============ 3. App Clip (une fois publié sur l'App Store) ============ */}
+        {appClip && (
+          <section className={styles.clip} aria-labelledby="clip-titre" {...skipTarget('clip')}>
+            <div className={`shell ${styles.clipInner}`}>
+              <div className={styles.clipText}>
+                <p className="t-label">Sur iPhone</p>
+                <h2 id="clip-titre" className={`t-display ${styles.h2}`}>
+                  <span className={styles.nowrap}>Rien à installer.</span> Vraiment.
+                </h2>
+                <p className={`t-body t-muted ${styles.body}`}>
+                  Votre client approche son iPhone de la plaque : l’App Clip s’ouvre en une
+                  seconde, sans passer par l’App Store. Il rejoint la file, range son téléphone, et
+                  reçoit une notification native quand son tour approche.
+                </p>
+                <ul className={`rail-list ${styles.points}`}>
+                  {APP_CLIP_POINTS.map((point) => (
+                    <li key={point}>{point}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className={styles.clipVisual}>
+                <AppClipPhone />
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ============ 4. Côté comptoir : tableau des départs ============ */}
+        <section className={styles.counter} aria-labelledby="comptoir-titre" {...skipTarget('counter')}>
           <div className="shell">
             <header className={styles.sectionHead}>
               <h2 id="comptoir-titre" className="t-display">
@@ -141,7 +194,31 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* ============ 4. Event / Drop ============ */}
+        {/* ============ 5. Pour votre métier : une ligne par page métier ============ */}
+        {metiers.length > 0 && (
+          <section className={styles.metiers} aria-labelledby="metiers-titre">
+            <div className="shell">
+              <header className={styles.metiersHead}>
+                <div className={styles.sectionHead}>
+                  <p className="t-label">Pour votre métier</p>
+                  <h2 id="metiers-titre" className={`t-display ${styles.h2}`}>
+                    Chaque comptoir a sa file.
+                  </h2>
+                  <p className={`t-lead ${styles.leadAfter}`}>
+                    Fauteuil, réception, salle, guichet&nbsp;: la même file, avec les mots de votre métier.
+                  </p>
+                </div>
+                <Link href="/pour" className={styles.more}>
+                  Tous les métiers
+                  <span aria-hidden="true" className={styles.moreSlat} />
+                </Link>
+              </header>
+              <MetierRows pages={metiers} size="md" headingLevel="h3" />
+            </div>
+          </section>
+        )}
+
+        {/* ============ 6. Event / Drop ============ */}
         <section id="drops" className={styles.drops} aria-labelledby="drops-titre">
           <div className={`shell ${styles.dropsInner}`}>
             <div className={styles.dropsText}>
@@ -164,7 +241,7 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* ============ 5. Offres ============ */}
+        {/* ============ 7. Offres ============ */}
         <section id="offres" className={styles.offers} aria-labelledby="offres-titre">
           <div className="shell">
             <header className={styles.sectionHead}>
@@ -221,7 +298,7 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* ============ 6. Appel final ============ */}
+        {/* ============ 8. Appel final ============ */}
         <section className={styles.cta} aria-labelledby="cta-titre">
           <div className={`shell ${styles.ctaInner}`}>
             <div className={styles.ctaText}>
@@ -254,7 +331,7 @@ export default async function HomePage() {
         </section>
       </main>
 
-      <SiteFooter legalNotice={hasLegalNotice()} />
+      <SiteFooter {...footer} />
     </div>
   );
 }

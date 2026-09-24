@@ -95,9 +95,10 @@
   flex: none;
 }
 
-/* « Connexion » : libellé ; icône seule sous 380 px. */
+/* « Connexion » : libellé ; icône seule sous 380 px, et entre 760 et
+   899 px, où la navigation (quatre liens depuis « Métiers ») prend la place. */
 .loginIcon { display: none; }
-@media (max-width: 379px) {
+@media (max-width: 379px), (min-width: 760px) and (max-width: 899px) {
   .login { width: 44px; padding: 0; }
   .loginIcon { display: block; }
   .loginText { display: none; }
@@ -314,6 +315,18 @@
     gap: var(--sp-6);
   }
 }
+/* Quatre groupes (avec « Métiers ») : la marque passe au-dessus tant que
+   la largeur ne laisse pas quatre colonnes lisibles à côté d'elle
+   (« Réparation téléphone », « Conditions d’utilisation » sur une ligne). */
+@media (min-width: 760px) {
+  .body[data-groups='4'] .columns { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (min-width: 760px) and (max-width: 1199px) {
+  .body[data-groups='4'] { grid-template-columns: minmax(0, 1fr); }
+}
+@media (min-width: 1200px) {
+  .body[data-groups='4'] { grid-template-columns: minmax(0, 1fr) minmax(0, 2.6fr); }
+}
 .column { display: flex; flex-direction: column; gap: var(--sp-3); }
 .columnList { list-style: none; padding: 0; display: flex; flex-direction: column; }
 .columnLink {
@@ -336,6 +349,29 @@
   align-items: center;
   min-height: 44px;
   font-size: 0.9375rem;
+  color: var(--text-muted);
+}
+/* Les métiers, au téléphone : deux colonnes serrées sous leur étiquette,
+   plutôt que sept lignes de plus dans la liste-rail. Cibles de 44 px. */
+.compactMetiers {
+  margin-top: var(--sp-6);
+  display: grid;
+  gap: var(--sp-2);
+}
+.compactGrid {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--sp-4);
+}
+.compactGrid > li { border-bottom: 1px solid var(--line); }
+.compactGridLink {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 0.9375rem;
+  line-height: 1.25;
   color: var(--text-muted);
 }
 

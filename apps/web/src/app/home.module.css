@@ -28,17 +28,36 @@
 .sectionHead { max-width: 52rem; }
 .leadAfter { margin-top: var(--gap-title); }
 
+.demo,
 .clip,
 .counter,
+.metiers,
 .drops,
 .offers {
   padding-block: clamp(72px, 9vw, 136px);
   border-top: 1px solid var(--line);
 }
 
+/* La section qui suit l'histoire reçoit le lien « Passer l'animation »
+   (vidéo, App Clip ou comptoir, selon ce que l'accueil montre) : elle se
+   cale sous l'en-tête collant et prend le focus sans anneau. */
+.demo, .clip, .counter { scroll-margin-top: var(--site-header-h); }
+.demo:focus, .clip:focus, .counter:focus { outline: none; }
+
+/* --------------------------------------------- En vrai, en une minute */
+.demoVideo { margin-top: 48px; }
+
+/* ------------------------------------------------- Pour votre métier */
+.metiersHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px 48px;
+  margin-bottom: 48px;
+}
+
 /* ---------------------------------------------------------- App Clip */
-.clip { scroll-margin-top: var(--site-header-h); }
-.clip:focus { outline: none; }
 .clipInner {
   display: grid;
   gap: 56px;

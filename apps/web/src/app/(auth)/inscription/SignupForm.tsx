@@ -3,11 +3,18 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabase/browser';
+import type { ActivityType } from '@/lib/profiles/types';
 import { PasswordField } from '../PasswordField';
 import { signupErrorMessage } from '../authErrors';
+import { awaitingConfirmationPath, confirmationRedirect, welcomePath } from './activity';
 import styles from '../auth.module.css';
 
-export function SignupForm() {
+/**
+ * `activity` : le métier venu d'une page métier (`?activite=`), déjà validé
+ * sur liste blanche par la page. Il est transmis tel quel à l'onboarding,
+ * qui le revalide de son côté (`/bienvenue`).
+ */
+export function SignupForm({ activity = null }: { activity?: ActivityType | null }) {
   const router = useRouter();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -31,7 +38,7 @@ export function SignupForm() {
         password,
         options: {
           data: { full_name: fullName.trim() },
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=/bienvenue`,
+          emailRedirectTo: confirmationRedirect(window.location.origin, activity),
         },
       });
 
@@ -43,11 +50,11 @@ export function SignupForm() {
       // Si la confirmation par e-mail est désactivée, la session est déjà
       // active : on enchaîne directement sur la création d'établissement.
       if (data.session) {
-        router.push('/bienvenue');
+        router.push(welcomePath(activity));
         router.refresh();
         return;
       }
-      router.push('/connexion?inscrit=1');
+      router.push(awaitingConfirmationPath(activity));
     });
   };
 

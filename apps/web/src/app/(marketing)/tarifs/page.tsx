@@ -2,12 +2,20 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { Plaque } from '@/components/objects/Plaque';
+import { appClipPublished } from '@/lib/seo/site';
 import { PricingBoard, type PublicPlan } from './PricingBoard';
 import styles from '../../marketing.module.css';
 
+// L'App Clip n'est cité qu'une fois PUBLIÉ sur l'App Store
+// (NEXT_PUBLIC_APP_CLIP_PUBLIE, figé au build) : avant, on ne promet que
+// ce qu'un commerce obtient vraiment en s'inscrivant.
+const APP_CLIP = appClipPublished();
+
 export const metadata: Metadata = {
   title: 'Tarifs',
-  description: "Des offres simples pour une file d’attente virtuelle : App Clip iPhone, QR code, plaque NFC et avis Google inclus.",
+  description: APP_CLIP
+    ? 'Des offres simples pour une file d’attente virtuelle\u00a0: App Clip iPhone, QR code, plaque NFC et avis Google inclus.'
+    : 'Des offres simples pour une file d’attente virtuelle\u00a0: QR code, plaque NFC, notifications et avis Google inclus.',
 };
 // Les offres sont lues avec le client serveur privilégié : rendu au runtime
 // pour ne jamais injecter SUPABASE_SERVICE_ROLE_KEY pendant le build Docker.
@@ -16,7 +24,9 @@ export const dynamic = 'force-dynamic';
 const INCLUDED = [
   {
     key: 'Aucun SMS',
-    text: "Les notifications passent par l’App Clip iPhone ou le navigateur : rien à payer à l’unité.",
+    text: APP_CLIP
+      ? 'Les notifications passent par l’App Clip iPhone ou le navigateur\u00a0: rien à payer à l’unité.'
+      : 'Les notifications passent par le navigateur du téléphone\u00a0: rien à payer à l’unité.',
   },
   {
     key: 'Aucune application à installer',
@@ -81,9 +91,14 @@ export default async function PricingPage() {
         <p className="t-label">Tarifs</p>
         <h1 className={`t-hero ${styles.introTitle}`}>Une file ouverte, un prix clair</h1>
         <p className={`t-lead ${styles.introLead}`}>
-          Tout est inclus dans chaque offre : l’App Clip iPhone, le QR code,
-          l’URL NFC, les notifications et le lien d’avis Google. Seuls
-          les volumes changent.
+          {APP_CLIP
+            ? 'Tout est inclus dans chaque offre\u00a0: l’App Clip iPhone, le QR code, l’URL NFC, les notifications et le lien d’avis Google. Seuls les volumes changent.'
+            : 'Tout est inclus dans chaque offre\u00a0: le QR code, l’URL NFC, les notifications et le lien d’avis Google. Seuls les volumes changent.'}
+        </p>
+        {/* Maillage : le même prix pour tous, et une page par métier pour
+            voir ce que la file devient chez soi. */}
+        <p className={styles.introLead}>
+          <Link href="/pour" className="btn btn--ghost btn--sm">Voir par métier</Link>
         </p>
       </header>
 

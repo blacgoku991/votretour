@@ -14,17 +14,40 @@ import styles from '@/components/SiteChrome.module.css';
  * route.
  */
 
-const NAV = [
+export interface NavItem {
+  href: string;
+  label: string;
+  /** Chemin qui rend le lien « courant » ; `null` pour une ancre de l'accueil. */
+  path: string | null;
+  /** Courant aussi sur les pages filles (/pour/garages pour « Métiers »). */
+  prefix?: boolean;
+  /** Page fille qui a SON propre lien : elle n'allume pas le parent. */
+  except?: string;
+}
+
+export const NAV: readonly NavItem[] = [
   { href: '/#comment', label: 'Comment ça marche', path: null },
+  { href: '/pour', label: 'Métiers', path: '/pour', prefix: true, except: '/pour/evenements-et-drops' },
   { href: '/tarifs', label: 'Tarifs', path: '/tarifs' },
-  { href: '/#drops', label: 'Événements & drops', path: null },
-] as const;
+  { href: '/pour/evenements-et-drops', label: 'Événements & drops', path: '/pour/evenements-et-drops' },
+];
+
+/**
+ * Le lien est-il celui de la page courante ? « Métiers » l'est sur /pour
+ * et sur chaque page métier, sauf celle des événements, qui a son lien.
+ * Les ancres de l'accueil (#comment) ne le sont jamais : le fragment
+ * n'existe pas côté serveur.
+ */
+export function navCurrent(item: NavItem, pathname: string): boolean {
+  if (item.path === null) return false;
+  if (pathname === item.path) return true;
+  if (!item.prefix || pathname === item.except) return false;
+  return pathname.startsWith(`${item.path}/`);
+}
 
 /**
  * Navigation principale. Le lien de la page courante porte
  * aria-current="page" : le CSS le marque d'une latte vermillon de 14 × 2 px.
- * Les ancres de l'accueil (#comment, #drops) ne sont jamais « courantes » :
- * le fragment n'existe pas côté serveur.
  */
 export function SiteNav({ className, linkClassName }: { className?: string; linkClassName?: string }) {
   const pathname = usePathname();
@@ -35,7 +58,7 @@ export function SiteNav({ className, linkClassName }: { className?: string; link
           key={item.href}
           href={item.href}
           className={linkClassName}
-          aria-current={item.path !== null && pathname === item.path ? 'page' : undefined}
+          aria-current={navCurrent(item, pathname) ? 'page' : undefined}
         >
           {item.label}
         </Link>
@@ -107,7 +130,7 @@ export function MobileNav() {
         <nav aria-label="Navigation principale" className="shell">
           <ul className={`rail-list ${styles.menuList}`}>
             {NAV.map((item) => {
-              const current = item.path !== null && pathname === item.path;
+              const current = navCurrent(item, pathname);
               return (
                 <li key={item.href} aria-current={current ? 'true' : undefined}>
                   <Link

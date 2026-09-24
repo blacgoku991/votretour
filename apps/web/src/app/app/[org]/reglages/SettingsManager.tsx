@@ -18,6 +18,7 @@ import { TemplatesSection } from './TemplatesSection';
 import { mergeTemplates, type StoredTemplateRow } from './templateRows';
 import { SettingsTocRail, SettingsTocSelect, type TocEntry } from './SettingsToc';
 import { ThresholdRang } from './ThresholdRang';
+import { FoundersSection } from './FoundersSection';
 import styles from './settings.module.css';
 
 /**
@@ -44,6 +45,11 @@ import styles from './settings.module.css';
  * obligatoire ». `join_queue` efface le prénom en santé ; l'exiger
  * fermerait la file à tout patient. Une ligne en lecture seule le dit,
  * et `updateQueueSettings` refuse de les rallumer.
+ *
+ * Premiers commerces sur Rangvia (`FoundersSection`) : l'accord, désactivé
+ * par défaut, pour apparaître dans le pied de page du site public (nom et
+ * ville seulement). Visible de tous les membres, modifiable par le
+ * propriétaire et les administrateurs (`settings.manage`).
  *
  * Mise en page : un sommaire collant en rail à partir de 1200 px, une
  * liste « Aller à la section » en dessous. Les horaires passent par
@@ -79,6 +85,7 @@ export function SettingsManager({
   orgSlug, organizationId, canManage, locations, currentLocation, settings,
   queues, selectedQueueId, hours, services,
   canConfigure = canManage, activity = null, staff = [], templateRows = [], orgHasProfiledQueue = false,
+  founders = null,
 }: {
   orgSlug: string;
   organizationId: string;
@@ -100,6 +107,8 @@ export function SettingsManager({
   templateRows?: StoredTemplateRow[];
   /** Une file de l'organisation est déjà dans un métier (hors passage). */
   orgHasProfiledQueue?: boolean;
+  /** Vitrine des premiers commerces : accord, place, et ce que montrerait le ticket. */
+  founders?: { optIn: boolean; place: number | null; name: string; city: string | null } | null;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -227,6 +236,7 @@ export function SettingsManager({
     { id: 'horaires', label: 'Horaires' },
     { id: 'prestations', label: 'Prestations' },
     { id: 'donnees', label: 'Données personnelles' },
+    ...(founders ? [{ id: 'premiers-commerces', label: 'Premiers commerces' }] : []),
     ...(canManage ? [{ id: 'etablissements', label: 'Établissements' }] : []),
   ];
 
@@ -651,6 +661,20 @@ export function SettingsManager({
               </SettingRow>
             </Section>
           </div>
+
+          {/* ---------------- Premiers commerces sur Rangvia ---------------- */}
+          {founders && (
+            <div id="premiers-commerces" className={styles.anchor}>
+              <FoundersSection
+                orgSlug={orgSlug}
+                canManage={canManage}
+                optIn={founders.optIn}
+                place={founders.place}
+                name={founders.name}
+                city={founders.city}
+              />
+            </div>
+          )}
 
           {/* ---------------- Établissements ---------------- */}
           {canManage && (

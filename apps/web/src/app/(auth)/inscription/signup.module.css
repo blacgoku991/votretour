@@ -1,0 +1,40 @@
+/* Le métier venu d'une page métier : une petite latte accrochée sous le
+   chapô, avec son encoche, et la promesse qu'on peut en changer. */
+.metier {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: var(--sp-5);
+}
+.metierSlat {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  margin-left: 14px;
+  padding: 0 14px;
+  border-radius: var(--r-slat);
+  background: var(--slat);
+  box-shadow: 0 2px 0 var(--slat-edge);
+  color: var(--text);
+  font-variation-settings: 'wdth' 104, 'wght' 700;
+  font-size: 0.875rem;
+}
+/* L'encoche vermillon : c'est le choix du visiteur. */
+.metierSlat::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: 50%;
+  width: 14px;
+  height: 3px;
+  translate: 0 -50%;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.metierHint {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
