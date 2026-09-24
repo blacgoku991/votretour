@@ -125,6 +125,8 @@ function DeskStation({ orgSlug, queues, canOperate, actorStaffId = null, api }: 
       if (result.code === 'invalid_desk') {
         chooseDesk(null);
         await api.refresh();
+        // La liste est déjà relue : inutile de dire « rechargez la page ».
+        api.setError({ message: 'Ce guichet n’existe plus. Vérifiez « Mon guichet » avant d’appeler.', code: result.code });
         selectRef.current?.focus();
       }
       return;

@@ -39,6 +39,7 @@ import {
 } from './BoardChrome';
 import {
   activeEntries,
+  clock,
   formatEta,
   laneOf,
   parseAmountToCents,
@@ -357,7 +358,12 @@ function emptyText(key: WorkshopLaneKey): string {
   }
 }
 
-/** « Peugeot 208 · ••-••3-CD »… jamais en clair hors de la fiche : ici, pour la liste « Rendu » du poste. */
+/**
+ * Titre d'une fiche rendue, pour la colonne « Rendu » du poste : « AB-123-CD
+ * · Peugeot 208 », « Dossier 0042 · iPhone 13 ». L'immatriculation complète
+ * reste sur le poste (réservé à `queue.operate`) ; l'écran de salle et
+ * l'étiquette n'en reçoivent que la forme masquée.
+ */
 function entryTitle(profile: QueueProfile, entry: ProfileStaffEntry): string {
   const model = entry.details?.model?.trim();
   if (profile === 'device') return [entry.ticketNo ? `Dossier ${entry.ticketNo}` : null, model].filter(Boolean).join(' · ') || 'Appareil';
@@ -510,7 +516,7 @@ function WorkshopCard({
 
       {(quote || details.keys || entry.claimPending) && (
         <p className={styles.flags}>
-          {quote && <QuoteChip quote={quote} now={now} />}
+          {quote && <QuoteChip quote={quote} now={now} timeZone={api.timeZone} />}
           {details.keys && <span className="chip">Clés reçues</span>}
           {entry.claimPending && <span className="chip chip--copper" title="Un QR de suivi attend d’être scanné">QR en attente</span>}
         </p>
@@ -648,6 +654,7 @@ function WorkshopCard({
           {panel?.kind === 'eta' && (
             <EtaPanel
               current={details.readyEta ?? null}
+              who={profile === 'vehicle' ? 'le garage' : 'l’atelier'}
               busy={busy}
               onCancel={() => setPanel(null)}
               onSave={async (iso) => {
@@ -716,8 +723,12 @@ const ACCESSORY_LABEL: Record<DeviceAccessory, string> = {
   box: 'boîte',
 };
 
-function QuoteChip({ quote, now }: { quote: NonNullable<ReturnType<typeof quoteStateOf>>; now: number | null }) {
-  const at = quote.at && now != null ? new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(Date.parse(quote.at)) : null;
+function QuoteChip({
+  quote, now, timeZone,
+}: { quote: NonNullable<ReturnType<typeof quoteStateOf>>; now: number | null; timeZone: string }) {
+  // L'heure de la décision se lit dans le fuseau de l'atelier, comme le
+  // reste du poste, et seulement une fois monté (jamais au rendu serveur).
+  const at = quote.at && now != null ? clock(quote.at, timeZone) : null;
   if (quote.status === 'accepted') return <span className="chip chip--jade">Accordé{at ? ` ${at}` : ''}</span>;
   if (quote.status === 'declined') return <span className="chip chip--brique">Refusé{at ? ` ${at}` : ''}</span>;
   const since = quote.at && now != null ? Math.max(0, Math.round((now - Date.parse(quote.at)) / 60_000)) : null;
@@ -887,8 +898,15 @@ function nextRoundHour(): Date {
 }
 
 function EtaPanel({
-  current, busy, onCancel, onSave,
-}: { current: string | null; busy: boolean; onCancel: () => void; onSave: (iso: string | null) => void }) {
+  current, who, busy, onCancel, onSave,
+}: {
+  current: string | null;
+  /** « le garage », « l'atelier » : qui s'engage, tel que le client le lira. */
+  who: string;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (iso: string | null) => void;
+}) {
   const [value, setValue] = useState(() => toLocalInput(current));
   const id = useId();
   return (
@@ -902,7 +920,7 @@ function EtaPanel({
         if (!Number.isNaN(d.getTime())) onSave(d.toISOString());
       }}
     >
-      <label className={common.inlineTitle} htmlFor={`${id}-eta`}>Prêt quand ? Le client lira « annoncé par le garage ».</label>
+      <label className={common.inlineTitle} htmlFor={`${id}-eta`}>Prêt quand ? Le client lira « annoncé par {who} ».</label>
       <input id={`${id}-eta`} className="input" type="datetime-local" value={value} onChange={(e) => setValue(e.target.value)} autoFocus />
       <div className={common.inlineRow}>
         <button type="submit" className="btn btn--solid btn--sm" disabled={busy}>Enregistrer</button>

@@ -66,7 +66,6 @@ export function ProfileSuggestion({ orgSlug, profile, label }: { orgSlug: string
         <p className={common.suggestionBody}>{pitch.body}</p>
       </div>
       <div className={common.suggestionActions}>
-        <Link href="/design/metiers" className="btn btn--ghost btn--sm">Voir l’aperçu</Link>
         <Link href={`/app/${orgSlug}/reglages#profil`} className="btn btn--solid btn--sm">Activer</Link>
         <button type="button" className="btn btn--quiet btn--sm" onClick={later}>Plus tard</button>
       </div>
