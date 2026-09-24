@@ -48,6 +48,9 @@ function auditCallBodies(source: string): string[] {
   const bodies: string[] = [];
   const opener = /\baudit\(\{/g;
   for (let match = opener.exec(source); match; match = opener.exec(source)) {
+    // Un appel cité dans un commentaire (JSDoc, `//`) n'écrit rien.
+    const line = source.slice(source.lastIndexOf('\n', match.index) + 1, match.index).trim();
+    if (line.startsWith('*') || line.startsWith('//') || line.startsWith('/*')) continue;
     const start = match.index + match[0].length - 1;
     let depth = 0;
     for (let i = start; i < source.length; i += 1) {
