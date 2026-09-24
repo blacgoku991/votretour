@@ -11,8 +11,8 @@ import { GoogleWalletError } from './errors';
 import { buildSaveJwt, saveUrl } from './jwt';
 import { objectTypeFor, type EventClassInput } from './objects';
 import {
-  configurationReason, ensureEventClass, ensureQueueClass, insertObjectAndGoLive, isRejected,
-  processGoogleJob, syncDirtyClasses,
+  MAINTENANCE_BUDGET_MS, configurationRefused, eventClassAtClick, insertObjectAndGoLive, isRejected,
+  processGoogleJob, runGoogleMaintenance,
   type GoogleClassRow, type GoogleDueClass, type GoogleStore, type GoogleSyncDeps,
 } from './sync';
 
@@ -27,8 +27,9 @@ import {
  *
  *  - status()     : configuration (zod) + classe de file synchronisée ;
  *                   `details.mode` = 'demo' | 'production' (carte admin).
- *  - maintain()   : chaque minute (cron), crée la classe de file puis
- *                   synchronise les classes d'événement salies.
+ *  - maintain()   : chaque minute (cron), sous un budget de 6 s relayé à
+ *                   chaque appel : classe de file, classes d'événement
+ *                   salies, relecture des classes en revue.
  *  - distribute() : insertion REST de l'objet, JWT léger, 302 vers
  *                   pay.google.com ; toute panne ou 8 s de silence →
  *                   retour à la page avec ?wallet=indisponible.
@@ -166,6 +167,20 @@ function supabaseStore(): GoogleStore {
         .from('wallet_google_classes').select(CLASS_COLUMNS).eq('event_id', eventId).maybeSingle();
       if (error) throw new Error(`wallet_google_classes : ${error.message}`);
       return data ? toRow(data as ClassRowDb) : null;
+    },
+    async classesUnderReview(before, limit) {
+      const { data, error } = await (await adminDb())
+        .from('wallet_google_classes')
+        .select(CLASS_COLUMNS)
+        .eq('kind', 'event')
+        .eq('review_status', 'UNDER_REVIEW')
+        .eq('dirty', false)
+        .is('last_error', null)
+        .lt('synced_at', before.toISOString())
+        .order('synced_at', { ascending: true })
+        .limit(limit);
+      if (error) throw new Error(`wallet_google_classes : ${error.message}`);
+      return ((data ?? []) as ClassRowDb[]).map(toRow);
     },
     async classesDue(limit) {
       const { data, error } = await (await adminDb()).rpc('wallet_google_classes_due', { p_limit: limit });
@@ -338,17 +353,24 @@ async function saveLink(ctx: DistributeContext, rt: GoogleRuntime, signal: Abort
   if (!snap) throw new Error('Instantané du pass introuvable');
 
   if (issued.kind === 'event') {
-    // Billet de drop : jamais de lien vers une classe absente ou refusée.
+    // Billet de drop : jamais de lien vers une classe absente ou refusée
+    // (§ 8.1). La classe n'est ni créée ni mise à jour ici : c'est le
+    // travail du cron et du vidage.
     if (!snap.event) throw new Error('Événement du billet introuvable');
-    const state = await bounded(ensureEventClass(rt.deps, snap.event.id, signal), signal);
-    if (state !== 'ok') throw new Error(`Classe d’événement ${state === 'rejected' ? 'refusée par Google' : 'indisponible'}`);
+    const state = await bounded(eventClassAtClick(rt.deps, snap.event.id), signal);
+    if (state !== 'ok') {
+      const why = { rejected: 'refusée par Google', missing: 'pas encore créée chez Google', unavailable: 'indisponible' }[state];
+      throw new Error(`Classe d’événement ${why}`);
+    }
   }
 
   if (!issued.live) {
     // L'objet est créé AVANT le lien : nos mises à jour s'appliquent même
-    // si le client met une minute à confirmer l'ajout.
+    // si le client met une minute à confirmer l'ajout. La relecture de
+    // l'instantané rattrape un changement survenu pendant l'insertion.
     const view = buildWalletView(snap, rt.deps.now(), { siteUrl: config.siteUrl });
-    await bounded(insertObjectAndGoLive(rt.deps, snap, view, signal), signal);
+    const reread = () => bounded(ctx.snapshot(issued.id), signal);
+    await bounded(insertObjectAndGoLive(rt.deps, snap, view, signal, reread), signal);
   }
 
   const jwt = await buildSaveJwt({
@@ -386,11 +408,7 @@ export async function distributeGoogle(ctx: DistributeContext, rt: GoogleRuntime
     const url = await bounded(saveLink(ctx, rt, controller.signal), controller.signal);
     return new Response(null, { status: 302, headers: { ...NO_STORE, Location: url } });
   } catch (error) {
-    if (error instanceof GoogleWalletError && error.configuration) {
-      const reason = configurationReason(error);
-      rt.deps.degrade?.(reason);
-      rt.deps.report?.(reason, { kind: error.kind, status: error.status });
-    }
+    if (error instanceof GoogleWalletError && error.configuration) configurationRefused(rt.deps, error);
     console.error('[wallet.google] distribution impossible', error instanceof Error ? error.message : error);
     return backTo(ctx);
   } finally {
@@ -421,24 +439,13 @@ export const googleProvider: WalletProvider = {
   },
   async maintain() {
     const rt = runtime();
-    if (!rt) return { skipped: googleWalletConfig().ok ? 'inconnu' : 'non configuré' };
-    const outcome: Record<string, unknown> = {};
-    try {
-      const queue = await ensureQueueClass(rt.deps);
-      outcome.queueClass = queue.created ? 'créée' : 'à jour';
-      // Première création : le bouton peut apparaître sans attendre la fin
-      // du cache d'état (5 min).
-      if (queue.created) refreshStatuses();
-    } catch (error) {
-      outcome.queueClass = { error: error instanceof Error ? error.message : 'erreur' };
-      if (error instanceof GoogleWalletError && error.configuration) {
-        const reason = configurationReason(error);
-        degrade(reason);
-        report(reason, { kind: error.kind, status: error.status });
-        return outcome;
-      }
-    }
-    outcome.classes = await syncDirtyClasses(rt.deps, { limit: 5, budgetMs: 6_000 });
+    if (!rt) return { skipped: 'non configuré' };
+    // Un seul budget, un seul signal pour tout l'entretien : un Google
+    // lent ne retarde jamais le vidage (Apple compris) de plus de 6 s.
+    const outcome = await runGoogleMaintenance(rt.deps, { budgetMs: MAINTENANCE_BUDGET_MS });
+    // Première création : le bouton peut apparaître sans attendre la fin
+    // du cache d'état (5 min).
+    if (outcome.queueClass === 'créée') refreshStatuses();
     return outcome;
   },
 };

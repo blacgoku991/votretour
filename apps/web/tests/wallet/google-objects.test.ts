@@ -360,23 +360,45 @@ describe('Classes', () => {
 describe('Effacement', () => {
   it('file finie : titre « Ticket clos », tout vidé, état final gardé', () => {
     const snap = queue({ entry: { status: 'expired' } });
-    const scrub = renderScrubPatch(snap, buildWalletView(snap, NOW, { siteUrl: SITE }));
+    const scrub = renderScrubPatch(snap, buildWalletView(snap, NOW, { siteUrl: SITE }), { siteUrl: `${SITE}/` });
     expect(scrub.type).toBe('genericObject');
+    const privacy = 'Ce pass ne contient ni votre prénom ni vos coordonnées. Ses informations de mise à jour sont effacées au plus tard 24 h après votre passage.';
     expect(scrub.patch).toEqual({
       state: 'EXPIRED',
       header: { defaultValue: { language: 'fr', value: 'Ticket clos' } },
       heroImage: null,
-      textModulesData: [],
-      linksModuleData: { uris: [] },
-      messages: [],
+      textModulesData: [{ id: 'donnees', header: 'Vos données', body: privacy }],
+      linksModuleData: { uris: [{ id: 'rangvia', uri: `${SITE}/`, description: 'Rangvia' }] },
+      messages: [{ id: 'efface', header: 'Ticket clos', body: privacy, messageType: 'TEXT' }],
     });
+  });
+
+  it('aucun tableau vide : un PATCH pourrait l’ignorer et laisser le lien d’avis au dos', () => {
+    const snap = queue({ entry: { status: 'completed', completedAt: '2026-09-24T12:20:00Z' } });
+    const view = buildWalletView(snap, NOW, { siteUrl: SITE });
+    // Le dos du « Merci » porte le lien d'avis, avec l'identifiant public du ticket.
+    expect(JSON.stringify(renderGoogleObject(snap, view, { siteUrl: SITE, rotatingBarcode: false, now: NOW }).patch)).toContain(snap.entry.publicId);
+    for (const s of [snap, drop({ access: ACCESS })]) {
+      const scrub = renderScrubPatch(s, buildWalletView(s, NOW, { siteUrl: SITE }), { siteUrl: SITE });
+      const arrays: unknown[][] = [];
+      JSON.stringify(scrub.patch, (_key, value: unknown) => {
+        if (Array.isArray(value)) arrays.push(value);
+        return value;
+      });
+      expect(arrays.length).toBeGreaterThanOrEqual(3);
+      expect(arrays.every((a) => a.length > 0)).toBe(true);
+      expect(JSON.stringify(scrub.patch)).not.toContain(s.entry.publicId);
+      expect(JSON.stringify(scrub.patch)).not.toContain('TEXT_AND_NOTIFY');
+    }
   });
 
   it('billet : QR, numéro et fenêtre vidés ; pass encore actif → INACTIVE', () => {
     const snap = drop({ access: ACCESS });
-    const scrub = renderScrubPatch(snap, { googleState: 'ACTIVE' });
+    const scrub = renderScrubPatch(snap, { googleState: 'ACTIVE' }, { siteUrl: SITE });
     expect(scrub.patch).toMatchObject({
-      state: 'INACTIVE', ticketNumber: null, barcode: null, rotatingBarcode: null, validTimeInterval: null, messages: [],
+      state: 'INACTIVE', ticketNumber: null, barcode: null, rotatingBarcode: null, validTimeInterval: null,
+      ticketType: { defaultValue: { language: 'fr', value: 'Ticket clos' } },
+      messages: [{ id: 'efface', messageType: 'TEXT' }],
     });
     expect(JSON.stringify(scrub.patch)).not.toContain('A-042');
   });
@@ -414,6 +436,9 @@ describe('Messages', () => {
     expect(kept.every((m) => m.messageType === 'TEXT')).toBe(true);
     expect(prunedMessages(seven.slice(0, 6))).toBeNull();
     expect(prunedMessages(undefined)).toBeNull();
+    // Avant un ajout : 6 au dos + 1 à venir → 5 gardés ; 5 + 1 → rien à élaguer.
+    expect(prunedMessages(seven.slice(0, 6), 1)!.map((m) => m.id)).toEqual(['m3', 'm7', 'm2', 'm6', 'm4']);
+    expect(prunedMessages(seven.slice(0, 5), 1)).toBeNull();
   });
 });
 

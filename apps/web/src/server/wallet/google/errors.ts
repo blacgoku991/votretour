@@ -109,6 +109,11 @@ export function parseRetryAfter(value: string | null, now = Date.now()): number 
  * Le quota de DÉBIT de Google Cloud (« Quota exceeded for quota metric
  * 'Requests' … per minute ») est exclu : repasser en TEXT ne le
  * contournerait pas, et le client perdrait sa sonnerie pour rien.
+ *
+ * Reconnaissance volontairement large tant que la recette n'a pas donné
+ * le motif exact : chaque bascule en TEXT est journalisée avec le code,
+ * le motif et le message de Google (sync.ts, sendAlert), de quoi resserrer
+ * ce filtre sur le vrai motif et mesurer la fréquence des bascules.
  */
 export function isNotificationQuotaError(error: unknown): boolean {
   if (!(error instanceof GoogleWalletError)) return false;

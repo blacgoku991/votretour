@@ -5,8 +5,9 @@ import { parseGoogleWalletConfig, type GoogleWalletConfig } from '../../src/serv
 import { GoogleWalletError } from '../../src/server/wallet/google/errors';
 import { queueClassBody, renderGoogleObject, renderHash } from '../../src/server/wallet/google/objects';
 import {
-  FINAL_RETRY_WINDOW_MS, MAX_ATTEMPTS, STALE_POSITION_MS, backoffSeconds, ensureEventClass, ensureQueueClass,
-  failureResult, insertObjectAndGoLive, processGoogleJob, resetEventClassCache, syncDirtyClasses,
+  FINAL_RETRY_WINDOW_MS, MAINTENANCE_BUDGET_MS, MAX_ATTEMPTS, REVIEW_RECHECK_MS, STALE_POSITION_MS, backoffSeconds,
+  ensureEventClass, ensureQueueClass, eventClassAtClick, failureResult, insertObjectAndGoLive, processGoogleJob,
+  refreshReviewedClasses, resetGoogleSyncState, runGoogleMaintenance, syncDirtyClasses,
   type GoogleApi, type GoogleClassRow, type GoogleDueClass, type GoogleStore, type GoogleSyncDeps,
 } from '../../src/server/wallet/google/sync';
 import { DISTRIBUTE_TIMEOUT_MS, distributeGoogle } from '../../src/server/wallet/google/provider';
@@ -73,13 +74,17 @@ function classRow(overrides: Partial<GoogleClassRow> = {}): GoogleClassRow {
   };
 }
 
-function fakeStore(rows: GoogleClassRow[] = [], due: GoogleDueClass[] = []) {
+function fakeStore(rows: GoogleClassRow[] = [], due: GoogleDueClass[] = [], options: { markLive?: (passId: string, hash: string) => boolean } = {}) {
   const table = new Map(rows.map((r) => [r.classId, { ...r }]));
   const log = { synced: [] as { classId: string; result: Parameters<GoogleStore['classSynced']>[1] }[], live: [] as { passId: string; hash: string }[], upserts: [] as string[] };
   const store: GoogleStore = {
     classById: async (id) => table.get(id) ?? null,
     classByEvent: async (eventId) => [...table.values()].find((r) => r.eventId === eventId) ?? null,
     classesDue: async () => due,
+    classesUnderReview: async (before, limit) => [...table.values()]
+      .filter((r) => r.kind === 'event' && r.reviewStatus === 'UNDER_REVIEW' && !r.dirty && !r.lastError && r.syncedAt && Date.parse(r.syncedAt) < before.getTime())
+      .slice(0, limit)
+      .map((r) => ({ ...r })),
     upsertClass: async (classId, kind, eventId) => {
       log.upserts.push(classId);
       const row = table.get(classId) ?? classRow({ classId, kind, eventId });
@@ -89,7 +94,8 @@ function fakeStore(rows: GoogleClassRow[] = [], due: GoogleDueClass[] = []) {
     classSynced: async (classId, result) => {
       log.synced.push({ classId, result });
       const row = table.get(classId);
-      if (row && !result.error) Object.assign(row, { syncedHash: result.hash, reviewStatus: result.reviewStatus, dirty: false, syncedAt: NOW.toISOString(), lastError: null });
+      // Mêmes règles que wallet_google_class_synced : null garde la valeur.
+      if (row && !result.error) Object.assign(row, { syncedHash: result.hash ?? row.syncedHash, reviewStatus: result.reviewStatus ?? row.reviewStatus, dirty: false, syncedAt: NOW.toISOString(), lastError: null });
       else if (row) row.lastError = result.error;
     },
     eventBrand: async (eventId) => (eventId === EVENT_ID ? {
@@ -98,7 +104,7 @@ function fakeStore(rows: GoogleClassRow[] = [], due: GoogleDueClass[] = []) {
       location: { name: 'Sneaker Lab', addressLine1: '12 rue X', addressLine2: null, postalCode: '75011', city: 'Paris', countryCode: 'FR', timezone: 'Europe/Paris', logoUrl: null },
       organization: { name: 'Sneaker Lab', logoUrl: null, brandAccent: 'signal' },
     } : null),
-    markLive: async (passId, hash) => { log.live.push({ passId, hash }); return true; },
+    markLive: async (passId, hash) => { log.live.push({ passId, hash }); return options.markLive?.(passId, hash) ?? true; },
   };
   return { store, log, table };
 }
@@ -137,7 +143,7 @@ async function run(snap: WalletSnapshot, api: GoogleApi, j: ClaimedJob = job(), 
   return { result, ...h };
 }
 
-beforeEach(() => resetEventClassCache());
+beforeEach(() => resetGoogleSyncState());
 
 describe('process() : PATCH seulement si le rendu change', () => {
   it('premier envoi : PATCH du bloc complet, empreinte rendue au vidage', async () => {
@@ -228,14 +234,36 @@ describe('process() : moments clés et sonneries', () => {
         return { status: 'added', resource: null };
       },
     });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const { result } = await run(queueSnap({ entry: { peopleAhead: 1 } }), api);
     expect(only('addMessage').map((c) => (c.args[2] as GoogleMessage).messageType)).toEqual(['TEXT_AND_NOTIFY', 'TEXT']);
     expect(result).toMatchObject({ ok: true, alertKind: 'ahead_one', alertNotified: false });
+    // Chaque bascule est journalisée avec le motif exact (à confirmer en recette).
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]![0])).toMatch(/quota de notifications/);
+    expect(String(warn.mock.calls[0]![1])).toContain('QuotaExceededException');
+    warn.mockRestore();
   });
 
   it('409 sur addMessage (envoi rejoué) : succès', async () => {
     const { api } = fakeApi({ addMessage: async () => ({ status: 'duplicate', resource: null }) });
     expect((await run(queueSnap({ entry: { peopleAhead: 1 } }), api)).result).toMatchObject({ ok: true, alertKind: 'ahead_one', alertNotified: true });
+  });
+
+  it('ligne de remplacement (attempts = 1) après un addMessage perdu : message déjà là → aucun second envoi', async () => {
+    // fail_wallet_outbox clôt la ligne dont la réponse s'est perdue dès
+    // qu'une autre attend pour ce pass : la suivante repart à attempts = 1.
+    const { api, only } = fakeApi({ getObject: async () => ({ messages: [{ id: 'your_turn', messageType: 'TEXT_AND_NOTIFY' }] }) });
+    const { result } = await run(queueSnap({ entry: { status: 'next', peopleAhead: 0 } }), api, job({ id: 365, attempts: 1 }));
+    expect(only('getObject')).toHaveLength(1);
+    expect(only('addMessage')).toHaveLength(0);
+    expect(result).toMatchObject({ ok: true, alertKind: 'your_turn', alertNotified: true });
+  });
+
+  it('objet relu avant CHAQUE message, même au premier essai', async () => {
+    const { api, calls } = fakeApi();
+    await run(queueSnap({ entry: { status: 'next', peopleAhead: 0 } }), api, job({ attempts: 1 }));
+    expect(calls.map((c) => c.method)).toEqual(['patchObject', 'getObject', 'addMessage']);
   });
 
   it('nouvel essai : message déjà présent sur l’objet → ne sonne pas deux fois', async () => {
@@ -245,12 +273,21 @@ describe('process() : moments clés et sonneries', () => {
     expect(result).toMatchObject({ ok: true, alertKind: 'ahead_one', alertNotified: true });
   });
 
-  it('plus de 6 messages au dos : les 5 plus récents sont gardés', async () => {
-    const seven = Array.from({ length: 7 }, (_, i) => ({ id: `m${i}`, messageType: 'TEXT', displayInterval: { start: { date: `2026-09-24T0${i}:00:00Z` } } }));
-    const { api, only } = fakeApi({ addMessage: async () => ({ status: 'added', resource: { messages: seven } }) });
+  it('6 messages au dos : élagage AVANT l’ajout (5 plus récents, en TEXT), 6 au plus ensuite', async () => {
+    const six = Array.from({ length: 6 }, (_, i) => ({ id: `m${i}`, messageType: 'TEXT_AND_NOTIFY', displayInterval: { start: { date: `2026-09-24T0${i}:00:00Z` } } }));
+    const { api, calls } = fakeApi({ getObject: async () => ({ messages: six }) });
     await run(queueSnap({ entry: { peopleAhead: 1 } }), api);
-    const prune = only('patchObject').at(-1)!;
-    expect((prune.args[2] as { messages: { id: string }[] }).messages.map((m) => m.id)).toEqual(['m2', 'm3', 'm4', 'm5', 'm6']);
+    expect(calls.map((c) => c.method)).toEqual(['patchObject', 'getObject', 'patchObject', 'addMessage']);
+    const prune = calls[2]!.args[2] as { messages: { id: string; messageType: string }[] };
+    expect(prune.messages.map((m) => m.id)).toEqual(['m1', 'm2', 'm3', 'm4', 'm5']);
+    expect(prune.messages.every((m) => m.messageType === 'TEXT')).toBe(true);
+  });
+
+  it('5 messages au dos : rien à élaguer', async () => {
+    const five = Array.from({ length: 5 }, (_, i) => ({ id: `m${i}`, messageType: 'TEXT' }));
+    const { api, calls } = fakeApi({ getObject: async () => ({ messages: five }) });
+    await run(queueSnap({ entry: { peopleAhead: 1 } }), api);
+    expect(calls.map((c) => c.method)).toEqual(['patchObject', 'getObject', 'addMessage']);
   });
 
   it('« Merci » : état final et archivage programmé à +2 h', async () => {
@@ -272,7 +309,8 @@ describe('process() : effacement', () => {
     const snap = queueSnap({ entry: { status: 'expired' }, pass: { state: 'final' } });
     const { result } = await run(snap, api, job({ job: 'scrub' }));
     const body = only('patchObject')[0]!.args[2] as GoogleResource;
-    expect(body).toMatchObject({ state: 'EXPIRED', textModulesData: [], messages: [], heroImage: null });
+    expect(body).toMatchObject({ state: 'EXPIRED', textModulesData: [{ id: 'donnees' }], messages: [{ id: 'efface', messageType: 'TEXT' }], heroImage: null });
+    expect(body.linksModuleData).toEqual({ uris: [{ id: 'rangvia', uri: 'https://rangvia.test/', description: 'Rangvia' }] });
     expect(result).toEqual({ ok: true, syncedHash: renderHash(body) });
   });
 
@@ -382,6 +420,39 @@ describe('Billets de drop : classe de l’événement', () => {
     expect(calls[0]!.args[2]).toMatchObject({ reviewStatus: 'UNDER_REVIEW' });
   });
 
+  it('vague de 8 billets, classe salie : UN seul PATCH de classe, partagé', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const { api, only } = fakeApi({ patchClass: async () => { await gate; return { reviewStatus: 'APPROVED' }; } });
+    const { store } = fakeStore([classRow({ classId: EVENT_CLASS, kind: 'event', eventId: EVENT_ID, dirty: true, syncedAt: '2026-09-24T11:00:00Z', syncedHash: 'ancien', reviewStatus: 'APPROVED' })]);
+    const h = deps(api, store);
+    const runs = Array.from({ length: 8 }, (_, i) => {
+      const snap = dropSnap({ pass: { id: `pass-${i}`, externalId: `3388000000012345678.rangvia_e_${String(i).repeat(32)}` } });
+      return processGoogleJob(h.deps, job({ id: i }), snap, NOW, buildWalletView(snap, NOW, { siteUrl: SITE }), new AbortController().signal);
+    });
+    release();
+    const results = await Promise.all(runs);
+    expect(only('patchClass')).toHaveLength(1);
+    expect(only('patchObject')).toHaveLength(8);
+    expect(results.every((r) => r.ok)).toBe(true);
+    // Puis en cache : le billet suivant ne relit même plus la classe.
+    const next = dropSnap();
+    await processGoogleJob(h.deps, job(), next, NOW, buildWalletView(next, NOW, { siteUrl: SITE }), new AbortController().signal);
+    expect(only('patchClass')).toHaveLength(1);
+  });
+
+  it('classe refusée : UNE alerte pour toute la vague, pas une par billet', async () => {
+    const { api } = fakeApi();
+    const { store } = fakeStore([classRow({ classId: EVENT_CLASS, kind: 'event', eventId: EVENT_ID, dirty: false, syncedAt: NOW.toISOString(), reviewStatus: 'REJECTED' })]);
+    const h = deps(api, store);
+    for (let i = 0; i < 5; i += 1) {
+      const snap = dropSnap();
+      const result = await processGoogleJob(h.deps, job({ id: i }), snap, NOW, buildWalletView(snap, NOW, { siteUrl: SITE }), new AbortController().signal);
+      expect(result).toMatchObject({ ok: false, dead: true });
+    }
+    expect(h.reports).toHaveLength(1);
+  });
+
   it('classe d’un autre émetteur : indisponible (configuration changée)', async () => {
     const { store } = fakeStore([classRow({ classId: '999.autre_evt_x', kind: 'event', eventId: EVENT_ID })]);
     expect(await ensureEventClass(deps(fakeApi().api, store).deps, EVENT_ID)).toBe('unavailable');
@@ -447,6 +518,112 @@ describe('Classe de file et entretien', () => {
   });
 });
 
+describe('Entretien : budget, alertes, classes en revue', () => {
+  const due = (n: number): GoogleDueClass[] => Array.from({ length: n }, () => ({
+    classId: null, kind: 'event' as const, eventId: EVENT_ID, reviewStatus: null, syncedHash: null, dirty: true, dirtyAt: null, syncedAt: null, lastError: null,
+  }));
+
+  it('Google lent : UN signal relayé à chaque appel, arrêt au budget (6 s + un appel au plus)', async () => {
+    let clock = NOW.getTime();
+    const start = clock;
+    const controller = new AbortController();
+    const signals: unknown[] = [];
+    // Chaque appel dure 4 s ; au-delà de 6 s, le signal tombe (comme
+    // AbortSignal.timeout) et le client répond « annulé ».
+    const slow = <T>(value: T) => async (...args: unknown[]) => {
+      signals.push(args.at(-1));
+      clock += 4000;
+      if (clock - start > MAINTENANCE_BUDGET_MS) {
+        controller.abort();
+        throw new GoogleWalletError('aborted', 'Requête Google annulée');
+      }
+      return value;
+    };
+    const { api, calls } = fakeApi({
+      insertClass: slow({ status: 'created', resource: { reviewStatus: 'UNDER_REVIEW' } }),
+      patchClass: slow({ reviewStatus: 'UNDER_REVIEW' }),
+      getClass: slow({ reviewStatus: 'APPROVED' }),
+    });
+    const { store, log } = fakeStore([], due(3));
+    const h = deps(api, store, { now: () => new Date(clock) });
+    const outcome = await runGoogleMaintenance(h.deps, { budgetMs: MAINTENANCE_BUDGET_MS, signal: controller.signal });
+    expect(clock - start).toBeLessThanOrEqual(MAINTENANCE_BUDGET_MS + 8000);
+    expect(calls).toHaveLength(2);
+    expect(signals).toHaveLength(2);
+    for (const signal of signals) expect(signal).toBe(controller.signal);
+    expect(outcome).toMatchObject({ queueClass: 'créée', classes: { synced: 0, failed: 1, halted: false } });
+    // Annulée par NOTRE budget : aucune erreur inscrite (la classe serait écartée 10 min).
+    expect(log.synced.filter((x) => x.result.error)).toHaveLength(0);
+  });
+
+  it('sans signal fourni : borné quand même (AbortSignal.timeout), jamais undefined', async () => {
+    const { api, calls } = fakeApi();
+    await syncDirtyClasses(deps(api, fakeStore([], due(1)).store).deps, { budgetMs: 6000 });
+    await ensureQueueClass(deps(api, fakeStore().store).deps);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls[0]!.args.at(-1)).toBeInstanceOf(AbortSignal);
+  });
+
+  it('403 persistant pendant l’entretien : boutons masqués à chaque minute, UNE alerte par heure', async () => {
+    const { api } = fakeApi({ insertClass: async () => { throw new GoogleWalletError('forbidden', '403', 403); } });
+    const h = deps(api, fakeStore().store);
+    await runGoogleMaintenance(h.deps);
+    await runGoogleMaintenance(h.deps);
+    expect(h.degraded).toHaveLength(2);
+    expect(h.reports).toHaveLength(1);
+  });
+
+  it('refus décidé plus tard par Google : relu, inscrit (marque en attente préservée), alerte, billets bloqués', async () => {
+    const old = new Date(NOW.getTime() - REVIEW_RECHECK_MS - 60_000).toISOString();
+    const { api, only } = fakeApi({ getClass: async () => ({ reviewStatus: 'rejected' }) });
+    const { store, log, table } = fakeStore([classRow({ classId: EVENT_CLASS, kind: 'event', eventId: EVENT_ID, dirty: false, syncedAt: old, syncedHash: 'h-classe', reviewStatus: 'UNDER_REVIEW' })]);
+    const h = deps(api, store);
+    expect(await ensureEventClass(h.deps, EVENT_ID)).toBe('ok');
+    expect(await refreshReviewedClasses(h.deps)).toEqual({ checked: 1, changed: 1, failed: 0 });
+    expect(only('getClass')[0]!.args.slice(0, 2)).toEqual(['eventTicketClass', EVENT_CLASS]);
+    expect(log.synced.at(-1)).toEqual({ classId: EVENT_CLASS, result: { hash: null, reviewStatus: 'REJECTED', error: null, dirtyAt: '2026-09-24T12:00:00.000Z' } });
+    expect(table.get(EVENT_CLASS)!.syncedHash).toBe('h-classe');
+    expect(h.reports).toHaveLength(1);
+    // Le cache « prête » est oublié : le billet suivant voit le refus.
+    expect(await ensureEventClass(h.deps, EVENT_ID)).toBe('rejected');
+  });
+
+  it('approuvée : inscrite sans alerte ; relue il y a moins de 10 min ou salie : pas de relecture', async () => {
+    const old = new Date(NOW.getTime() - REVIEW_RECHECK_MS - 60_000).toISOString();
+    const recent = new Date(NOW.getTime() - 60_000).toISOString();
+    const { api, only } = fakeApi({ getClass: async () => ({ reviewStatus: 'APPROVED' }) });
+    const { store, table } = fakeStore([
+      classRow({ classId: EVENT_CLASS, kind: 'event', eventId: EVENT_ID, dirty: false, syncedAt: old, reviewStatus: 'UNDER_REVIEW' }),
+      classRow({ classId: `${EVENT_CLASS}2`, kind: 'event', eventId: 'e2', dirty: false, syncedAt: recent, reviewStatus: 'UNDER_REVIEW' }),
+      classRow({ classId: `${EVENT_CLASS}3`, kind: 'event', eventId: 'e3', dirty: true, syncedAt: old, reviewStatus: 'UNDER_REVIEW' }),
+    ]);
+    const h = deps(api, store);
+    expect(await refreshReviewedClasses(h.deps)).toEqual({ checked: 1, changed: 1, failed: 0 });
+    expect(only('getClass')).toHaveLength(1);
+    expect(table.get(EVENT_CLASS)!.reviewStatus).toBe('APPROVED');
+    expect(h.reports).toHaveLength(0);
+  });
+
+  it('classe supprimée côté console : erreur inscrite, recréée par un entretien suivant', async () => {
+    const old = new Date(NOW.getTime() - REVIEW_RECHECK_MS - 60_000).toISOString();
+    const { api } = fakeApi({ getClass: async () => null });
+    const { store, log } = fakeStore([classRow({ classId: EVENT_CLASS, kind: 'event', eventId: EVENT_ID, dirty: false, syncedAt: old, reviewStatus: 'UNDER_REVIEW' })]);
+    await refreshReviewedClasses(deps(api, store).deps);
+    expect(log.synced.at(-1)!.result.error).toMatch(/introuvable/);
+  });
+
+  it('entretien complet : classe de file, classes dues, puis relecture des classes en revue', async () => {
+    const old = new Date(NOW.getTime() - REVIEW_RECHECK_MS - 60_000).toISOString();
+    const { api, calls } = fakeApi();
+    const { store } = fakeStore([classRow({ classId: `${EVENT_CLASS}9`, kind: 'event', eventId: 'e9', dirty: false, syncedAt: old, reviewStatus: 'UNDER_REVIEW' })], due(1));
+    const outcome = await runGoogleMaintenance(deps(api, store).deps);
+    expect(calls.map((c) => [c.method, c.args[0]])).toEqual([
+      ['insertClass', 'genericClass'], ['insertClass', 'eventTicketClass'], ['getClass', 'eventTicketClass'],
+    ]);
+    expect(outcome).toMatchObject({ queueClass: 'créée', classes: { synced: 1 }, review: { checked: 1 } });
+  });
+});
+
 describe('Insertion au clic', () => {
   it('objet créé puis déclaré tenu à jour avec son empreinte', async () => {
     const { api, calls } = fakeApi();
@@ -468,6 +645,51 @@ describe('Insertion au clic', () => {
     await insertObjectAndGoLive(deps(api, store).deps, snap, buildWalletView(snap, NOW, { siteUrl: SITE }));
     expect(calls.map((c) => c.method)).toEqual(['insertObject', 'patchObject']);
     expect(log.live).toHaveLength(1);
+  });
+
+  it('changement PENDANT l’insertion (client appelé) : relu après « tenu à jour », PATCH et nouvelle empreinte', async () => {
+    const { api, calls } = fakeApi();
+    const { store, log } = fakeStore();
+    const snap = queueSnap({ entry: { peopleAhead: 1 }, pass: { live: false } });
+    const fresh = queueSnap({ entry: { status: 'next', peopleAhead: 0 } });
+    const out = await insertObjectAndGoLive(deps(api, store).deps, snap, buildWalletView(snap, NOW, { siteUrl: SITE }), undefined, async () => fresh);
+    const stale = renderGoogleObject(snap, buildWalletView(snap, NOW, { siteUrl: SITE }), { siteUrl: SITE, rotatingBarcode: false, now: NOW });
+    const current = renderGoogleObject(fresh, buildWalletView(fresh, NOW, { siteUrl: SITE }), { siteUrl: SITE, rotatingBarcode: false, now: NOW });
+    expect(stale.hash).not.toBe(current.hash);
+    expect(calls.map((c) => c.method)).toEqual(['insertObject', 'patchObject']);
+    expect(calls[1]!.args[2]).toEqual(current.patch);
+    expect(log.live.map((l) => l.hash)).toEqual([stale.hash, current.hash]);
+    expect(out.hash).toBe(current.hash);
+  });
+
+  it('rien n’a changé pendant l’insertion : aucune requête de plus', async () => {
+    const { api, calls } = fakeApi();
+    const { store, log } = fakeStore();
+    const snap = queueSnap({ pass: { live: false } });
+    await insertObjectAndGoLive(deps(api, store).deps, snap, buildWalletView(snap, NOW, { siteUrl: SITE }), undefined, async () => queueSnap());
+    expect(calls.map((c) => c.method)).toEqual(['insertObject']);
+    expect(log.live).toHaveLength(1);
+  });
+
+  it('pass révoqué entre l’émission et l’insertion : objet vidé au mieux, échec (aucun lien)', async () => {
+    const { api, calls } = fakeApi();
+    const { store } = fakeStore([], [], { markLive: () => false });
+    const snap = queueSnap({ pass: { live: false } });
+    await expect(insertObjectAndGoLive(deps(api, store).deps, snap, buildWalletView(snap, NOW, { siteUrl: SITE }))).rejects.toThrow(/révoqué/);
+    expect(calls.map((c) => c.method)).toEqual(['insertObject', 'patchObject']);
+    expect(calls[1]!.args[2]).toMatchObject({ state: 'INACTIVE', messages: [{ id: 'efface' }] });
+  });
+
+  it('même empreinte à la distribution (config.siteUrl) et au vidage (env.siteUrl avec barre finale) : aucun PATCH', async () => {
+    const { store, log } = fakeStore();
+    const snap = queueSnap({ entry: { peopleAhead: 3 }, pass: { live: false } });
+    await insertObjectAndGoLive(deps(fakeApi().api, store).deps, snap, buildWalletView(snap, NOW, { siteUrl: CONFIG.siteUrl }));
+    const synced = queueSnap({ entry: { peopleAhead: 3 }, pass: { syncedHash: log.live[0]!.hash } });
+    const later = new Date(NOW.getTime() + 60_000);
+    const { api, calls } = fakeApi();
+    const result = await processGoogleJob(deps(api, store).deps, job(), synced, later, buildWalletView(synced, later, { siteUrl: `${SITE}/` }), new AbortController().signal);
+    expect(calls).toHaveLength(0);
+    expect(result).toMatchObject({ ok: true, syncedHash: log.live[0]!.hash });
   });
 
   it('échec de Google : jamais déclaré tenu à jour', async () => {
@@ -530,6 +752,29 @@ describe('Distribution (clic sur « Ajouter à Google Wallet »)', () => {
     expect(log.live).toHaveLength(1);
   });
 
+  it('le ticket change pendant l’insertion : l’instantané est relu, Google reçoit l’état courant', async () => {
+    const first = queueSnap({ entry: { peopleAhead: 1 }, pass: { live: false } });
+    const fresh = queueSnap({ entry: { status: 'next', peopleAhead: 0 } });
+    const { api, only } = fakeApi();
+    const { store, log } = fakeStore();
+    const { context } = ctx(first);
+    let reads = 0;
+    context.snapshot = async () => (++reads === 1 ? first : fresh);
+    const response = await distributeGoogle(context, runtime(api, store).rt, { isTester: async () => true });
+    expect(response.status).toBe(302);
+    expect(reads).toBe(2);
+    expect(only('patchObject')).toHaveLength(1);
+    expect(log.live).toHaveLength(2);
+  });
+
+  it('pass révoqué pendant l’insertion : retour avec ?wallet=indisponible, aucun lien', async () => {
+    const snap = queueSnap({ pass: { live: false } });
+    const { store } = fakeStore([], [], { markLive: () => false });
+    const response = await distributeGoogle(ctx(snap).context, runtime(fakeApi().api, store).rt, { isTester: async () => true });
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe(back);
+  });
+
   it('pass déjà tenu à jour : pas de nouvelle insertion, juste le lien', async () => {
     const snap = queueSnap();
     const { api, calls } = fakeApi();
@@ -589,12 +834,29 @@ describe('Distribution (clic sur « Ajouter à Google Wallet »)', () => {
     expect(only('insertObject')).toHaveLength(0);
   });
 
-  it('billet de drop : classe créée si besoin, puis eventTicketObjects dans le JWT', async () => {
+  it('billet de drop, classe en place : eventTicketObjects dans le JWT, aucun appel de classe au clic', async () => {
     const snap = eventSnapshot({ pass: { provider: 'google', externalId: '3388000000012345678.rangvia_e_' + 'b'.repeat(32), classRef: EVENT_CLASS, live: false } });
     const { api, calls } = fakeApi();
-    const response = await distributeGoogle(ctx(snap).context, runtime(api, fakeStore().store).rt, { isTester: async () => true });
-    expect(calls.map((c) => c.method)).toEqual(['insertClass', 'insertObject']);
+    // Salie (marque modifiée) : le vidage s'en charge, pas le clic.
+    const { store } = fakeStore([classRow({ classId: EVENT_CLASS, kind: 'event', eventId: EVENT_ID, dirty: true, syncedAt: NOW.toISOString(), reviewStatus: 'UNDER_REVIEW' })]);
+    const response = await distributeGoogle(ctx(snap).context, runtime(api, store).rt, { isTester: async () => true });
+    expect(calls.map((c) => c.method)).toEqual(['insertObject']);
     const jwt = response.headers.get('location')!.split('/save/')[1]!;
     expect(decodeJwt(jwt).payload).toEqual({ eventTicketObjects: [{ id: snap.pass.externalId }] });
+  });
+
+  it('billet de drop dont la classe n’existe pas encore chez Google : refus (§ 8.1), rien de créé au clic', async () => {
+    const snap = eventSnapshot({ pass: { provider: 'google', externalId: '3388000000012345678.rangvia_e_' + 'b'.repeat(32), classRef: EVENT_CLASS, live: false } });
+    for (const rows of [[], [classRow({ classId: EVENT_CLASS, kind: 'event', eventId: EVENT_ID, syncedAt: null })]]) {
+      const { api, calls } = fakeApi();
+      const { store, log } = fakeStore(rows);
+      const response = await distributeGoogle(ctx(snap).context, runtime(api, store).rt, { isTester: async () => true });
+      expect(response.status).toBe(303);
+      expect(response.headers.get('location')).toBe(back);
+      expect(calls).toHaveLength(0);
+      expect(log.upserts).toHaveLength(0);
+    }
+    const { store } = fakeStore([classRow({ classId: '999.autre_evt_x', kind: 'event', eventId: EVENT_ID, syncedAt: NOW.toISOString() })]);
+    expect(await eventClassAtClick({ config: CONFIG, store }, EVENT_ID)).toBe('unavailable');
   });
 });

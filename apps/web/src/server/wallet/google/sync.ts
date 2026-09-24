@@ -1,12 +1,12 @@
 import { decideAlertFor } from '../alerts';
-import { passLifecycle } from '../view';
+import { buildWalletView, passLifecycle } from '../view';
 import type { ClaimedJob, JobResult, WalletSnapshot, WalletView } from '../types';
 import type { GoogleResource, GoogleWalletClient } from './client';
 import { eventClassId, type GoogleWalletConfig } from './config';
 import { GoogleWalletError, isNotificationQuotaError } from './errors';
 import {
   buildAlertMessage, classTypeFor, eventClassBody, objectTypeFor, prunedMessages, queueClassBody,
-  renderGoogleObject, renderHash, renderScrubPatch, withoutNulls, type EventClassInput,
+  renderGoogleObject, renderHash, renderScrubPatch, withoutNulls, type EventClassInput, type RenderedObject,
 } from './objects';
 
 /**
@@ -19,9 +19,10 @@ import {
  *  2. rendu → empreinte ; PATCH seulement si elle diffère du dernier rendu
  *     livré (dix changements de position au-delà de 20 : zéro appel) ;
  *  3. moment clé : decideAlertFor() (règles communes, budget de 3
- *     sonneries par 24 h) → addMessage TEXT_AND_NOTIFY ou TEXT, texte de
- *     walletAlertText() ; quota de notifications dépassé → renvoyé en
- *     TEXT ; au-delà de 6 messages, les 5 plus récents sont gardés ;
+ *     sonneries par 24 h) → lecture de l'objet (message déjà là : on ne
+ *     renvoie rien), élagage (au plus 6 messages après l'ajout), puis
+ *     addMessage TEXT_AND_NOTIFY ou TEXT, texte de walletAlertText() ;
+ *     quota de notifications dépassé → renvoyé en TEXT ;
  *  4. cycle de vie : état final, réouverture, archivage différé du
  *     « Merci » (nextRunAfter) ;
  *  5. effacement (job `scrub`) : PATCH qui vide le pass.
@@ -55,10 +56,17 @@ export interface GoogleStore {
   classById(classId: string): Promise<GoogleClassRow | null>;
   classByEvent(eventId: string): Promise<GoogleClassRow | null>;
   classesDue(limit: number): Promise<GoogleDueClass[]>;
+  /**
+   * Classes d'événement propres, en revue chez Google, dont la dernière
+   * synchronisation (ou relecture) date d'avant `before` : Google décide
+   * de l'approbation plus tard, sans nous prévenir.
+   */
+  classesUnderReview(before: Date, limit: number): Promise<GoogleClassRow[]>;
   upsertClass(classId: string, kind: 'queue' | 'event', eventId: string | null): Promise<GoogleClassRow>;
   classSynced(classId: string, result: { hash: string | null; reviewStatus: string | null; error: string | null; dirtyAt: string | null }): Promise<void>;
   /** Marque de l'événement (classe) ; null si l'événement n'existe plus. */
   eventBrand(eventId: string): Promise<EventClassInput | null>;
+  /** false : pass révoqué, effacé ou disparu entre l'émission et l'insertion. */
   markLive(passId: string, hash: string): Promise<boolean>;
 }
 
@@ -112,6 +120,45 @@ export function configurationReason(error: GoogleWalletError): string {
   return `Compte de service refusé par Google (${error.status ?? 'jeton'}) : clé révoquée ou invalide.`;
 }
 
+/* ====================================================================
+   Alertes à l'exploitant, dédoublonnées
+   ==================================================================== */
+
+/** Une même alerte (même clé) au plus une fois par heure et par processus. */
+export const REPORT_WINDOW_MS = 60 * 60 * 1000;
+const reportedUntil = new Map<string, number>();
+
+/**
+ * reportError() dédoublonné : une classe refusée ferait sinon une alerte
+ * par billet (deux cents pour une vague), et un compte de service refusé
+ * une alerte par minute de cron. Le masquage des boutons (degrade), lui,
+ * est réappliqué à chaque fois : c'est un état, pas un message.
+ */
+export function reportOnce(
+  deps: Pick<GoogleSyncDeps, 'now' | 'report'>,
+  key: string,
+  message: string,
+  context?: Record<string, unknown>,
+): void {
+  if (!deps.report) return;
+  const now = deps.now().getTime();
+  const until = reportedUntil.get(key);
+  if (until !== undefined && until > now) return;
+  if (reportedUntil.size >= 500) {
+    for (const [k, t] of reportedUntil) if (t <= now) reportedUntil.delete(k);
+  }
+  reportedUntil.set(key, now + REPORT_WINDOW_MS);
+  deps.report(message, context);
+}
+
+/** Compte de service refusé : boutons masqués, alerte (une par heure). */
+export function configurationRefused(deps: Pick<GoogleSyncDeps, 'now' | 'report' | 'degrade'>, error: GoogleWalletError): string {
+  const reason = configurationReason(error);
+  deps.degrade?.(reason);
+  reportOnce(deps, `configuration:${error.kind}:${error.status ?? '-'}`, reason, { kind: error.kind, status: error.status });
+  return reason;
+}
+
 /**
  * Échec → JobResult. Classement du § 8.5 du plan :
  *  - 401 persistant / 403 : abandon, arrêt du tour, boutons masqués ;
@@ -134,13 +181,15 @@ export function failureResult(
     return { ok: false, error: message, retryAfterSeconds: backoffSeconds(job.attempts, deps.random), dead: job.attempts >= MAX_ATTEMPTS };
   }
   if (error.configuration) {
-    const reason = configurationReason(error);
-    deps.degrade?.(reason);
-    deps.report?.(reason, { kind: error.kind, status: error.status });
+    const reason = configurationRefused(deps, error);
     return { ok: false, error: `${reason} (${message})`, retryAfterSeconds: 300, dead: true, haltProvider: true };
   }
   if (!error.retryable) {
-    deps.report?.(`Google Wallet a refusé une mise à jour : ${message}`, { kind: error.kind, status: error.status, walletPassId: job.walletPassId });
+    // Un défaut de construction touche d'ordinaire TOUS les passes d'une
+    // vague : une alerte par motif et par heure, avec le premier pass.
+    reportOnce(deps, `refus:${error.kind}:${error.status ?? '-'}`, `Google Wallet a refusé une mise à jour : ${message}`, {
+      kind: error.kind, status: error.status, walletPassId: job.walletPassId,
+    });
     return { ok: false, error: message, retryAfterSeconds: 0, dead: true };
   }
 
@@ -171,11 +220,18 @@ export function isRejected(reviewStatus: string | null | undefined): boolean {
   return String(reviewStatus ?? '').toUpperCase() === 'REJECTED';
 }
 
+function isAbort(error: unknown, signal: AbortSignal | undefined): boolean {
+  return Boolean(signal?.aborted) || (error instanceof GoogleWalletError && error.kind === 'aborted');
+}
+
 /**
  * Pousse une classe chez Google si nécessaire. Jamais synchronisée :
  * insert d'abord (409 → PATCH) ; déjà synchronisée : PATCH d'abord (404 →
  * insert, classe supprimée côté console). Rien si l'empreinte est à jour
- * et la classe propre. Le résultat est inscrit en base, succès ou échec.
+ * et la classe propre. Le résultat est inscrit en base, succès ou échec,
+ * SAUF une annulation par notre propre budget : inscrite comme erreur,
+ * elle écarterait la classe pendant 10 min (wallet_google_classes_due)
+ * alors que Google n'y est pour rien.
  */
 async function syncClass(
   deps: GoogleSyncDeps,
@@ -205,13 +261,15 @@ async function syncClass(
     const reviewStatus = row.kind === 'event' ? (reviewStatusOf(resource) ?? 'UNDER_REVIEW') : null;
     await deps.store.classSynced(row.classId, { hash, reviewStatus, error: null, dirtyAt: row.dirtyAt });
     if (isRejected(reviewStatus)) {
-      deps.report?.(`Classe Google Wallet refusée par Google : ${row.classId}`, { classId: row.classId });
+      reportOnce(deps, `classe-refusee:${row.classId}`, `Classe Google Wallet refusée par Google : ${row.classId}`, { classId: row.classId });
     }
     return reviewStatus;
   } catch (error) {
-    await deps.store
-      .classSynced(row.classId, { hash: null, reviewStatus: null, error: messageOf(error).slice(0, 1000), dirtyAt: null })
-      .catch(() => undefined);
+    if (!isAbort(error, signal)) {
+      await deps.store
+        .classSynced(row.classId, { hash: null, reviewStatus: null, error: messageOf(error).slice(0, 1000), dirtyAt: null })
+        .catch(() => undefined);
+    }
     throw error;
   }
 }
@@ -234,22 +292,42 @@ export async function ensureQueueClass(deps: GoogleSyncDeps, signal?: AbortSigna
 /** Classes d'événement connues « prêtes » dans ce processus : évite une lecture par billet pendant une vague. */
 const EVENT_CLASS_TTL_MS = 60_000;
 const eventClassCache = new Map<string, number>();
+/**
+ * Vérifications en cours, par événement : une vague de huit billets dont
+ * la classe vient d'être salie ne lance qu'UN PATCH de classe, que les
+ * sept autres attendent. La promesse partagée garde le signal du premier
+ * appelant : s'il est annulé, les autres échouent avec lui et seront
+ * retentés, comme après toute panne passagère.
+ */
+const eventClassInFlight = new Map<string, Promise<EventClassState>>();
 
-export function resetEventClassCache(): void {
+/** État propre au processus (caches, alertes déjà faites) : remis à zéro entre deux tests. */
+export function resetGoogleSyncState(): void {
   eventClassCache.clear();
+  eventClassInFlight.clear();
+  reportedUntil.clear();
 }
 
 /**
- * Classe d'un drop, créée ou mise à jour au besoin. `rejected` : Google a
- * refusé la classe, aucun billet ne peut en dépendre (bouton masqué,
- * ligne abandonnée) ; `unavailable` : événement introuvable ou classe d'un
- * autre émetteur (configuration changée).
+ * Classe d'un drop, créée ou mise à jour au besoin (vidage de la file
+ * d'envoi). `rejected` : Google a refusé la classe, aucun billet ne peut
+ * en dépendre (bouton masqué, ligne abandonnée) ; `unavailable` :
+ * événement introuvable ou classe d'un autre émetteur (configuration
+ * changée).
  */
-export async function ensureEventClass(deps: GoogleSyncDeps, eventId: string, signal?: AbortSignal): Promise<EventClassState> {
-  const nowMs = deps.now().getTime();
+export function ensureEventClass(deps: GoogleSyncDeps, eventId: string, signal?: AbortSignal): Promise<EventClassState> {
   const cached = eventClassCache.get(eventId);
-  if (cached && cached > nowMs) return 'ok';
+  if (cached && cached > deps.now().getTime()) return Promise.resolve('ok');
+  const pending = eventClassInFlight.get(eventId);
+  if (pending) return pending;
+  const work = ensureEventClassNow(deps, eventId, signal).finally(() => {
+    eventClassInFlight.delete(eventId);
+  });
+  eventClassInFlight.set(eventId, work);
+  return work;
+}
 
+async function ensureEventClassNow(deps: GoogleSyncDeps, eventId: string, signal?: AbortSignal): Promise<EventClassState> {
   const expected = eventClassId(deps.config.naming, eventId);
   let row = await deps.store.classByEvent(eventId);
   if (row && row.classId !== expected) return 'unavailable';
@@ -262,9 +340,36 @@ export async function ensureEventClass(deps: GoogleSyncDeps, eventId: string, si
     const status = await syncClass(deps, row, eventClassBody(expected, brand, deps.config.siteUrl), signal, !row.syncedAt || row.dirty);
     if (isRejected(status)) return 'rejected';
   }
-  eventClassCache.set(eventId, nowMs + EVENT_CLASS_TTL_MS);
+  eventClassCache.set(eventId, deps.now().getTime() + EVENT_CLASS_TTL_MS);
   return 'ok';
 }
+
+export type EventClassAtClick = EventClassState | 'missing';
+
+/**
+ * Au clic (§ 8.1 du plan) : la classe du drop doit DÉJÀ exister chez
+ * Google, et ne pas être refusée. Aucune création ni aucun PATCH ici :
+ * le cron la crée dans la minute où le drop démarre (walletOffer ne
+ * montre d'ailleurs le bouton qu'à ce moment-là), et une marque modifiée
+ * part avec le vidage. Le clic reste ainsi un seul appel Google, loin
+ * des 8 s.
+ */
+export async function eventClassAtClick(deps: Pick<GoogleSyncDeps, 'config' | 'store'>, eventId: string): Promise<EventClassAtClick> {
+  const row = await deps.store.classByEvent(eventId);
+  if (!row || !row.syncedAt) return 'missing';
+  if (row.classId !== eventClassId(deps.config.naming, eventId)) return 'unavailable';
+  if (isRejected(row.reviewStatus)) return 'rejected';
+  return 'ok';
+}
+
+/* ====================================================================
+   Entretien (cron, chaque minute, avant le vidage)
+   ==================================================================== */
+
+/** Budget de l'entretien : le vidage de TOUS les fournisseurs passe après. */
+export const MAINTENANCE_BUDGET_MS = 6_000;
+/** Une classe en revue est relue chez Google au plus toutes les 10 min. */
+export const REVIEW_RECHECK_MS = 10 * 60 * 1000;
 
 export interface ClassSyncSummary {
   synced: number;
@@ -273,23 +378,41 @@ export interface ClassSyncSummary {
   halted: boolean;
 }
 
+interface BudgetOptions {
+  /** Borne en temps (horloge de deps.now). */
+  budgetMs?: number;
+  /**
+   * Annulation relayée à CHAQUE appel Google : sans lui, un seul appel
+   * lent (8 s, plus 8 s de jeton, plus un nouvel essai sur 401) ferait
+   * déborder le budget, et le vidage Apple qui suit en pâtirait.
+   * Par défaut : AbortSignal.timeout(budgetMs).
+   */
+  signal?: AbortSignal;
+}
+
+function budgetOf(deps: Pick<GoogleSyncDeps, 'now'>, options: BudgetOptions): { signal: AbortSignal; expired(): boolean } {
+  const budgetMs = Math.max(0, options.budgetMs ?? MAINTENANCE_BUDGET_MS);
+  const deadline = deps.now().getTime() + budgetMs;
+  const signal = options.signal ?? AbortSignal.timeout(Math.max(1, budgetMs));
+  return { signal, expired: () => signal.aborted || deps.now().getTime() >= deadline };
+}
+
 /**
  * Classes à synchroniser (salies par un changement de marque, jamais
- * envoyées, en erreur depuis 10 min, événement en cours sans classe),
- * appelé chaque minute par le cron AVANT le vidage. Borné en nombre et en
- * temps : le cron coupe à 30 s et le vidage passe après.
+ * envoyées, en erreur depuis 10 min, événement en cours sans classe).
+ * Bornée en nombre, et en temps par un signal relayé à chaque appel.
  */
 export async function syncDirtyClasses(
   deps: GoogleSyncDeps,
-  options: { limit?: number; budgetMs?: number } = {},
+  options: BudgetOptions & { limit?: number } = {},
 ): Promise<ClassSyncSummary> {
   const summary: ClassSyncSummary = { synced: 0, failed: 0, skipped: 0, halted: false };
-  const deadline = deps.now().getTime() + (options.budgetMs ?? 6_000);
+  const { signal, expired } = budgetOf(deps, options);
   const due = await deps.store.classesDue(options.limit ?? 5);
   const { naming } = deps.config;
 
   for (const item of due) {
-    if (deps.now().getTime() >= deadline) break;
+    if (expired()) break;
     try {
       if (item.kind === 'queue') {
         if (item.classId !== naming.queueClassId) {
@@ -301,7 +424,7 @@ export async function syncDirtyClasses(
           summary.skipped += 1;
           continue;
         }
-        await ensureQueueClass(deps);
+        await ensureQueueClass(deps, signal);
         summary.synced += 1;
         continue;
       }
@@ -324,15 +447,14 @@ export async function syncDirtyClasses(
       const row: GoogleClassRow = item.classId
         ? { ...item, classId: item.classId }
         : await deps.store.upsertClass(expected, 'event', item.eventId);
-      await syncClass(deps, row, eventClassBody(expected, brand, deps.config.siteUrl), undefined, true);
+      await syncClass(deps, row, eventClassBody(expected, brand, deps.config.siteUrl), signal, true);
       eventClassCache.delete(item.eventId);
       summary.synced += 1;
     } catch (error) {
       summary.failed += 1;
+      if (isAbort(error, signal)) break;
       if (error instanceof GoogleWalletError && error.configuration) {
-        const reason = configurationReason(error);
-        deps.degrade?.(reason);
-        deps.report?.(reason, { kind: error.kind, status: error.status });
+        configurationRefused(deps, error);
         summary.halted = true;
         break;
       }
@@ -342,30 +464,184 @@ export async function syncDirtyClasses(
   return summary;
 }
 
+export interface ReviewSummary {
+  checked: number;
+  changed: number;
+  failed: number;
+}
+
+/**
+ * Relit chez Google les classes d'événement encore « en revue ». Google
+ * approuve ou refuse une classe PLUS TARD, sans rien nous envoyer : sans
+ * cette relecture, un refus resterait « UNDER_REVIEW » en base (bouton
+ * montré, carte super-admin « en revue » pour toujours). Toutes les
+ * 10 min par classe au plus : wallet_google_class_synced remet synced_at
+ * à maintenant, et la marque en attente (dirty_at) est préservée.
+ */
+export async function refreshReviewedClasses(
+  deps: GoogleSyncDeps,
+  options: BudgetOptions & { limit?: number } = {},
+): Promise<ReviewSummary> {
+  const summary: ReviewSummary = { checked: 0, changed: 0, failed: 0 };
+  const { signal, expired } = budgetOf(deps, options);
+  const before = new Date(deps.now().getTime() - REVIEW_RECHECK_MS);
+  const rows = await deps.store.classesUnderReview(before, options.limit ?? 3);
+
+  for (const row of rows) {
+    if (expired()) break;
+    if (row.kind !== 'event' || !row.eventId) continue;
+    const previous = String(row.reviewStatus ?? '').toUpperCase();
+    try {
+      const resource = await deps.api.getClass(classTypeFor('event'), row.classId, signal);
+      summary.checked += 1;
+      if (!resource) {
+        // Supprimée côté console : l'erreur la ramène dans les classes
+        // dues dans 10 min, et syncClass la recrée (PATCH 404 → insert).
+        await deps.store.classSynced(row.classId, { hash: null, reviewStatus: null, error: 'Classe introuvable chez Google', dirtyAt: null });
+        eventClassCache.delete(row.eventId);
+        summary.changed += 1;
+        continue;
+      }
+      const status = reviewStatusOf(resource) ?? 'UNDER_REVIEW';
+      await deps.store.classSynced(row.classId, { hash: null, reviewStatus: status, error: null, dirtyAt: row.dirtyAt });
+      if (status !== previous) {
+        summary.changed += 1;
+        eventClassCache.delete(row.eventId);
+        if (isRejected(status)) {
+          reportOnce(deps, `classe-refusee:${row.classId}`, `Classe Google Wallet refusée par Google : ${row.classId}`, { classId: row.classId, eventId: row.eventId });
+        }
+      }
+    } catch (error) {
+      summary.failed += 1;
+      if (isAbort(error, signal)) break;
+      if (error instanceof GoogleWalletError && error.configuration) {
+        configurationRefused(deps, error);
+        break;
+      }
+      console.error('[wallet.google] relecture de classe impossible', row.classId, messageOf(error));
+    }
+  }
+  return summary;
+}
+
+/**
+ * Entretien complet, sous UN budget et UN signal : classe de file, classes
+ * salies, puis relecture des classes en revue. Jamais d'exception : le
+ * cron enchaîne sur le vidage quoi qu'il arrive.
+ */
+export async function runGoogleMaintenance(
+  deps: GoogleSyncDeps,
+  options: BudgetOptions = {},
+): Promise<Record<string, unknown>> {
+  const budgetMs = Math.max(0, options.budgetMs ?? MAINTENANCE_BUDGET_MS);
+  const deadline = deps.now().getTime() + budgetMs;
+  const signal = options.signal ?? AbortSignal.timeout(Math.max(1, budgetMs));
+  const remaining = () => Math.max(0, deadline - deps.now().getTime());
+  const outcome: Record<string, unknown> = {};
+
+  try {
+    const queue = await ensureQueueClass(deps, signal);
+    outcome.queueClass = queue.created ? 'créée' : 'à jour';
+  } catch (error) {
+    outcome.queueClass = { error: messageOf(error) };
+    if (error instanceof GoogleWalletError && error.configuration) {
+      configurationRefused(deps, error);
+      return outcome;
+    }
+    if (isAbort(error, signal)) return outcome;
+  }
+
+  try {
+    const classes = await syncDirtyClasses(deps, { limit: 5, budgetMs: remaining(), signal });
+    outcome.classes = classes;
+    if (classes.halted || signal.aborted || remaining() === 0) return outcome;
+    outcome.review = await refreshReviewedClasses(deps, { limit: 3, budgetMs: remaining(), signal });
+  } catch (error) {
+    // Lecture SQL en échec (registre des classes) : dit au rapport du cron.
+    outcome.error = messageOf(error);
+  }
+  return outcome;
+}
+
 /* ====================================================================
    Objets : insertion au clic (distribution)
    ==================================================================== */
 
+function renderFor(deps: GoogleSyncDeps, snap: WalletSnapshot, view: WalletView, now: Date): RenderedObject {
+  return renderGoogleObject(snap, view, {
+    siteUrl: deps.config.siteUrl,
+    rotatingBarcode: deps.config.rotatingBarcode,
+    now,
+    qrSecret: deps.qrSecret,
+  });
+}
+
+/**
+ * Rattrapage après « tenu à jour ». Entre l'instantané du clic et
+ * wallet_google_mark_live (l'insertion peut durer jusqu'à 8 s), les
+ * déclencheurs n'enfilent rien pour ce pass (`live` encore faux) : un
+ * changement du ticket survenu pendant l'insertion serait perdu jusqu'au
+ * suivant. On relit donc l'instantané une fois le pass tenu à jour, et
+ * l'on pousse le contenu s'il a changé. Tout changement ultérieur passe
+ * par la file d'envoi. Au mieux : un échec ici laisse le lien valable.
+ *
+ * Limite : une ALERTE manquée (le client appelé pendant l'insertion)
+ * n'est pas rattrapée ici, faute de pouvoir l'inscrire au registre ; il
+ * faut que wallet_google_mark_live enfile une synchronisation (demande
+ * faite à l'orchestrateur, migration 0021).
+ */
+async function catchUpAfterLive(
+  deps: GoogleSyncDeps,
+  passId: string,
+  liveHash: string,
+  reread: () => Promise<WalletSnapshot | null>,
+  signal?: AbortSignal,
+): Promise<string> {
+  try {
+    const fresh = await reread();
+    if (!fresh || !fresh.pass.live || (fresh.pass.state !== 'active' && fresh.pass.state !== 'final')) return liveHash;
+    const now = deps.now();
+    const again = renderFor(deps, fresh, buildWalletView(fresh, now, { siteUrl: deps.config.siteUrl }), now);
+    if (again.hash === liveHash) return liveHash;
+    await deps.api.patchObject(again.type, again.id, again.patch, signal);
+    return (await deps.store.markLive(passId, again.hash)) ? again.hash : liveHash;
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    console.warn('[wallet.google] rattrapage après insertion impossible', messageOf(error));
+    return liveHash;
+  }
+}
+
 /**
  * Crée l'objet chez Google au moment du clic (avant le JWT léger), puis
  * le déclare « tenu à jour ». Idempotent : 409 → PATCH du contenu courant.
+ * `reread` : relecture de l'instantané pour rattraper un changement
+ * survenu pendant l'insertion (voir catchUpAfterLive).
+ *
+ * Pass révoqué ou effacé entre l'émission et l'insertion (mark_live
+ * répond false) : personne ne tiendrait l'objet à jour ni ne l'effacerait.
+ * On le vide sur-le-champ, au mieux, et la distribution échoue : aucun
+ * lien servi.
  */
 export async function insertObjectAndGoLive(
   deps: GoogleSyncDeps,
   snap: WalletSnapshot,
   view: WalletView,
   signal?: AbortSignal,
+  reread?: () => Promise<WalletSnapshot | null>,
 ): Promise<{ type: ReturnType<typeof objectTypeFor>; id: string; hash: string }> {
-  const rendered = renderGoogleObject(snap, view, {
-    siteUrl: deps.config.siteUrl,
-    rotatingBarcode: deps.config.rotatingBarcode,
-    now: deps.now(),
-    qrSecret: deps.qrSecret,
-  });
+  const rendered = renderFor(deps, snap, view, deps.now());
   const inserted = await deps.api.insertObject(rendered.type, rendered.insert, signal);
   if (inserted.status === 'exists') await deps.api.patchObject(rendered.type, rendered.id, rendered.patch, signal);
-  await deps.store.markLive(snap.pass.id, rendered.hash);
-  return { type: rendered.type, id: rendered.id, hash: rendered.hash };
+
+  if (!(await deps.store.markLive(snap.pass.id, rendered.hash))) {
+    const scrub = renderScrubPatch(snap, view, { siteUrl: deps.config.siteUrl });
+    await deps.api.patchObject(scrub.type, scrub.id, scrub.patch, signal).catch(() => undefined);
+    throw new Error('Pass révoqué ou effacé pendant l’émission : aucun lien servi');
+  }
+
+  const hash = reread ? await catchUpAfterLive(deps, snap.pass.id, rendered.hash, reread, signal) : rendered.hash;
+  return { type: rendered.type, id: rendered.id, hash };
 }
 
 /* ====================================================================
@@ -377,13 +653,21 @@ interface AlertOutcome {
 }
 
 /**
- * Envoie le message d'un moment clé. Idempotent : un envoi rejoué après
- * un délai dépassé retrouve son message sur l'objet (même identifiant)
- * ou reçoit un 409, et ne sonne pas deux fois.
+ * Envoie le message d'un moment clé. Idempotent : l'objet est relu AVANT
+ * CHAQUE envoi, et un message de même identifiant déjà présent n'est pas
+ * renvoyé. Pas seulement au nouvel essai d'une même ligne : quand un
+ * addMessage dépasse son délai, Google a pu l'accepter sans que la
+ * réponse revienne, et la ligne est close dès qu'une autre attend pour
+ * ce pass (fail_wallet_outbox) ; la ligne suivante repart à attempts = 1.
+ * Google n'imposant pas l'unicité des identifiants de message, seule
+ * cette lecture évite une seconde sonnerie. Les alertes sont rares (moins
+ * de six par pass) : la lecture ne coûte presque rien.
+ *
+ * La même lecture sert à élaguer AVANT l'ajout : au plus 6 messages au
+ * dos une fois le nouveau posé.
  */
 async function sendAlert(
   deps: GoogleSyncDeps,
-  job: ClaimedJob,
   snap: WalletSnapshot,
   view: WalletView,
   decision: { kind: NonNullable<WalletView['alertKind']>; notify: boolean },
@@ -394,35 +678,37 @@ async function sendAlert(
   const now = deps.now();
   let message = buildAlertMessage(decision.kind, decision.notify, snap, view, now);
 
-  if (job.attempts > 1) {
-    // Nouvel essai : l'envoi précédent a peut-être abouti sans être
-    // inscrit. Google n'impose pas l'unicité des identifiants de message :
-    // on vérifie nous-mêmes.
-    const current = await deps.api.getObject(type, id, signal);
-    const messages = Array.isArray(current?.messages) ? (current!.messages as GoogleResource[]) : [];
-    const previous = messages.find((m) => m.id === message.id);
-    if (previous) return { notified: previous.messageType === 'TEXT_AND_NOTIFY' };
-  }
+  const current = await deps.api.getObject(type, id, signal);
+  const list = current?.messages;
+  const messages = Array.isArray(list) ? (list as GoogleResource[]) : [];
+  const previous = messages.find((m) => m.id === message.id);
+  if (previous) return { notified: previous.messageType === 'TEXT_AND_NOTIFY' };
 
-  let added: Awaited<ReturnType<GoogleApi['addMessage']>>;
-  try {
-    added = await deps.api.addMessage(type, id, message, signal);
-  } catch (error) {
-    if (!decision.notify || !isNotificationQuotaError(error)) throw error;
-    // Quota de Google atteint (3 sonneries par 24 h) : le message reste
-    // au dos du pass, sans sonnerie.
-    message = { ...message, messageType: 'TEXT' };
-    added = await deps.api.addMessage(type, id, message, signal);
-  }
-
-  const keep = prunedMessages(added.resource?.messages);
+  const keep = prunedMessages(messages, 1);
   if (keep) {
     try {
       await deps.api.patchObject(type, id, { messages: keep }, signal);
     } catch (error) {
       // Élagage de confort : jamais bloquant pour l'alerte elle-même.
+      if (signal.aborted) throw error;
       console.warn('[wallet.google] élagage des messages impossible', messageOf(error));
     }
+  }
+
+  try {
+    await deps.api.addMessage(type, id, message, signal);
+  } catch (error) {
+    if (!decision.notify || !isNotificationQuotaError(error)) throw error;
+    // Quota de Google atteint (3 sonneries par 24 h) : le message reste
+    // au dos du pass, sans sonnerie. Journalisé à chaque fois, motif
+    // compris : la recette (§ 20) doit confirmer le nom exact de
+    // l'erreur, et la fréquence de ces bascules se mesure dans les logs.
+    const e = error as GoogleWalletError;
+    console.warn('[wallet.google] quota de notifications : message renvoyé en TEXT', JSON.stringify({
+      kind: decision.kind, status: e.status, reason: e.reason, message: e.message.slice(0, 200),
+    }));
+    message = { ...message, messageType: 'TEXT' };
+    await deps.api.addMessage(type, id, message, signal);
   }
   return { notified: message.messageType === 'TEXT_AND_NOTIFY' };
 }
@@ -437,7 +723,7 @@ export async function processGoogleJob(
 ): Promise<JobResult> {
   try {
     if (job.job === 'scrub') {
-      const scrub = renderScrubPatch(snap, view);
+      const scrub = renderScrubPatch(snap, view, { siteUrl: deps.config.siteUrl });
       try {
         await deps.api.patchObject(scrub.type, scrub.id, scrub.patch, signal);
       } catch (error) {
@@ -455,7 +741,8 @@ export async function processGoogleJob(
     if (snap.pass.kind === 'event' && snap.event) {
       const state = await ensureEventClass(deps, snap.event.id, signal);
       if (state === 'rejected') {
-        deps.report?.('Classe d’événement refusée par Google : billets figés', { eventId: snap.event.id });
+        // Une alerte par classe et par heure, pas une par billet.
+        reportOnce(deps, `classe-refusee-billets:${snap.event.id}`, 'Classe d’événement refusée par Google : billets figés', { eventId: snap.event.id });
         return { ok: false, error: 'Classe d’événement refusée par Google', retryAfterSeconds: 0, dead: true };
       }
       if (state === 'unavailable') {
@@ -463,18 +750,13 @@ export async function processGoogleJob(
       }
     }
 
-    const rendered = renderGoogleObject(snap, view, {
-      siteUrl: deps.config.siteUrl,
-      rotatingBarcode: deps.config.rotatingBarcode,
-      now,
-      qrSecret: deps.qrSecret,
-    });
+    const rendered = renderFor(deps, snap, view, now);
     if (rendered.hash !== snap.pass.syncedHash) {
       await deps.api.patchObject(rendered.type, rendered.id, rendered.patch, signal);
     }
 
     const decision = decideAlertFor('google', snap, view, now);
-    const alert = decision ? await sendAlert(deps, job, snap, view, decision, signal) : null;
+    const alert = decision ? await sendAlert(deps, snap, view, decision, signal) : null;
 
     return {
       ok: true,

@@ -434,22 +434,39 @@ export function renderGoogleObject(snap: WalletSnapshot, view: WalletView, optio
   };
 }
 
+/** Identifiant du message laissé par l'effacement. */
+export const SCRUB_MESSAGE_ID = 'efface';
+
 /**
  * PATCH d'effacement (purge RGPD, 24 h après la fin du passage).
- * L'API n'a pas de suppression d'objet : on vide tout ce qui décrit le
- * passage (titre « Ticket clos », modules, liens, messages, image, QR,
+ * L'API n'a pas de suppression d'objet : on remplace tout ce qui décrit
+ * le passage (titre « Ticket clos », modules, liens, messages, image, QR,
  * numéro), et l'on garde un état final (le pass reste rangé dans les
  * passes passés). Un pass encore actif (organisation supprimée) passe
  * INACTIVE.
+ *
+ * Les tableaux ne sont JAMAIS envoyés vides : en JSON proto3, un tableau
+ * vide peut se lire comme « champ absent », et un PATCH l'ignorerait
+ * (même doute que pour `null`, § 20 du plan). Le lien d'avis, qui porte
+ * l'identifiant public du ticket, resterait alors au dos du pass. On
+ * envoie donc un seul élément neutre par tableau : un tableau NON vide
+ * remplace celui de Google en entier, règle déjà éprouvée par chaque
+ * mise à jour.
  */
-export function renderScrubPatch(snap: WalletSnapshot, view: Pick<WalletView, 'googleState'>): { type: GoogleObjectType; id: string; patch: GoogleResource; hash: string } {
+export function renderScrubPatch(
+  snap: WalletSnapshot,
+  view: Pick<WalletView, 'googleState'>,
+  options: Pick<GoogleRenderOptions, 'siteUrl'>,
+): { type: GoogleObjectType; id: string; patch: GoogleResource; hash: string } {
   const type = objectTypeFor(snap.pass.kind);
   const state = view.googleState === 'ACTIVE' ? 'INACTIVE' : view.googleState;
+  const site = options.siteUrl.replace(/\/+$/, '');
   const common = {
     state,
-    textModulesData: [],
-    linksModuleData: { uris: [] },
-    messages: [],
+    textModulesData: [textModule('donnees', WALLET_LABEL.privacy, WALLET_BACK.privacy)],
+    linksModuleData: { uris: [{ id: 'rangvia', uri: `${site}/`, description: 'Rangvia' }] },
+    // Sans displayInterval ni sonnerie : il remplace les messages du passage.
+    messages: [{ id: SCRUB_MESSAGE_ID, header: WALLET_BACK.scrubbedHeader, body: WALLET_BACK.privacy, messageType: 'TEXT' }],
   };
   const patch: GoogleResource = type === 'eventTicketObject'
     ? {
@@ -530,9 +547,13 @@ export function buildAlertMessage(
  * Messages à garder quand le dos du pass en compte trop : les plus
  * récents, tous rétrogradés en TEXT (un PATCH ne doit rien refaire
  * sonner). Null : rien à élaguer.
+ *
+ * `incoming` : messages sur le point d'être ajoutés. L'élagage se fait
+ * AVANT l'addMessage (sur la lecture qui vérifie déjà l'absence du
+ * message) : 6 messages au dos + 1 à venir → on en garde 5.
  */
-export function prunedMessages(messages: unknown): GoogleResource[] | null {
-  if (!Array.isArray(messages) || messages.length <= MESSAGES_PRUNE_ABOVE) return null;
+export function prunedMessages(messages: unknown, incoming = 0): GoogleResource[] | null {
+  if (!Array.isArray(messages) || messages.length + incoming <= MESSAGES_PRUNE_ABOVE) return null;
   const startOf = (m: GoogleResource): number => {
     const interval = m.displayInterval as { start?: { date?: string } } | undefined;
     const t = interval?.start?.date ? Date.parse(interval.start.date) : Number.NaN;
