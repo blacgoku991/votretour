@@ -8,10 +8,15 @@
 -- comptoir, mêmes initiales, mêmes compteurs que queue_snapshot.
 --
 -- Rejoué après 0036 (profils) : en walkin, la sortie ne doit pas bouger.
+--
+-- Tout se joue dans une transaction annulée à la fin : ni le « Salon Écran »
+-- ni les fonctions d'aide ne restent en base pour les tests suivants.
 -- =====================================================================
 
 \set ON_ERROR_STOP on
 \timing off
+
+begin;
 
 create or replace function internal.assert(p_condition boolean, p_label text)
 returns void language plpgsql as $$
@@ -250,6 +255,11 @@ begin
   perform internal.assert_eq(internal.display_initials(E' Hugo Blanc '), 'HB', 'blancs Unicode');
   perform internal.assert_eq(internal.display_initials('élodie marie claire'), 'ÉM', 'deux mots, en capitales');
   perform internal.assert_eq(internal.display_initials(E' '), '?', 'rien d''exploitable : « ? »');
+  -- Un mot qui commence par un chiffre, puis des lettres hors ASCII : seule
+  -- la branche « mots qui commencent par une lettre » donne le bon résultat
+  -- (le repli sur tous les mots donnerait « 9É », « 7И »).
+  perform internal.assert_eq(internal.display_initials('92 Émilie'), 'É', 'chiffre puis lettre accentuée');
+  perform internal.assert_eq(internal.display_initials('7 Иван Петров'), 'ИП', 'chiffre puis cyrillique');
 
   raise notice '';
   raise notice '   File inconnue, file vide';
@@ -261,6 +271,19 @@ begin
     v_disp -> 'serving' = '[]'::jsonb and v_disp -> 'upcoming' = '[]'::jsonb
       and (v_disp -> 'counts' ->> 'upcoming')::int = 0,
     'file vide : listes vides, compteurs à zéro');
+
+  raise notice '';
+  raise notice '   Équipe : un ordre stable entre homonymes';
+  -- Un second « Lina » au même rang que la première (6e) : le sixième pro
+  -- affiché est toujours le même, d'un appel à l'autre.
+  insert into public.staff (organization_id, location_id, display_name, sort_order)
+  values (v_org, v_loc, 'Lina', 6);
+  perform internal.assert_eq(
+    public.display_snapshot(v_queue) -> 'staff' -> 5 ->> 'id',
+    (select id::text from public.staff
+      where location_id = v_loc and is_active and display_name = 'Lina' and sort_order = 6
+      order by id limit 1),
+    'homonymes au même rang : départagés par identifiant');
 end
 $$;
 
@@ -303,3 +326,5 @@ begin
   reset role;
 end
 $$;
+
+rollback;

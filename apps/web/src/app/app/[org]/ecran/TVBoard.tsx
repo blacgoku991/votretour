@@ -3,7 +3,6 @@
 import type { CSSProperties, RefObject } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { initials } from '@/lib/format';
-import type { QueueSnapshot } from '@/lib/types';
 import type { DisplayRefresh, DisplaySnapshot } from '@/server/display';
 import { FlapNumber, FlapText } from '@/components/FlapNumber';
 import { FloorScene } from '@/components/objects/FloorScene';
@@ -130,41 +129,28 @@ function nameCells(name: string): number {
 }
 
 /**
- * Transitoire : /tv/page.tsx (hors du lot T0) passe encore un QueueSnapshot
- * au premier rendu. On le ramène ici à la forme de l'écran, avec les mêmes
- * règles que display_snapshot (initiales, bornes 3 / 6 / 7), pour un rendu
- * identique. À retirer dès que cette page appelle getDisplaySnapshot.
+ * Marqueur de forme envoyé à /api/tv/snapshot (même valeur dans route.ts).
+ * Un téléviseur reste allumé pendant les déploiements : il fait tourner le
+ * bundle d'avant, qui ne sait pas lire la forme d'aujourd'hui. La route
+ * répond 401 à toute requête sans ce marqueur, et l'ancien bundle se
+ * recharge alors de lui-même (son cookie d'appairage est intact) au lieu de
+ * planter sur un champ absent. Toute évolution de DisplaySnapshot qui casse
+ * la lecture change cette valeur, des deux côtés.
  */
-function toDisplaySnapshot(snapshot: DisplaySnapshot | QueueSnapshot | null | undefined): DisplaySnapshot | null {
-  if (!snapshot) return null;
-  if ('upcoming' in snapshot) return snapshot;
-  const upcoming = [
-    ...snapshot.called.map((entry) => ({ id: entry.id, called: true, initials: entry.name ? initials(entry.name) : null })),
-    ...snapshot.waiting.map((entry) => ({ id: entry.id, called: false, initials: entry.name ? initials(entry.name) : null })),
-  ];
-  return {
-    queue: { id: snapshot.queue.id, status: snapshot.queue.status },
-    location: { name: snapshot.location.name },
-    counts: {
-      active: snapshot.counts.active,
-      waiting: snapshot.counts.waiting,
-      serving: snapshot.serving.length,
-      upcoming: upcoming.length,
-      completedToday: snapshot.counts.completedToday,
-    },
-    staff: snapshot.staff.slice(0, 6).map((member) => ({
-      id: member.id,
-      name: member.name,
-      isOnBreak: member.isOnBreak,
-      isServing: Boolean(member.servingEntryId),
-    })),
-    serving: snapshot.serving.slice(0, 3).map((entry) => ({
-      id: entry.id,
-      name: entry.name,
-      staffName: snapshot.staff.find((member) => member.id === entry.staffId)?.name || null,
-    })),
-    upcoming: upcoming.slice(0, TV_MAX_SLATS),
-  };
+const TV_SNAPSHOT_SHAPE = 'display-1';
+
+/**
+ * Garde de réception : pendant un déploiement progressif, le nouveau bundle
+ * peut encore interroger un ancien serveur. On n'accepte que la forme de
+ * l'écran ; sinon l'écran garde son dernier état et réessaie.
+ */
+function isDisplaySnapshot(value: unknown): value is DisplaySnapshot {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<Record<keyof DisplaySnapshot, unknown>>;
+  return Array.isArray(candidate.upcoming)
+    && Array.isArray(candidate.serving)
+    && Array.isArray(candidate.staff)
+    && typeof candidate.counts === 'object' && candidate.counts !== null;
 }
 
 /** Lattes « À suivre » : Passage de la tête, avance d'un cran, arrivées qui se déplient. */
@@ -216,8 +202,8 @@ export function TVBoard({
   orgSlug: string;
   organizationName: string;
   logoUrl: string | null;
-  /** QueueSnapshot : transitoire, voir toDisplaySnapshot. */
-  initialSnapshot: DisplaySnapshot | QueueSnapshot | null;
+  /** L'instantané d'affichage (server/display.ts), jamais celui du poste du pro. */
+  initialSnapshot: DisplaySnapshot | null;
   queues: { id: string; name: string }[];
   /** Kiosque : route appairée par cookie (/api/tv/snapshot). */
   snapshotEndpoint?: string | null;
@@ -228,7 +214,7 @@ export function TVBoard({
   /** 'preview' : aperçu à l'échelle dans le tableau de bord (cadre d'écran, lien plein écran). */
   variant?: 'full' | 'preview';
 }) {
-  const [snapshot, setSnapshot] = useState(() => toDisplaySnapshot(initialSnapshot));
+  const [snapshot, setSnapshot] = useState<DisplaySnapshot | null>(initialSnapshot);
   const [eventTheme, setEventTheme] = useState<TVEventTheme | null>(initialEventTheme);
   const clock = useClock();
   const isFullscreen = useIsFullscreen();
@@ -242,7 +228,10 @@ export function TVBoard({
 
     if (snapshotEndpoint) {
       try {
-        const response = await fetch(snapshotEndpoint, { cache: 'no-store' });
+        const response = await fetch(snapshotEndpoint, {
+          cache: 'no-store',
+          headers: { 'x-tv-shape': TV_SNAPSHOT_SHAPE },
+        });
         if (response.status === 401) {
           window.location.reload();
           return;
@@ -251,13 +240,17 @@ export function TVBoard({
         const payload = await response.json() as {
           ok: boolean;
           data?: {
-            snapshot?: DisplaySnapshot | null;
+            snapshot?: unknown;
             event?: TVEventTheme | null;
           };
         };
 
         if (payload.ok && payload.data) {
-          if ('snapshot' in payload.data) setSnapshot(toDisplaySnapshot(payload.data.snapshot));
+          if ('snapshot' in payload.data) {
+            const next = payload.data.snapshot;
+            if (next === null) setSnapshot(null);
+            else if (isDisplaySnapshot(next)) setSnapshot(next);
+          }
           if ('event' in payload.data) setEventTheme(payload.data.event ?? null);
         }
       } catch {

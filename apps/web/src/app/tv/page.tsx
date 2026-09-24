@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
-import { getQueueSnapshot } from '@/server/queue';
+import { getDisplaySnapshot } from '@/server/display';
 import { getTvDeviceByToken, TV_COOKIE } from '@/server/tv-kiosk';
 import { TVBoard } from '../app/[org]/ecran/TVBoard';
 import { PairTV } from './PairTV';
@@ -24,7 +24,9 @@ export default async function TVKioskPage({
     return <PairTV initialCode={query.code ?? ''} />;
   }
 
-  const snapshot = await getQueueSnapshot(device.queueId);
+  // Le téléviseur est public : TVBoard est un composant client, donc tout ce
+  // qu'on lui passe part dans la page. Uniquement l'instantané d'affichage.
+  const snapshot = await getDisplaySnapshot(device.queueId);
 
   return (
     <TVBoard

@@ -6,7 +6,27 @@ import { getTvDeviceByToken, TV_COOKIE } from '@/server/tv-kiosk';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+/**
+ * Forme de réponse attendue par le bundle de l'écran (TV_SNAPSHOT_SHAPE dans
+ * TVBoard.tsx, même valeur). Un téléviseur appairé reste allumé pendant les
+ * déploiements et continue de faire tourner l'ancien bundle, qui ne sait pas
+ * lire la réponse d'aujourd'hui : il planterait au rendu et resterait figé
+ * sur la page d'erreur jusqu'à ce que quelqu'un prenne la télécommande.
+ * Sans ce marqueur, on répond donc 401 avant toute lecture : l'ancien bundle
+ * se recharge de lui-même, son cookie d'appairage est intact, et la page
+ * rechargée apporte le nouveau bundle, qui envoie le marqueur.
+ * Jamais l'ancienne forme en retour : elle transportait les notes du pro.
+ */
+const TV_SNAPSHOT_SHAPE = 'display-1';
+
+export async function GET(request: Request) {
+  if (request.headers.get('x-tv-shape') !== TV_SNAPSHOT_SHAPE) {
+    return NextResponse.json(
+      { ok: false, error: 'Écran à recharger.' },
+      { status: 401, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
+
   const jar = await cookies();
   const device = await getTvDeviceByToken(jar.get(TV_COOKIE)?.value);
 

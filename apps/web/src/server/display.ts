@@ -16,7 +16,13 @@ import { assertQueueAccess } from './auth';
  * prénoms au comptoir, initiales dans « À suivre », compteurs, équipe.
  *
  * Utilisé par le kiosque (/tv, /api/tv/snapshot), l'écran plein cadre
- * /ecran/[org] et l'aperçu /app/[org]/ecran.
+ * /ecran/[org] et l'aperçu /app/[org]/ecran. TVBoard n'accepte que ce type :
+ * lui repasser un QueueSnapshot est une erreur de compilation.
+ *
+ * Cette forme est un contrat : 0036 (profils) redéfinit display_snapshot
+ * avec la même sortie en walkin. Un changement qui casse la lecture d'un
+ * bundle déjà chargé change aussi TV_SNAPSHOT_SHAPE (TVBoard.tsx et
+ * api/tv/snapshot/route.ts), pour que les téléviseurs allumés se rechargent.
  */
 
 export interface DisplayStaffMember {

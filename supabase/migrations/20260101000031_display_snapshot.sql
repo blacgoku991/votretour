@@ -53,6 +53,9 @@ begin;
 -- Deux écarts assumés, sans effet sur un prénom réel : upper() suit la casse
 -- simple (« ß » reste « ß », JavaScript donnerait « SS ») et un caractère hors
 -- du plan de base est gardé entier (JavaScript en coupait la moitié).
+-- La parité suppose un lc_ctype Unicode (fr_FR.UTF-8 en production, C.UTF-8
+-- sur le banc) : sous un ctype C ou POSIX, [[:alpha:]] et upper() ne voient
+-- que l'ASCII, et « 92 Émilie » donnerait « 9É » au lieu de « É » (test 12).
 -- ---------------------------------------------------------------------
 create or replace function internal.display_initials(p_name text)
 returns text
@@ -155,11 +158,15 @@ begin
                  select 1 from public.queue_entries e
                  where e.queue_id = p_queue_id and e.status = 'serving' and e.staff_id = s.id
                )
-             ) order by s.sort_order, s.display_name)
+             ) order by s.sort_order, s.display_name, s.id)
       from (
+        -- s.id départage deux homonymes au même rang : sans lui, le sixième
+        -- pro affiché pourrait changer d'un rafraîchissement à l'autre.
+        -- (queue_snapshot n'a pas ce départage ; il ne compte qu'en cas
+        -- d'égalité parfaite, où son propre ordre n'est pas défini.)
         select * from public.staff
         where location_id = v_queue.location_id and is_active
-        order by sort_order, display_name
+        order by sort_order, display_name, id
         limit 6
       ) s
     ), '[]'::jsonb),
