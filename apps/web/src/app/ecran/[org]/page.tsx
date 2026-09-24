@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { requireOrgAccess } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { getQueueSnapshot } from '@/server/queue';
+import { getDisplaySnapshot, refreshDisplaySnapshot } from '@/server/display';
 import { TVBoard } from '../../app/[org]/ecran/TVBoard';
 
 export const metadata: Metadata = {
@@ -10,6 +10,15 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * Rafraîchissement de l'écran, toutes les 5 secondes : l'action revérifie
+ * l'accès à chaque appel et ne renvoie que l'instantané d'affichage (0031).
+ */
+async function refreshScreen(queueId: string) {
+  'use server';
+  return refreshDisplaySnapshot(queueId);
+}
 
 export default async function StandaloneTVPage({
   params,
@@ -37,7 +46,7 @@ export default async function StandaloneTVPage({
 
   const list = queues ?? [];
   const selected = list.find((queue) => queue.id === file) ?? list[0] ?? null;
-  const snapshot = selected ? await getQueueSnapshot(selected.id) : null;
+  const snapshot = selected ? await getDisplaySnapshot(selected.id) : null;
 
   const eventSelect = 'id, name, status, hero_title, logo_url, cover_url, accent_hex, rules_text, qr_label';
   const explicitEventId = event && /^[0-9a-f-]{36}$/i.test(event) ? event : null;
@@ -78,6 +87,7 @@ export default async function StandaloneTVPage({
       organizationName={organization?.name ?? access.organization.name}
       logoUrl={organization?.logo_url ?? null}
       initialSnapshot={snapshot}
+      refresh={refreshScreen}
       queues={list.map((queue) => ({ id: queue.id, name: queue.name }))}
       eventTheme={eventTheme}
     />

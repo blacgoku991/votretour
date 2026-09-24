@@ -1,13 +1,22 @@
 import type { Metadata } from 'next';
 import { requireOrgAccess } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { getQueueSnapshot } from '@/server/queue';
+import { getDisplaySnapshot, refreshDisplaySnapshot } from '@/server/display';
 import { PageHeader } from '@/components/Page';
 import { TVBoard } from './TVBoard';
 import styles from './ecran.module.css';
 
 export const metadata: Metadata = { title: 'Écran TV', robots: { index: false } };
 export const dynamic = 'force-dynamic';
+
+/**
+ * Rafraîchissement de l'aperçu, toutes les 5 secondes : l'action revérifie
+ * l'accès à chaque appel et ne renvoie que l'instantané d'affichage (0031).
+ */
+async function refreshScreen(queueId: string) {
+  'use server';
+  return refreshDisplaySnapshot(queueId);
+}
 
 export default async function TVPage({
   params,
@@ -35,7 +44,7 @@ export default async function TVPage({
 
   const list = queues ?? [];
   const selected = list.find((q) => q.id === file) ?? list[0] ?? null;
-  const snapshot = selected ? await getQueueSnapshot(selected.id) : null;
+  const snapshot = selected ? await getDisplaySnapshot(selected.id) : null;
   const screenHref = `/ecran/${org}${selected && list.length > 1 ? `?file=${encodeURIComponent(selected.id)}` : ''}`;
 
   return (
@@ -56,6 +65,7 @@ export default async function TVPage({
           organizationName={organization?.name ?? access.organization.name}
           logoUrl={organization?.logo_url ?? null}
           initialSnapshot={snapshot}
+          refresh={refreshScreen}
           queues={list.map((q) => ({ id: q.id, name: q.name }))}
           variant="preview"
         />

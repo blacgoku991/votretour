@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { getQueueSnapshot } from '@/server/queue';
+import { getDisplaySnapshot } from '@/server/display';
 import { getTvDeviceByToken, TV_COOKIE } from '@/server/tv-kiosk';
 
 export const runtime = 'nodejs';
@@ -17,7 +17,9 @@ export async function GET() {
     );
   }
 
-  const snapshot = await getQueueSnapshot(device.queueId);
+  // Le téléviseur est public : il ne reçoit que ce qu'il affiche (0031),
+  // jamais l'instantané du poste du pro (notes, journal des notifications).
+  const snapshot = await getDisplaySnapshot(device.queueId);
 
   return NextResponse.json(
     {

@@ -2,9 +2,9 @@
 
 import type { CSSProperties, RefObject } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchQueueSnapshot } from '@/server/actions/queue';
 import { initials } from '@/lib/format';
 import type { QueueSnapshot } from '@/lib/types';
+import type { DisplayRefresh, DisplaySnapshot } from '@/server/display';
 import { FlapNumber, FlapText } from '@/components/FlapNumber';
 import { FloorScene } from '@/components/objects/FloorScene';
 import { useReducedMotion } from '@/components/motion/useMotionPreference';
@@ -35,6 +35,10 @@ import styles from './tv.module.css';
  *
  * Aucune valeur liée au temps n'est rendue côté serveur : l'horloge et le
  * décalage anti-marquage arrivent après montage.
+ *
+ * Données : un DisplaySnapshot (server/display.ts, migration 0031), jamais
+ * l'instantané du poste du pro. Le téléviseur est public ; il ne reçoit que
+ * ce qu'il affiche : prénoms au comptoir, initiales dans « À suivre ».
  */
 
 export interface TVEventTheme {
@@ -125,6 +129,44 @@ function nameCells(name: string): number {
   return Math.min(12, Math.max(6, Array.from(name).length));
 }
 
+/**
+ * Transitoire : /tv/page.tsx (hors du lot T0) passe encore un QueueSnapshot
+ * au premier rendu. On le ramène ici à la forme de l'écran, avec les mêmes
+ * règles que display_snapshot (initiales, bornes 3 / 6 / 7), pour un rendu
+ * identique. À retirer dès que cette page appelle getDisplaySnapshot.
+ */
+function toDisplaySnapshot(snapshot: DisplaySnapshot | QueueSnapshot | null | undefined): DisplaySnapshot | null {
+  if (!snapshot) return null;
+  if ('upcoming' in snapshot) return snapshot;
+  const upcoming = [
+    ...snapshot.called.map((entry) => ({ id: entry.id, called: true, initials: entry.name ? initials(entry.name) : null })),
+    ...snapshot.waiting.map((entry) => ({ id: entry.id, called: false, initials: entry.name ? initials(entry.name) : null })),
+  ];
+  return {
+    queue: { id: snapshot.queue.id, status: snapshot.queue.status },
+    location: { name: snapshot.location.name },
+    counts: {
+      active: snapshot.counts.active,
+      waiting: snapshot.counts.waiting,
+      serving: snapshot.serving.length,
+      upcoming: upcoming.length,
+      completedToday: snapshot.counts.completedToday,
+    },
+    staff: snapshot.staff.slice(0, 6).map((member) => ({
+      id: member.id,
+      name: member.name,
+      isOnBreak: member.isOnBreak,
+      isServing: Boolean(member.servingEntryId),
+    })),
+    serving: snapshot.serving.slice(0, 3).map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      staffName: snapshot.staff.find((member) => member.id === entry.staffId)?.name || null,
+    })),
+    upcoming: upcoming.slice(0, TV_MAX_SLATS),
+  };
+}
+
 /** Lattes « À suivre » : Passage de la tête, avance d'un cran, arrivées qui se déplient. */
 function useQueueSlats(items: TvQueueItem[]): TvSlat[] {
   const reduced = useReducedMotion();
@@ -166,6 +208,7 @@ export function TVBoard({
   initialSnapshot,
   queues,
   snapshotEndpoint = null,
+  refresh: refreshAction,
   eventTheme: initialEventTheme = null,
   kioskMode = false,
   variant = 'full',
@@ -173,15 +216,19 @@ export function TVBoard({
   orgSlug: string;
   organizationName: string;
   logoUrl: string | null;
-  initialSnapshot: QueueSnapshot | null;
+  /** QueueSnapshot : transitoire, voir toDisplaySnapshot. */
+  initialSnapshot: DisplaySnapshot | QueueSnapshot | null;
   queues: { id: string; name: string }[];
+  /** Kiosque : route appairée par cookie (/api/tv/snapshot). */
   snapshotEndpoint?: string | null;
+  /** Écran d'un membre connecté : action serveur qui revérifie l'accès. */
+  refresh?: (queueId: string) => Promise<DisplayRefresh>;
   eventTheme?: TVEventTheme | null;
   kioskMode?: boolean;
   /** 'preview' : aperçu à l'échelle dans le tableau de bord (cadre d'écran, lien plein écran). */
   variant?: 'full' | 'preview';
 }) {
-  const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [snapshot, setSnapshot] = useState(() => toDisplaySnapshot(initialSnapshot));
   const [eventTheme, setEventTheme] = useState<TVEventTheme | null>(initialEventTheme);
   const clock = useClock();
   const isFullscreen = useIsFullscreen();
@@ -190,7 +237,7 @@ export function TVBoard({
   useIdleFlag(frameRef, variant === 'full' && !kioskMode && snapshot !== null);
   const queueId = snapshot?.queue.id ?? queues[0]?.id ?? null;
 
-  const refresh = useCallback(async () => {
+  const refreshNow = useCallback(async () => {
     if (!queueId) return;
 
     if (snapshotEndpoint) {
@@ -204,13 +251,13 @@ export function TVBoard({
         const payload = await response.json() as {
           ok: boolean;
           data?: {
-            snapshot?: QueueSnapshot | null;
+            snapshot?: DisplaySnapshot | null;
             event?: TVEventTheme | null;
           };
         };
 
         if (payload.ok && payload.data) {
-          if ('snapshot' in payload.data) setSnapshot(payload.data.snapshot ?? null);
+          if ('snapshot' in payload.data) setSnapshot(toDisplaySnapshot(payload.data.snapshot));
           if ('event' in payload.data) setEventTheme(payload.data.event ?? null);
         }
       } catch {
@@ -219,23 +266,28 @@ export function TVBoard({
       return;
     }
 
-    const result = await fetchQueueSnapshot(queueId);
-    if (result.ok) setSnapshot(result.data.snapshot);
-  }, [queueId, snapshotEndpoint]);
+    if (!refreshAction) return;
+    try {
+      const result = await refreshAction(queueId);
+      if (result.ok) setSnapshot(result.data.snapshot);
+    } catch {
+      // Réseau coupé : même règle, le dernier état reste affiché.
+    }
+  }, [queueId, snapshotEndpoint, refreshAction]);
 
   useEffect(() => {
     const poll = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void refresh();
+      if (document.visibilityState === 'visible') void refreshNow();
     }, 5000);
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void refresh();
+      if (document.visibilityState === 'visible') void refreshNow();
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       window.clearInterval(poll);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [refresh]);
+  }, [refreshNow]);
 
   // Anti-marquage : tout le contenu se décale de ±2 px toutes les 10 minutes.
   // Écriture directe du style, après montage : aucun rendu React.
@@ -249,14 +301,11 @@ export function TVBoard({
     return () => window.clearInterval(id);
   }, []);
 
-  const upcoming = useMemo<TvQueueItem[]>(() => {
-    if (!snapshot) return [];
-    return [
-      ...snapshot.called.map((entry) => ({ id: entry.id, called: true, initials: entry.name ? initials(entry.name) : null })),
-      ...snapshot.waiting.map((entry) => ({ id: entry.id, called: false, initials: entry.name ? initials(entry.name) : null })),
-    ];
-  }, [snapshot]);
+  // Initiales calculées en base : les prénoms de la file n'arrivent plus ici.
+  const upcoming = useMemo<TvQueueItem[]>(() => snapshot?.upcoming ?? [], [snapshot]);
   const slats = useQueueSlats(upcoming);
+  // La file entière : upcoming n'en porte que les TV_MAX_SLATS premières.
+  const upcomingCount = snapshot?.counts.upcoming ?? 0;
 
   const accent = eventTheme?.accentHex && /^#[0-9A-Fa-f]{6}$/.test(eventTheme.accentHex)
     ? eventTheme.accentHex
@@ -392,7 +441,7 @@ export function TVBoard({
                 {staff.length > 0 && (
                   <ul className={styles.team} aria-label="Équipe">
                     {staff.slice(0, 6).map((member) => {
-                      const tone = member.isOnBreak ? 'pause' : member.servingEntryId ? 'busy' : 'free';
+                      const tone = member.isOnBreak ? 'pause' : member.isServing ? 'busy' : 'free';
                       const state = tone === 'pause' ? 'en pause' : tone === 'busy' ? 'en prestation' : 'disponible';
                       return (
                         <li key={member.id} className={styles.member} data-tone={tone}>
@@ -410,7 +459,6 @@ export function TVBoard({
                 {shown.length ? (
                   <ol className={styles.servingList} data-count={shown.length}>
                     {shown.map((entry) => {
-                      const pro = staff.find((s) => s.id === entry.staffId);
                       const name = (entry.name ?? 'Client').trim().toUpperCase().slice(0, 12);
                       const cells = nameCells(name);
                       // Une tuile fait 0,74em + 0,06em d'écart : la rangée tient la colonne.
@@ -427,7 +475,7 @@ export function TVBoard({
                             size={`calc(var(--u) * ${unit})`}
                           />
                           <span className={styles.with}>
-                            {pro?.name ? <>avec <strong>{pro.name}</strong></> : 'En prestation'}
+                            {entry.staffName ? <>avec <strong>{entry.staffName}</strong></> : 'En prestation'}
                           </span>
                         </li>
                       );
@@ -436,8 +484,8 @@ export function TVBoard({
                 ) : (
                   <p className={styles.idle}>Prêt pour le prochain client</p>
                 )}
-                {serving.length > shown.length && (
-                  <p className={styles.more}>+ {serving.length - shown.length} en prestation</p>
+                {counts.serving > shown.length && (
+                  <p className={styles.more}>+ {counts.serving - shown.length} en prestation</p>
                 )}
               </div>
 
@@ -463,10 +511,10 @@ export function TVBoard({
               <div className={styles.head}>
                 <h2 id="tv-suivre" className={`t-label ${styles.headLabel}`}>À suivre</h2>
                 <span className={styles.headNote}>
-                  {upcoming.length === 0
+                  {upcomingCount === 0
                     ? 'Personne pour l’instant'
-                    : upcoming.length > TV_MAX_SLATS
-                      ? `Les ${TV_MAX_SLATS} premiers sur ${upcoming.length}`
+                    : upcomingCount > TV_MAX_SLATS
+                      ? `Les ${TV_MAX_SLATS} premiers sur ${upcomingCount}`
                       : 'Positions dans la file'}
                 </span>
               </div>
@@ -482,9 +530,9 @@ export function TVBoard({
                   turn={-3}
                   className={styles.scene}
                   slats={sceneSlats}
-                  label={upcoming.length === 0
+                  label={upcomingCount === 0
                     ? 'Personne en attente'
-                    : `${upcoming.length} ${upcoming.length > 1 ? 'personnes' : 'personne'} à suivre`}
+                    : `${upcomingCount} ${upcomingCount > 1 ? 'personnes' : 'personne'} à suivre`}
                 />
               </div>
             </section>
