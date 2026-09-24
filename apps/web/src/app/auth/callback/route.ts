@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseRouteClient } from '@/lib/supabase/server';
+import { safeRedirectPath } from '@/lib/safe-redirect';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,7 +14,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get('code');
   const next = url.searchParams.get('next');
-  const destination = next && next.startsWith('/') ? next : '/app';
+  const destination = safeRedirectPath(next);
 
   const response = NextResponse.redirect(new URL(destination, url.origin));
 

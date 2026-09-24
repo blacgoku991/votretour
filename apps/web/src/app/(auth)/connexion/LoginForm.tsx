@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { safeRedirectPath } from '@/lib/safe-redirect';
 import { supabaseBrowser } from '@/lib/supabase/browser';
 import { PasswordField } from '../PasswordField';
 import { loginErrorMessage } from '../authErrors';
@@ -31,7 +32,7 @@ export function LoginForm({ next }: { next: string | null }) {
         setError(loginErrorMessage(authError));
         return;
       }
-      router.push(next && next.startsWith('/') ? next : '/app');
+      router.push(safeRedirectPath(next));
       router.refresh();
     });
   };
