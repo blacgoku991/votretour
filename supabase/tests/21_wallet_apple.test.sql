@@ -4,7 +4,8 @@
 -- Ce que le service web Apple attend de la base : inscription et
 -- désinscription d'appareils (au plus 5 par pass), liste des passes à
 -- rafraîchir depuis une étiquette de version, jetons à pousser, jetons
--- morts, et un pass effacé qui ne répond plus.
+-- morts, un pass effacé qui ne répond plus, et une désinscription qui
+-- n'emporte jamais l'inscription concurrente du même appareil.
 --
 --   DBNAME=votretour_w0 ./scripts/verify-db.sh
 -- =====================================================================
@@ -225,5 +226,109 @@ begin
 
   raise notice '';
   raise notice '✅ Wallet (Apple) : tous les tests passent.';
+end
+$$;
+
+-- =====================================================================
+-- Désinscription pendant l'inscription du même appareil à un autre pass
+-- ---------------------------------------------------------------------
+-- Un iPhone ajoute le pass 2 (inscription en cours, non validée) pendant
+-- qu'il retire le pass 1. La désinscription ne doit pas supprimer
+-- l'appareil « sans inscription » d'après sa propre image : la
+-- suppression en cascade emporterait l'inscription au pass 2.
+-- =====================================================================
+-- dblink sert aux cas à deux connexions ; le test 20 le crée aussi, mais
+-- ce fichier doit pouvoir tourner seul.
+do $$
+begin
+  begin
+    create extension if not exists dblink with schema extensions;
+  exception when others then
+    raise notice '  --  dblink indisponible : concurrence non vérifiée (%)', sqlerrm;
+  end;
+end
+$$;
+
+create temp table wallet_test_ctx (k text primary key, v text not null);
+
+do $$
+declare
+  v_owner uuid := extensions.gen_random_uuid();
+  v_prov  jsonb;
+  v_org   uuid;
+  v_queue uuid;
+  v_sess  uuid;
+  v_pub   text;
+  v_res   jsonb;
+  v_i     int;
+begin
+  if to_regprocedure('extensions.dblink_connect(text,text)') is null then
+    return;
+  end if;
+  insert into auth.users (id, email) values (v_owner, 'wallet-apple-course@test.local');
+  v_prov  := public.provision_organization(v_owner, 'Wallet Pomme Course', 'barber', 'Wallet Pomme Course Centre');
+  v_org   := (v_prov -> 'organization' ->> 'id')::uuid;
+  v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
+  perform public.set_queue_status(v_queue, 'open', v_owner);
+  for v_i in 1 .. 2 loop
+    v_sess := (public.upsert_client_session(v_org, 'wallet-apple-course-' || v_i, 'web') ->> 'id')::uuid;
+    v_pub  := public.join_queue(v_queue, v_sess, null, null, null, 'qr') -> 'entry' ->> 'id';
+    v_res  := public.wallet_issue_pass('apple', v_pub, v_sess, null, '{"passTypeId":"pass.test.rangvia"}');
+    insert into wallet_test_ctx values ('serial' || v_i, v_res ->> 'externalId'), ('pass' || v_i, v_res ->> 'id');
+  end loop;
+  perform public.wallet_apple_register((select v from wallet_test_ctx where k = 'serial1'),
+                                       'iphone-course-01', repeat('f1', 32));
+end
+$$;
+
+do $$
+declare
+  v_conn text;
+  v_pass2 uuid := (select v::uuid from wallet_test_ctx where k = 'pass2');
+begin
+  raise notice '';
+  raise notice '── 7. Désinscription pendant une inscription du même appareil ──';
+  if to_regprocedure('extensions.dblink_connect(text,text)') is null then
+    raise notice '  --  dblink indisponible : non vérifié';
+    return;
+  end if;
+  -- Sans correctif, la suppression attendait l'inscription, qui attendait
+  -- la fin de ce bloc : on borne l'attente.
+  perform set_config('lock_timeout', '5s', true);
+  v_conn := format('host=%s port=%s dbname=%s user=%s',
+                   coalesce(host(inet_server_addr()), '127.0.0.1'),
+                   coalesce(inet_server_port(), 5432), current_database(), current_user);
+  perform extensions.dblink_connect('wallet_iphone', v_conn);
+  perform extensions.dblink_exec('wallet_iphone', 'begin');
+  perform internal.wallet_test_eq(
+    (select r from extensions.dblink('wallet_iphone', format(
+       'select public.wallet_apple_register(%L, %L, %L)',
+       (select v from wallet_test_ctx where k = 'serial2'), 'iphone-course-01', repeat('f1', 32))) as t (r text)),
+    'created', 'inscription au pass 2 en cours (non validée)');
+
+  perform internal.wallet_test_ok(
+    public.wallet_apple_unregister((select v from wallet_test_ctx where k = 'serial1'), 'iphone-course-01'),
+    'désinscription du pass 1, sans attendre');
+
+  perform extensions.dblink_exec('wallet_iphone', 'commit');
+  perform extensions.dblink_disconnect('wallet_iphone');
+
+  perform internal.wallet_test_ok(
+    exists (select 1 from public.wallet_apple_registrations
+             where device_library_identifier = 'iphone-course-01' and wallet_pass_id = v_pass2),
+    'l''inscription concurrente au pass 2 survit');
+  perform internal.wallet_test_ok(
+    (select live and holder_state = 'saved' from public.wallet_passes where id = v_pass2),
+    'le pass 2 est tenu à jour');
+
+  perform internal.wallet_test_ok(
+    public.wallet_apple_unregister((select v from wallet_test_ctx where k = 'serial2'), 'iphone-course-01'),
+    'désinscription du pass 2');
+  perform internal.wallet_test_ok(
+    not exists (select 1 from public.wallet_apple_devices where device_library_identifier = 'iphone-course-01'),
+    'plus aucune inscription : l''appareil et son jeton sont oubliés');
+
+  raise notice '';
+  raise notice '✅ Wallet (Apple, concurrence) : tous les tests passent.';
 end
 $$;

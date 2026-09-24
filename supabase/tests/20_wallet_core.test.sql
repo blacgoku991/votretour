@@ -5,13 +5,18 @@
 --   * rien n'est mis en file sans pass `live` ; une seule ligne en
 --     attente par pass, raisons fusionnées, moments clés prioritaires,
 --     report de 20 s des changements mineurs ;
---   * réclamation exclusive par pass, bail expiré, concurrence réelle
---     (deux connexions, `skip locked`) ;
+--   * réclamation exclusive par pass, bail expiré (repris, puis abandonné
+--     au dixième essai), concurrence réelle (deux connexions, `skip locked`) ;
 --   * version Apple strictement croissante, fin de traitement, échec ;
 --   * émission idempotente et contrôle d'accès ;
 --   * déclencheurs du moteur : vague, validation, expiration, clôture,
---     pause, marque ; une panne Wallet ne casse jamais une action de file ;
---   * garde multi-tenant, purge, droits (rien pour anon ni authenticated).
+--     pause, marque (colonnes alignées sur l'instantané) ; une panne Wallet
+--     ne casse jamais une action de file, quel que soit le déclencheur ;
+--   * registre d'alertes en ISO 8601 UTC, réouverture bornée à 2 h ;
+--   * garde multi-tenant, purge, droits (rien pour anon ni authenticated) ;
+--   * au plus une sous-transaction par instruction (file de 100 passes) ;
+--   * deux connexions : verrou du pass contre mise en file du moteur (pas
+--     d'interblocage), échec d'envoi pendant une mise en file.
 --
 --   DBNAME=votretour_w0 ./scripts/verify-db.sh
 -- =====================================================================
@@ -115,6 +120,8 @@ declare
   v_walk_b  uuid;
   v_pp      uuid[] := '{}';
   v_purge   jsonb;
+  v_state   text;
+  v_tz      text := current_setting('timezone');
 begin
   raise notice '';
   raise notice '══ Wallet : socle commun ══';
@@ -312,7 +319,7 @@ begin
 
   -- ─────────────────────────────────────────────────────────────────
   raise notice '── 8. Fin de traitement : final, réouverture, report, alertes ──';
-  update public.wallet_passes set alerts = '{"your_turn":"2026-01-01T10:00:00+00"}' where id = v_p6a;
+  update public.wallet_passes set alerts = '{"your_turn":"2026-01-01T10:00:00.000Z"}' where id = v_p6a;
   update public.queue_entries set people_ahead = 8 where id = v_e[6];
   v_r1 := internal.wallet_test_claim(v_p6a);
   perform public.complete_wallet_outbox(v_r1, '{"syncedHash":"h-final","final":true}');
@@ -326,6 +333,17 @@ begin
   perform internal.wallet_test_ok(
     (select state = 'active' and final_at is null and alerts = '{}'::jsonb from public.wallet_passes where id = v_p6a),
     'ticket revenu en file : pass rouvert, registre d''alertes remis à zéro');
+
+  update public.queue_entries set people_ahead = 10 where id = v_e[6];
+  v_r1 := internal.wallet_test_claim(v_p6a);
+  perform public.complete_wallet_outbox(v_r1, '{"final":true}');
+  update public.wallet_passes set final_at = now() - interval '2 hours 1 minute' where id = v_p6a;
+  update public.queue_entries set people_ahead = 11 where id = v_e[6];
+  v_r1 := internal.wallet_test_claim(v_p6a);
+  perform public.complete_wallet_outbox(v_r1, '{"reopen":true}');
+  perform internal.wallet_test_eq((select state from public.wallet_passes where id = v_p6a), 'final',
+    'réouverture refusée plus de 2 h après la fin, même ticket actif');
+  update public.wallet_passes set state = 'active', final_at = null where id = v_p6a;
 
   perform public.staff_queue_action(v_pub[6], 'complete', v_owner);
   v_r1 := internal.wallet_test_claim(v_p6a);
@@ -350,8 +368,16 @@ begin
   update public.queue_entries set people_ahead = 5 where id = v_e[6];
   v_r1 := internal.wallet_test_claim(v_p6a);
   perform internal.wallet_test_ok(v_r1 is not null, 'un nouveau changement avance l''archivage différé');
+  -- Le registre ne dépend pas du fuseau de la session.
+  perform set_config('timezone', 'Pacific/Chatham', true);
   perform public.complete_wallet_outbox(v_r1,
     '{"syncedHash":"h-alert","alertKind":"ahead_one","alertNotified":true}');
+  perform set_config('timezone', v_tz, true);
+  perform internal.wallet_test_ok(
+    (select alerts ->> 'ahead_one' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$'
+            and (alerts ->> 'ahead_one')::timestamptz = date_trunc('milliseconds', now())
+     from public.wallet_passes where id = v_p6a),
+    'registre d''alertes : ISO 8601 en UTC (« …T…Z »), lisible par new Date()');
   perform internal.wallet_test_ok(
     (select cardinality(notify_log) = 2 and notify_log[2] = now()
             and notify_log[1] > now() - interval '24 hours' and alerts ? 'ahead_one'
@@ -392,6 +418,16 @@ begin
   update public.queue_entries set people_ahead = 8 where id = v_e[6];
   perform internal.wallet_test_eq(public.fail_wallet_outbox(v_r1, 'délai', 30, false), 'done',
     'échec alors qu''une ligne attend : la ligne en attente la remplace');
+  perform internal.wallet_test_clear(v_p6a);
+
+  update public.queue_entries set people_ahead = 9 where id = v_e[6];
+  v_r1 := internal.wallet_test_claim(v_p6a);
+  update public.wallet_outbox set attempts = 10, locked_until = now() - interval '1 second' where id = v_r1;
+  perform count(*) from public.claim_wallet_outbox('apple', v_queue);
+  perform internal.wallet_test_ok(
+    (select status = 'dead' and last_error = 'Bail expiré à chaque tentative'
+     from public.wallet_outbox where id = v_r1),
+    'bail expiré au dixième essai : abandonnée, pas reprise sans fin');
   perform internal.wallet_test_clear(v_p6a);
 
   -- ─────────────────────────────────────────────────────────────────
@@ -477,6 +513,23 @@ begin
     (public.wallet_issue_pass('apple', v_pub[6], v_s[6], null, v_apple) ->> 'id')::uuid = v_p6a,
     'le « Merci » reste téléchargeable 30 min');
 
+  select state into v_state from public.wallet_passes where id = v_p6a;
+  update public.wallet_passes set state = 'revoked', revoked_at = now() where id = v_p6a;
+  begin
+    perform public.wallet_issue_pass('apple', v_pub[6], v_s[6], null, v_apple);
+    raise exception 'ÉCHEC: pass révoqué réémis';
+  exception when sqlstate 'VT020' then
+    raise notice '  ok  pass révoqué : plus téléchargeable';
+  end;
+  update public.wallet_passes set state = 'scrubbed', scrubbed_at = now(), revoked_at = null where id = v_p6a;
+  begin
+    perform public.wallet_issue_pass('apple', v_pub[6], v_s[6], null, v_apple);
+    raise exception 'ÉCHEC: pass effacé réémis';
+  exception when sqlstate 'VT020' then
+    raise notice '  ok  pass effacé : plus téléchargeable';
+  end;
+  update public.wallet_passes set state = v_state, scrubbed_at = null where id = v_p6a;
+
   update public.organizations set status = 'suspended' where id = v_org;
   begin
     perform public.wallet_issue_pass('apple', v_pub[5], v_s[5], null, v_apple);
@@ -558,6 +611,12 @@ begin
   perform count(*) from public.expire_event_passes();
   select * into v_row from public.wallet_outbox where wallet_pass_id = v_p4a and status = 'pending';
   perform internal.wallet_test_ok(v_row.priority = 1, 'expiration de l''accès : mise en file');
+  begin
+    perform public.wallet_issue_pass('google', v_pub[4], null, v_access4, v_google);
+    raise exception 'ÉCHEC: laisser-passer expiré accepté';
+  exception when sqlstate 'VT009' then
+    raise notice '  ok  un laisser-passer expiré n''ouvre plus l''émission';
+  end;
 
   perform internal.wallet_test_clear(v_p5a);
   update public.event_campaigns set wallet_qr_enabled = false where id = v_event;
@@ -589,8 +648,60 @@ begin
   update public.organizations set name = 'Wallet Noyau Maison' where id = v_org;
   perform internal.wallet_test_eq(internal.wallet_test_pending(v_p5a), 1, 'nouveau nom d''organisation : pass redessiné');
   perform internal.wallet_test_clear(v_p5a);
+  update public.organizations set logo_url = 'https://cdn.test/logo-noyau.png' where id = v_org;
+  perform internal.wallet_test_eq(internal.wallet_test_pending(v_p5a), 1, 'nouveau logo d''organisation : pass redessiné');
+  perform internal.wallet_test_clear(v_p5a);
+  update public.locations set cover_url = 'https://cdn.test/couverture.jpg', postal_code = '75011' where id = v_loc;
+  perform internal.wallet_test_eq(internal.wallet_test_pending(v_p5a), 1, 'couverture et adresse de l''établissement : pass redessiné');
+  perform internal.wallet_test_clear(v_p5a);
+  update public.locations set google_review_url = 'https://g.page/r/avis-noyau' where id = v_loc;
+  perform internal.wallet_test_eq(internal.wallet_test_pending(v_p5a), 1, 'lien d''avis ajouté : pass redessiné');
+  perform internal.wallet_test_clear(v_p5a);
+  update public.locations set google_review_url = 'https://g.page/r/avis-noyau-2' where id = v_loc;
+  perform internal.wallet_test_eq(internal.wallet_test_pending(v_p5a), 0, 'lien d''avis seulement changé : rien (seule sa présence est lue)');
   update public.organization_settings set send_completion_review = false where organization_id = v_org;
+  perform internal.wallet_test_eq(internal.wallet_test_pending(v_p5a), 1, 'demande d''avis coupée : le « Merci » est redessiné');
+  perform internal.wallet_test_clear(v_p5a);
+  update public.organization_settings set features = '{"wallet":false}' where organization_id = v_org;
+  perform internal.wallet_test_eq(internal.wallet_test_pending(v_p5a), 1, 'Wallet désactivé : les passes le reflètent');
+  update public.organization_settings set features = '{}' where organization_id = v_org;
+  perform internal.wallet_test_clear(v_p5a);
+  update public.event_campaigns set hero_title = 'La sortie de l''année' where id = v_event;
+  perform internal.wallet_test_eq(internal.wallet_test_pending(v_p5a), 1, 'titre d''accroche de l''événement : billet redessiné');
+  perform internal.wallet_test_clear(v_p5a);
+  update public.queues set notify_ahead_threshold = 4 where id = v_queue;
+  perform internal.wallet_test_eq(internal.wallet_test_pending(v_p5a), 1, 'nouveau seuil d''alerte de la file : pass redessiné');
+  perform internal.wallet_test_clear(v_p5a);
+  update public.organization_settings set support_email = 'aide@noyau.test' where organization_id = v_org;
   perform internal.wallet_test_eq(internal.wallet_test_pending(v_p5a), 0, 'un réglage sans rapport ne réveille rien');
+
+  -- ─────────────────────────────────────────────────────────────────
+  raise notice '── 14 bis. Panne Wallet : aucun déclencheur ne casse une action ──';
+  begin
+    alter table public.wallet_outbox rename to wallet_outbox_indisponible;
+    update public.event_campaigns set accent_hex = '#123456' where id = v_event;
+    perform internal.wallet_test_eq((select accent_hex from public.event_campaigns where id = v_event), '#123456',
+      'événement modifié malgré la panne');
+    perform public.set_queue_status(v_queue, 'open', v_owner);
+    perform internal.wallet_test_eq((select status::text from public.queues where id = v_queue), 'open',
+      'file rouverte malgré la panne');
+    update public.locations set name = 'Wallet Noyau — Panne' where id = v_loc;
+    update public.organization_settings set brand_accent = 'signal' where organization_id = v_org;
+    update public.organizations set name = 'Wallet Noyau Panne' where id = v_org;
+    perform internal.wallet_test_ok(
+      (select l.name = 'Wallet Noyau — Panne' and o.name = 'Wallet Noyau Panne'
+       from public.locations l join public.organizations o on o.id = l.organization_id where l.id = v_loc),
+      'marque modifiée malgré la panne');
+    update public.event_access_passes set grace_until = grace_until + interval '1 minute'
+     where queue_entry_id = v_e[5];
+    perform internal.wallet_test_ok(found, 'laisser-passer modifié malgré la panne');
+    raise exception 'wallet-test-annulation';
+  exception when others then
+    if sqlerrm <> 'wallet-test-annulation' then
+      raise;
+    end if;
+  end;
+  perform internal.wallet_test_ok(to_regclass('public.wallet_outbox') is not null, 'file d''envoi restaurée');
 
   -- ─────────────────────────────────────────────────────────────────
   raise notice '── 15. Purge ──';
@@ -646,6 +757,9 @@ begin
     and exists (select 1 from public.wallet_outbox where wallet_pass_id = v_pp[2] and status = 'pending'
                   and 'archive' = any (reasons)),
     'filet : ticket terminé depuis 3 h → pass final et dernière synchronisation');
+  perform internal.wallet_test_eq((select final_at from public.wallet_passes where id = v_pp[2]),
+    now() - interval '3 hours',
+    'filet : final_at = fin réelle du passage (la fenêtre de 2 h n''est pas rallongée)');
   perform internal.wallet_test_ok(
     exists (select 1 from public.wallet_outbox where wallet_pass_id = v_pp[3] and status = 'pending' and job = 'scrub'),
     'final depuis 25 h : travail d''effacement');
@@ -838,3 +952,309 @@ begin
 end
 $$;
 commit;
+
+-- =====================================================================
+-- Contexte partagé par les cas suivants : ils ont besoin de données
+-- VALIDÉES (une seconde connexion ne voit rien d'autre), donc d'un bloc
+-- de préparation par cas, puis d'un bloc de mesure.
+-- =====================================================================
+create temp table wallet_test_ctx (k text primary key, v text not null);
+
+-- =====================================================================
+-- 17. Cache de sous-transactions : une action du pro dans une file de
+-- 100 passes tenus à jour.
+-- ---------------------------------------------------------------------
+-- Le recalcul des positions décale chaque ticket en UNE instruction.
+-- Un déclencheur par ligne y ouvrait une sous-transaction par ticket
+-- porteur d'un pass : au-delà de 64, le cache déborde et toutes les
+-- images instantanées du cluster passent par pg_subtrans. Le déclencheur
+-- par instruction en ouvre au plus une par instruction.
+-- pg_stat_get_backend_subxact (PostgreSQL 16) lit l'état de CETTE
+-- transaction : chaque mesure est donc un bloc à part, et la lecture vient
+-- après l'action (l'état des connexions est figé à la première lecture).
+-- =====================================================================
+do $$
+declare
+  v_owner uuid := extensions.gen_random_uuid();
+  v_prov  jsonb;
+  v_org   uuid;
+  v_queue uuid;
+  v_sess  uuid;
+  v_pub   text;
+  v_pass  uuid;
+  v_walk  text;
+  v_i     int;
+begin
+  insert into auth.users (id, email) values (v_owner, 'wallet-sousxact@test.local');
+  v_prov  := public.provision_organization(v_owner, 'Wallet Cent', 'barber', 'Wallet Cent Centre');
+  v_org   := (v_prov -> 'organization' ->> 'id')::uuid;
+  v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
+  perform public.set_queue_status(v_queue, 'open', v_owner);
+  -- En tête, deux tickets au comptoir, sans pass.
+  v_walk := public.add_walkin(v_queue, null, null, null, v_owner) -> 'entry' ->> 'id';
+  insert into wallet_test_ctx values ('cent_walk1', v_walk);
+  v_walk := public.add_walkin(v_queue, null, null, null, v_owner) -> 'entry' ->> 'id';
+  insert into wallet_test_ctx values ('cent_walk2', v_walk);
+  for v_i in 1 .. 100 loop
+    v_sess := (public.upsert_client_session(v_org, 'wallet-cent-' || v_i, 'web') ->> 'id')::uuid;
+    v_pub := public.join_queue(v_queue, v_sess, null, null, null, 'qr') -> 'entry' ->> 'id';
+    v_pass := (public.wallet_issue_pass('google', v_pub, v_sess, null,
+      '{"objectPrefix":"3388000000099999999.rvcent_","queueClass":"3388000000099999999.rvcent_file_v1"}')
+      ->> 'id')::uuid;
+    perform public.wallet_google_mark_live(v_pass, 'h0');
+    if v_i = 1 then
+      insert into wallet_test_ctx values ('cent_first', v_pub);
+    end if;
+  end loop;
+  insert into wallet_test_ctx values ('cent_owner', v_owner::text), ('cent_queue', v_queue::text);
+end
+$$;
+
+do $$
+declare
+  v_owner uuid := (select v::uuid from wallet_test_ctx where k = 'cent_owner');
+  v_queue uuid := (select v::uuid from wallet_test_ctx where k = 'cent_queue');
+  v_sub   int;
+begin
+  raise notice '';
+  raise notice '── 17. Cache de sous-transactions (file de 100 passes tenus à jour) ──';
+  if to_regprocedure('pg_stat_get_backend_subxact(integer)') is null then
+    raise notice '  --  pg_stat_get_backend_subxact indisponible (PostgreSQL < 16) : non vérifié';
+    return;
+  end if;
+  -- Retrait d'un ticket sans pass en tête : les 100 autres avancent.
+  perform public.staff_queue_action((select v from wallet_test_ctx where k = 'cent_walk1'), 'remove', v_owner);
+  select s.subxact_count into v_sub
+  from pg_stat_get_backend_idset() b (id)
+  cross join lateral pg_stat_get_backend_subxact(b.id) s
+  where pg_stat_get_backend_pid(b.id) = pg_backend_pid();
+  perform internal.wallet_test_eq(
+    (select count(*)::int from public.wallet_outbox
+      where queue_id = v_queue and status = 'pending' and 'position' = any (reasons)),
+    100, 'les 100 passes sont mis en file (une ligne chacun)');
+  perform internal.wallet_test_ok(v_sub <= 1,
+    format('retrait par le pro : %s sous-transaction(s) pour 100 passes (au plus 1)', v_sub));
+end
+$$;
+
+do $$
+declare
+  v_owner uuid := (select v::uuid from wallet_test_ctx where k = 'cent_owner');
+  v_sub   int;
+begin
+  if to_regprocedure('pg_stat_get_backend_subxact(integer)') is null then
+    return;
+  end if;
+  -- Le ticket en cours sort : le premier porteur de pass passe en cours
+  -- (son statut change, une instruction), puis tout le monde avance (une
+  -- autre instruction).
+  perform public.staff_queue_action((select v from wallet_test_ctx where k = 'cent_walk2'), 'remove', v_owner);
+  select s.subxact_count into v_sub
+  from pg_stat_get_backend_idset() b (id)
+  cross join lateral pg_stat_get_backend_subxact(b.id) s
+  where pg_stat_get_backend_pid(b.id) = pg_backend_pid();
+  perform internal.wallet_test_ok(
+    exists (select 1 from public.wallet_outbox o
+            join public.wallet_passes p on p.id = o.wallet_pass_id
+            join public.queue_entries e on e.id = p.queue_entry_id
+            where e.public_id = (select v from wallet_test_ctx where k = 'cent_first')
+              and o.status = 'pending' and o.priority = 1 and 'status' = any (o.reasons)),
+    'le porteur de pass qui passe en cours : moment clé en file');
+  perform internal.wallet_test_ok(v_sub <= 2,
+    format('action qui change aussi le statut d''un porteur : %s sous-transaction(s) (au plus 2)', v_sub));
+end
+$$;
+
+-- =====================================================================
+-- 18. Verrou d'un pass contre la mise en file du moteur (deux connexions)
+-- ---------------------------------------------------------------------
+-- Cette transaction tient le verrou du pass comme le font, au milieu de
+-- leur travail, wallet_issue_pass, wallet_apple_register et
+-- complete_wallet_outbox. Le moteur (seconde connexion) change la
+-- position du ticket : son déclencheur insère la ligne en attente, et la
+-- clé étrangère demande un FOR KEY SHARE sur le pass. Avec un FOR UPDATE,
+-- le moteur attendait ; la mise en file suivante de cette transaction
+-- attendait sa ligne : interblocage, et la raison « position » perdue.
+-- =====================================================================
+do $$
+declare
+  v_owner uuid := extensions.gen_random_uuid();
+  v_prov  jsonb;
+  v_org   uuid;
+  v_queue uuid;
+  v_sess  uuid;
+  v_pub   text;
+  v_res   jsonb;
+  v_row   bigint;
+begin
+  if to_regprocedure('extensions.dblink_connect(text,text)') is null then
+    return;
+  end if;
+  insert into auth.users (id, email) values (v_owner, 'wallet-verrou@test.local');
+  v_prov  := public.provision_organization(v_owner, 'Wallet Verrou', 'barber', 'Wallet Verrou Centre');
+  v_org   := (v_prov -> 'organization' ->> 'id')::uuid;
+  v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
+  perform public.set_queue_status(v_queue, 'open', v_owner);
+  v_sess := (public.upsert_client_session(v_org, 'wallet-verrou-1', 'web') ->> 'id')::uuid;
+  v_pub  := public.join_queue(v_queue, v_sess, null, null, null, 'qr') -> 'entry' ->> 'id';
+  v_res  := public.wallet_issue_pass('apple', v_pub, v_sess, null, '{"passTypeId":"pass.test.rangvia"}');
+  perform public.wallet_apple_register(v_res ->> 'externalId', 'verrou-appareil-01', repeat('e1', 32));
+  -- Une ligne en cours de traitement (validée), à terminer plus bas.
+  select c.id into v_row from public.claim_wallet_outbox('apple', v_queue, 10) c
+   where c.wallet_pass_id = (v_res ->> 'id')::uuid;
+  insert into wallet_test_ctx values
+    ('verrou_pub', v_pub), ('verrou_sess', v_sess::text), ('verrou_pass', v_res ->> 'id'),
+    ('verrou_serial', v_res ->> 'externalId'), ('verrou_row', v_row::text),
+    ('verrou_entry', (select id::text from public.queue_entries where public_id = v_pub));
+end
+$$;
+
+do $$
+declare
+  v_pass  uuid := (select v::uuid from wallet_test_ctx where k = 'verrou_pass');
+  v_conn  text;
+  v_i     int := 0;
+  v_row   record;
+begin
+  raise notice '';
+  raise notice '── 18. Verrou du pass contre la mise en file du moteur ──';
+  if to_regprocedure('extensions.dblink_connect(text,text)') is null then
+    raise notice '  --  dblink indisponible : non vérifié';
+    return;
+  end if;
+  -- Sans correctif, attendre ne finirait qu'à l'interblocage : on borne.
+  perform set_config('lock_timeout', '5s', true);
+
+  -- Second clic sur le badge : verrou du pass, gardé jusqu'à la fin.
+  perform public.wallet_issue_pass('apple', (select v from wallet_test_ctx where k = 'verrou_pub'),
+    (select v::uuid from wallet_test_ctx where k = 'verrou_sess'), null, '{"passTypeId":"pass.test.rangvia"}');
+  -- Même appareil réinscrit : verrou du pass, sans mise en file.
+  perform internal.wallet_test_eq(
+    public.wallet_apple_register((select v from wallet_test_ctx where k = 'verrou_serial'),
+                                 'verrou-appareil-01', repeat('e1', 32)),
+    'exists', 'appareil déjà inscrit : verrou du pass tenu');
+
+  v_conn := format('host=%s port=%s dbname=%s user=%s',
+                   coalesce(host(inet_server_addr()), '127.0.0.1'),
+                   coalesce(inet_server_port(), 5432), current_database(), current_user);
+  perform extensions.dblink_connect('wallet_moteur', v_conn);
+  perform extensions.dblink_send_query('wallet_moteur', format(
+    'update public.queue_entries set people_ahead = people_ahead + 5 where id = %L',
+    (select v from wallet_test_ctx where k = 'verrou_entry')));
+  while extensions.dblink_is_busy('wallet_moteur') = 1 and v_i < 60 loop
+    perform pg_sleep(0.05);
+    v_i := v_i + 1;
+  end loop;
+  perform internal.wallet_test_ok(extensions.dblink_is_busy('wallet_moteur') = 0,
+    'le moteur met le pass en file sans attendre le verrou du pass');
+  perform * from extensions.dblink_get_result('wallet_moteur') as t (status text);
+  perform internal.wallet_test_eq(extensions.dblink_error_message('wallet_moteur'), 'OK',
+    'action du moteur validée, sans erreur');
+  perform extensions.dblink_disconnect('wallet_moteur');
+
+  -- Suite du travail de cette transaction : deux mises en file.
+  perform internal.wallet_test_ok(
+    public.complete_wallet_outbox((select v::bigint from wallet_test_ctx where k = 'verrou_row'),
+      jsonb_build_object('nextRunAfter', now() + interval '2 hours')),
+    'fin de traitement avec transition différée');
+  perform internal.wallet_test_eq(
+    public.wallet_apple_register((select v from wallet_test_ctx where k = 'verrou_serial'),
+                                 'verrou-appareil-02', repeat('e2', 32)),
+    'created', 'second appareil inscrit');
+
+  select count(*) over () as n, o.* into v_row
+  from public.wallet_outbox o where o.wallet_pass_id = v_pass and o.status = 'pending';
+  perform internal.wallet_test_ok(
+    v_row.n = 1 and v_row.reasons @> array['position', 'archive', 'register'] and v_row.run_after <= clock_timestamp(),
+    'une seule ligne : raisons du moteur et de cette transaction fusionnées, due tout de suite');
+end
+$$;
+
+-- =====================================================================
+-- 19. Échec d'envoi pendant une mise en file du moteur (deux connexions)
+-- ---------------------------------------------------------------------
+-- fail_wallet_outbox cherche une ligne en attente : celle du moteur, pas
+-- encore validée, lui est invisible. Remettre sa propre ligne en attente
+-- heurte alors l'index « une seule ligne en attente » : l'échec doit se
+-- résoudre en « remplacée », jamais en erreur (23505) pour le serveur.
+-- =====================================================================
+do $$
+declare
+  v_owner uuid := extensions.gen_random_uuid();
+  v_prov  jsonb;
+  v_org   uuid;
+  v_queue uuid;
+  v_sess  uuid;
+  v_pub   text;
+  v_pass  uuid;
+  v_row   bigint;
+begin
+  if to_regprocedure('extensions.dblink_connect(text,text)') is null then
+    return;
+  end if;
+  insert into auth.users (id, email) values (v_owner, 'wallet-echec@test.local');
+  v_prov  := public.provision_organization(v_owner, 'Wallet Échec', 'barber', 'Wallet Échec Centre');
+  v_org   := (v_prov -> 'organization' ->> 'id')::uuid;
+  v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
+  perform public.set_queue_status(v_queue, 'open', v_owner);
+  v_sess := (public.upsert_client_session(v_org, 'wallet-echec-1', 'web') ->> 'id')::uuid;
+  v_pub  := public.join_queue(v_queue, v_sess, null, null, null, 'qr') -> 'entry' ->> 'id';
+  v_pass := (public.wallet_issue_pass('google', v_pub, v_sess, null,
+    '{"objectPrefix":"3388000000099999999.rvechec_","queueClass":"3388000000099999999.rvechec_file_v1"}')
+    ->> 'id')::uuid;
+  perform public.wallet_google_mark_live(v_pass, 'h0');
+  perform internal.enqueue_wallet_update(v_pass, 'position', true);
+  select c.id into v_row from public.claim_wallet_outbox('google', v_queue, 10) c where c.wallet_pass_id = v_pass;
+  insert into wallet_test_ctx values
+    ('echec_pass', v_pass::text), ('echec_row', v_row::text),
+    ('echec_entry', (select id::text from public.queue_entries where public_id = v_pub));
+end
+$$;
+
+do $$
+declare
+  v_pass   uuid := (select v::uuid from wallet_test_ctx where k = 'echec_pass');
+  v_row    bigint := (select v::bigint from wallet_test_ctx where k = 'echec_row');
+  v_conn   text;
+  v_status text;
+begin
+  raise notice '';
+  raise notice '── 19. Échec d''envoi pendant une mise en file du moteur ──';
+  if to_regprocedure('extensions.dblink_connect(text,text)') is null then
+    raise notice '  --  dblink indisponible : non vérifié';
+    return;
+  end if;
+  perform set_config('lock_timeout', '5s', true);
+  v_conn := format('host=%s port=%s dbname=%s user=%s',
+                   coalesce(host(inet_server_addr()), '127.0.0.1'),
+                   coalesce(inet_server_port(), 5432), current_database(), current_user);
+  perform extensions.dblink_connect('wallet_moteur_echec', v_conn);
+  perform extensions.dblink_exec('wallet_moteur_echec', 'begin');
+  perform extensions.dblink_exec('wallet_moteur_echec', format(
+    'update public.queue_entries set people_ahead = people_ahead + 1 where id = %L',
+    (select v from wallet_test_ctx where k = 'echec_entry')));
+  -- Le moteur valide un peu plus tard : son insertion n'est pas encore visible.
+  perform extensions.dblink_send_query('wallet_moteur_echec', 'select pg_sleep(0.3); commit');
+
+  v_status := public.fail_wallet_outbox(v_row, 'Google 503', 30, false);
+  -- Deux résultats (pg_sleep, puis commit), puis un résultat vide.
+  perform * from extensions.dblink_get_result('wallet_moteur_echec') as t (x text);
+  perform * from extensions.dblink_get_result('wallet_moteur_echec') as t (x text);
+  perform * from extensions.dblink_get_result('wallet_moteur_echec') as t (x text);
+  perform extensions.dblink_disconnect('wallet_moteur_echec');
+
+  perform internal.wallet_test_eq(v_status, 'done',
+    'échec pendant une mise en file concurrente : ligne remplacée, pas d''erreur');
+  perform internal.wallet_test_ok(
+    (select status = 'done' and last_error = 'Google 503' and locked_until is null
+     from public.wallet_outbox where id = v_row),
+    'la ligne est close, l''erreur conservée');
+  perform internal.wallet_test_ok(
+    (select count(*) = 1 and bool_and('position' = any (reasons))
+     from public.wallet_outbox where wallet_pass_id = v_pass and status = 'pending'),
+    'la ligne du moteur attend, seule');
+  perform internal.wallet_test_eq(
+    (select last_error from public.wallet_passes where id = v_pass), 'Google 503',
+    'l''erreur est inscrite sur le pass');
+end
+$$;

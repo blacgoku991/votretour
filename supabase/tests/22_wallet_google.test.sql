@@ -2,8 +2,10 @@
 -- Rangvia — Wallet : Google (classes, objets, lien d'avis)
 -- ---------------------------------------------------------------------
 -- Classes Google à synchroniser (événement sans classe, classe salie par
--- un changement de marque, erreur à retenter), objet marqué `live` après
--- son insertion REST, et source « wallet » des clics d'avis.
+-- un changement de marque, erreur à retenter, rien pour une organisation
+-- suspendue ou sans Wallet), étiquette de salissure qui ne recule jamais
+-- (deux connexions), objet marqué `live` après son insertion REST, et
+-- source « wallet » des clics d'avis.
 --
 --   DBNAME=votretour_w0 ./scripts/verify-db.sh
 -- =====================================================================
@@ -116,19 +118,34 @@ begin
     'événement en brouillon : pas de classe');
   update public.event_campaigns set status = 'live', started_at = now() where id = v_event;
   select * into v_row from public.wallet_google_classes_due(200) d where d.event_id = v_event;
-  perform internal.wallet_test_ok(v_row.event_id = v_event and v_row.class_id is null and v_row.kind = 'event',
-    'événement en cours sans classe : signalé pour création');
+  perform internal.wallet_test_ok(v_row.event_id = v_event and v_row.class_id is null and v_row.kind = 'event'
+                                  and v_row.dirty_at is null,
+    'événement en cours sans classe : signalé pour création (sans étiquette)');
+
+  update public.organization_settings set features = '{"wallet":false}' where organization_id = v_org;
+  perform internal.wallet_test_ok(
+    not exists (select 1 from public.wallet_google_classes_due(200) d where d.event_id = v_event),
+    'Wallet désactivé par l''organisation : rien de l''événement ne part chez Google');
+  update public.organization_settings set features = '{}' where organization_id = v_org;
+  update public.organizations set status = 'suspended' where id = v_org;
+  perform internal.wallet_test_ok(
+    not exists (select 1 from public.wallet_google_classes_due(200) d where d.event_id = v_event),
+    'organisation suspendue : rien non plus');
+  update public.organizations set status = 'active' where id = v_org;
 
   v_class := '3388000000088888888.rvg_evt_' || replace(v_event::text, '-', '');
-  perform public.wallet_google_class_upsert(v_class, 'event', v_event);
+  v_dirty := (public.wallet_google_class_upsert(v_class, 'event', v_event)).dirty_at;
   select * into v_row from public.wallet_google_classes_due(200) d where d.event_id = v_event;
-  perform internal.wallet_test_ok(v_row.class_id = v_class and v_row.dirty,
+  perform internal.wallet_test_ok(v_row.class_id = v_class and v_row.dirty and v_row.dirty_at = v_dirty,
     'classe créée, pas encore synchronisée');
-  perform public.wallet_google_class_synced(v_class, 'hash-classe-1', 'UNDER_REVIEW', null);
+  -- L'étiquette fait l'aller-retour par un Date JavaScript (milliseconde).
+  perform internal.wallet_test_eq(v_dirty, date_trunc('milliseconds', v_dirty),
+    'étiquette à la milliseconde');
+  perform public.wallet_google_class_synced(v_class, 'hash-classe-1', 'UNDER_REVIEW', null, v_dirty);
   perform internal.wallet_test_ok(
     (select not dirty and review_status = 'UNDER_REVIEW' and synced_hash = 'hash-classe-1'
      from public.wallet_google_classes where class_id = v_class),
-    'synchronisée, en revue chez Google');
+    'synchronisée du premier coup avec l''étiquette rendue à la création, en revue chez Google');
 
   update public.event_campaigns set accent_hex = '#0A7C66' where id = v_event;
   perform internal.wallet_test_ok(
@@ -137,6 +154,11 @@ begin
   perform internal.wallet_test_ok(
     exists (select 1 from public.wallet_google_classes_due(200) d where d.class_id = v_class),
     'elle figure parmi les classes à synchroniser');
+  update public.organization_settings set features = '{"wallet":false}' where organization_id = v_org;
+  perform internal.wallet_test_ok(
+    not exists (select 1 from public.wallet_google_classes_due(200) d where d.class_id = v_class),
+    'Wallet désactivé : la classe salie attend, sans partir');
+  update public.organization_settings set features = '{}' where organization_id = v_org;
 
   -- La marque change PENDANT l'envoi : la classe reste à synchroniser.
   select dirty_at into v_dirty from public.wallet_google_classes where class_id = v_class;
@@ -227,5 +249,101 @@ begin
 
   raise notice '';
   raise notice '✅ Wallet (Google) : tous les tests passent.';
+end
+$$;
+
+-- =====================================================================
+-- Étiquette de salissure : deux transactions qui se chevauchent.
+-- ---------------------------------------------------------------------
+-- T1 (formulaire « nom ») commence, T2 (couleur) modifie et valide, le
+-- serveur lit l'étiquette et envoie ; T1 modifie et valide APRÈS. Avec
+-- now() (heure de début de T1), l'étiquette reculait et le nouveau nom ne
+-- partait jamais chez Google.
+-- =====================================================================
+-- dblink sert aux cas à deux connexions ; le test 20 le crée aussi, mais
+-- ce fichier doit pouvoir tourner seul.
+do $$
+begin
+  begin
+    create extension if not exists dblink with schema extensions;
+  exception when others then
+    raise notice '  --  dblink indisponible : concurrence non vérifiée (%)', sqlerrm;
+  end;
+end
+$$;
+
+create temp table wallet_test_ctx (k text primary key, v text not null);
+
+do $$
+declare
+  v_owner uuid := extensions.gen_random_uuid();
+  v_prov  jsonb;
+  v_org   uuid;
+  v_event uuid;
+  v_class text;
+begin
+  if to_regprocedure('extensions.dblink_connect(text,text)') is null then
+    return;
+  end if;
+  insert into auth.users (id, email) values (v_owner, 'wallet-etiquette@test.local');
+  v_prov := public.provision_organization(v_owner, 'Wallet Étiquette', 'barber', 'Wallet Étiquette Centre');
+  v_org  := (v_prov -> 'organization' ->> 'id')::uuid;
+  insert into public.event_campaigns (organization_id, location_id, queue_id, name, status, started_at)
+  values (v_org, (v_prov -> 'location' ->> 'id')::uuid, (v_prov -> 'queue' ->> 'id')::uuid,
+          'Drop Étiquette', 'live', now())
+  returning id into v_event;
+  v_class := '3388000000088888888.rvg_evt_' || replace(v_event::text, '-', '');
+  perform public.wallet_google_class_synced(v_class, 'h0', 'APPROVED', null,
+    (public.wallet_google_class_upsert(v_class, 'event', v_event)).dirty_at);
+  insert into wallet_test_ctx values ('event', v_event::text), ('class', v_class);
+end
+$$;
+
+do $$
+declare
+  v_event uuid := (select v::uuid from wallet_test_ctx where k = 'event');
+  v_class text := (select v from wallet_test_ctx where k = 'class');
+  v_conn  text;
+  v_read  timestamptz;
+begin
+  raise notice '';
+  raise notice '── 7. Étiquette de salissure : transactions qui se chevauchent ──';
+  if to_regprocedure('extensions.dblink_connect(text,text)') is null then
+    raise notice '  --  dblink indisponible : non vérifié';
+    return;
+  end if;
+  perform set_config('lock_timeout', '5s', true);
+  perform internal.wallet_test_ok(
+    (select not dirty from public.wallet_google_classes where class_id = v_class), 'classe propre au départ');
+
+  v_conn := format('host=%s port=%s dbname=%s user=%s',
+                   coalesce(host(inet_server_addr()), '127.0.0.1'),
+                   coalesce(inet_server_port(), 5432), current_database(), current_user);
+  perform extensions.dblink_connect('wallet_t1', v_conn);
+  perform extensions.dblink_connect('wallet_t2', v_conn);
+
+  perform extensions.dblink_exec('wallet_t1', 'begin');
+  perform * from extensions.dblink('wallet_t1', 'select now()::text') as t (x text);
+  perform pg_sleep(0.02);
+  perform extensions.dblink_exec('wallet_t2', format(
+    'update public.event_campaigns set accent_hex = %L where id = %L', '#0A7C66', v_event));
+  select dirty_at into v_read from public.wallet_google_classes where class_id = v_class;
+
+  perform extensions.dblink_exec('wallet_t1', format(
+    'update public.event_campaigns set name = %L where id = %L', 'Drop Étiquette — nouveau nom', v_event));
+  perform extensions.dblink_exec('wallet_t1', 'commit');
+  perform extensions.dblink_disconnect('wallet_t1');
+  perform extensions.dblink_disconnect('wallet_t2');
+
+  perform internal.wallet_test_ok(
+    (select dirty_at > v_read from public.wallet_google_classes where class_id = v_class),
+    'l''étiquette ne recule pas quand une transaction plus ancienne valide après');
+  perform public.wallet_google_class_synced(v_class, 'h-couleur', null, null, v_read);
+  perform internal.wallet_test_ok(
+    (select dirty and synced_hash = 'h-couleur' from public.wallet_google_classes where class_id = v_class),
+    'nom validé pendant l''envoi de la couleur : la classe reste à synchroniser');
+
+  raise notice '';
+  raise notice '✅ Wallet (Google, concurrence) : tous les tests passent.';
 end
 $$;

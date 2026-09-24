@@ -22,22 +22,31 @@
 -- toutes les transitions du moteur passent par UPDATE queue_entries, que
 -- les déclencheurs voient. Et une panne du Wallet ne fait JAMAIS échouer
 -- une action de file : chaque mise en file est isolée dans un bloc
--- d'exception, ouvert seulement quand un pass existe.
+-- d'exception, ouvert seulement quand un pass est concerné, et une seule
+-- fois par instruction (voir § 7 : cache de sous-transactions).
+--
+-- Verrous : toute lecture verrouillante d'un pass est `for no key update`.
+-- La clé étrangère wallet_outbox → wallet_passes prend un FOR KEY SHARE à
+-- chaque mise en file ; un FOR UPDATE le bloquerait et, face au déclencheur
+-- du moteur qui a déjà inséré sa ligne en attente, provoquerait un
+-- interblocage (la mise en file du moteur serait sacrifiée). Aucune
+-- fonction ci-dessous ne modifie une colonne de clé d'un pass.
 --
 -- Sécurité : tables sous RLS sans aucune politique ; fonctions réservées
 -- à service_role ; rien pour anon ni authenticated. Aucun prénom n'entre
 -- dans un pass, ni dans l'instantané qui sert à le dessiner.
 --
--- Codes d'erreur propres au Wallet (les VT011 à VT013 sont pris par les
--- profils métier) :
+-- Codes d'erreur propres au Wallet (VT011 à VT014 : plaques ; VT015 à
+-- VT017 : profils métier) :
 --   VT020 ticket plus éligible (terminé depuis plus de 30 min, pass effacé)
 --   VT021 Wallet désactivé pour cette organisation
 --   VT022 paramètre de nommage ou fournisseur invalide
 --
--- Commutativité avec les migrations 0031 à 0038 (profils métier) : ce
--- fichier ne lit, ne modifie ni ne redéfinit aucun objet qu'elles créent,
--- et ne redéfinit aucune fonction existante. Les déclencheurs portent sur
--- des colonnes présentes depuis 0003 (status, people_ahead, staff_id).
+-- Commutativité avec les migrations 0031 à 0037 (écran TV, profils
+-- métier) : ce fichier ne lit, ne modifie ni ne redéfinit aucun objet
+-- qu'elles créent, et ne redéfinit aucune fonction existante. Les
+-- déclencheurs ne portent que sur des colonnes créées par les migrations
+-- 0002 à 0016, ou par ce fichier.
 -- =====================================================================
 
 begin;
@@ -122,10 +131,10 @@ create index wallet_passes_event_live on public.wallet_passes (event_id)
   where live and state = 'active';
 create index wallet_passes_final_idx on public.wallet_passes (final_at)
   where state = 'final';
--- Changements de marque (établissement, organisation) et purge d'une
--- organisation en suppression.
+-- Changements de marque (établissement, organisation) : le « Merci »
+-- (final) porte aussi le logo et le lien d'avis, il est redessiné.
 create index wallet_passes_org_live on public.wallet_passes (organization_id, location_id)
-  where live and state = 'active';
+  where live and state in ('active', 'final');
 -- purge_expired_data supprime les sessions clients : sans cet index,
 -- chaque suppression parcourrait la table (on delete set null).
 create index wallet_passes_session on public.wallet_passes (client_session_id)
@@ -269,11 +278,13 @@ create table public.wallet_google_classes (
   review_status text,              -- valeur renvoyée par Google (UNDER_REVIEW, APPROVED, REJECTED…)
   synced_hash   text,
   dirty         boolean not null default true,
-  -- Moment où la classe a été salie pour la dernière fois : permet à
-  -- wallet_google_class_synced de ne pas effacer un changement survenu
-  -- PENDANT la synchronisation (sinon la marque modifiée à ce moment-là
-  -- ne partirait jamais chez Google).
-  dirty_at      timestamptz not null default now(),
+  -- Étiquette de la dernière salissure : permet à wallet_google_class_synced
+  -- de ne pas effacer un changement survenu PENDANT la synchronisation
+  -- (sinon la marque modifiée à ce moment-là ne partirait jamais chez
+  -- Google). Strictement croissante (internal.wallet_class_dirty_stamp) et
+  -- comparée à égalité. À la milliseconde : elle fait l'aller-retour par un
+  -- Date JavaScript sans perte, donc sans resynchronisation sans fin.
+  dirty_at      timestamptz not null default date_trunc('milliseconds', clock_timestamp()),
   synced_at     timestamptz,
   last_error    text,
   created_at    timestamptz not null default now(),
@@ -389,8 +400,43 @@ $$;
 -- Tous SECURITY DEFINER : quand le serveur modifie une ligne directement
 -- (service_role, sans droit sur le schéma internal), le déclencheur doit
 -- pouvoir appeler internal.enqueue_wallet_updates.
+--
+-- Chacun lit d'abord les passes concernés HORS de tout bloc d'exception :
+-- sans pass (le cas de presque toutes les actions), aucune sous-transaction
+-- n'est ouverte. Sinon, UN bloc d'exception pour tous les passes de
+-- l'instruction.
+--
+-- Pourquoi compter les sous-transactions : chacune qui écrit reçoit un
+-- identifiant, gardé jusqu'à la fin de la transaction. Au-delà de 64 dans
+-- la même transaction, le cache déborde et TOUTES les images instantanées
+-- du cluster passent par pg_subtrans tant qu'elle dure. Mesuré avec un
+-- déclencheur par ligne : dans une file de 120 passes tenus à jour, un
+-- retrait par le pro (le recalcul des positions décale chaque ticket en
+-- une instruction) ouvrait 64+ sous-transactions et passait de 14 à 41 ms.
+--
+-- Les actions courantes du pro restent à 2 au plus, quelle que soit la
+-- taille de la file (test 20, § 17) : une pour le ticket dont le statut
+-- change, une pour le recalcul des positions.
+--
+-- Limite connue, chiffrée, à trancher hors de ce lot : les boucles du
+-- moteur qui modifient UN ticket par instruction (issue_event_wave,
+-- close_event_campaign, expire_event_passes, migration 0015) ouvrent
+-- encore une sous-transaction par ticket porteur d'un billet Wallet tenu à
+-- jour : 2 par billet pour une vague (accès émis, puis ticket appelé),
+-- 1 par billet pour une clôture. Mesuré (PostgreSQL 16) : vague de 50
+-- billets 27 → 60 ms, clôture de 200 billets 50 → 148 ms, cache débordé
+-- pendant ces seules transactions (une par vague, une par drop). Le
+-- remède propre est ensembliste côté moteur (une instruction par vague),
+-- pas un contournement ici : ces fonctions ne sont pas redéfinies par
+-- cette migration.
 
--- Ticket : statut, position, professionnel assigné.
+-- Ticket : statut, position, professionnel assigné. Déclencheur PAR
+-- INSTRUCTION avec tables de transition : recompute_queue_positions décale
+-- tous les tickets d'une file en UNE instruction, après chaque action.
+-- PostgreSQL refuse une liste de colonnes (`of status, …`) avec des tables
+-- de transition : le filtre sur les colonnes changées est dans la jointure.
+-- Sans pass, le coût est une jointure vide sur l'index partiel
+-- wallet_passes_entry_live.
 create or replace function internal.wallet_entry_touch()
 returns trigger
 language plpgsql
@@ -398,45 +444,57 @@ security definer
 set search_path = public, internal, extensions, pg_temp
 as $$
 declare
-  v_ids       uuid[];
-  v_threshold int;
-  v_key       boolean;
-  v_reason    text;
+  v_ids     uuid[];
+  v_reasons text[];
+  v_keys    boolean[];
+  r         record;
 begin
-  -- Chemin chaud (recalcul des positions : une fois par ticket actif et
-  -- par action) : aucune sous-transaction tant qu'aucun pass n'existe.
-  select array_agg(p.id) into v_ids
-  from public.wallet_passes p
-  where p.queue_entry_id = new.id
-    and p.live
-    and p.state in ('active', 'final');
+  select array_agg(c.pass_id), array_agg(c.reason), array_agg(c.is_key)
+    into v_ids, v_reasons, v_keys
+  from (
+    select p.id as pass_id,
+           case
+             when o.status is distinct from n.status then 'status'
+             when o.people_ahead is distinct from n.people_ahead then 'position'
+             else 'staff'
+           end as reason,
+           -- Moment clé : même logique que les notifications existantes
+           -- (claim_pending_notifications) — changement de statut, ou
+           -- franchissement du seuil, puis 1, puis 0.
+           coalesce(
+             o.status is distinct from n.status
+             or (o.people_ahead is distinct from n.people_ahead
+                 and (n.people_ahead in (0, 1)
+                      or (o.people_ahead > coalesce(q.notify_ahead_threshold, 2)
+                          and n.people_ahead <= coalesce(q.notify_ahead_threshold, 2)))),
+             false) as is_key
+    from wallet_entries_new n
+    join wallet_entries_old o on o.id = n.id
+    join public.wallet_passes p
+      on p.queue_entry_id = n.id and p.live and p.state in ('active', 'final')
+    left join public.queues q on q.id = n.queue_id
+    where o.status is distinct from n.status
+       or o.people_ahead is distinct from n.people_ahead
+       or o.staff_id is distinct from n.staff_id
+  ) c;
 
   if v_ids is null then
     return null;
   end if;
 
   begin
-    select q.notify_ahead_threshold into v_threshold
-    from public.queues q where q.id = new.queue_id;
-    v_threshold := coalesce(v_threshold, 2);
-
-    -- Moment clé : même logique que les notifications existantes
-    -- (claim_pending_notifications) — franchissement du seuil, puis 1, puis 0.
-    v_key := old.status is distinct from new.status
-      or (old.people_ahead is distinct from new.people_ahead
-          and (new.people_ahead in (0, 1)
-               or (old.people_ahead > v_threshold and new.people_ahead <= v_threshold)));
-
-    v_reason := case
-      when old.status is distinct from new.status then 'status'
-      when old.people_ahead is distinct from new.people_ahead then 'position'
-      else 'staff'
-    end;
-
-    perform internal.enqueue_wallet_updates(v_ids, v_reason, v_key);
+    -- Au plus six groupes (trois raisons, deux urgences), une seule
+    -- sous-transaction pour tous.
+    for r in
+      select t.reason, t.is_key, array_agg(t.id) as ids
+      from unnest(v_ids, v_reasons, v_keys) as t (id, reason, is_key)
+      group by t.reason, t.is_key
+    loop
+      perform internal.enqueue_wallet_updates(r.ids, r.reason, r.is_key);
+    end loop;
   exception when others then
     -- Une panne du Wallet ne doit jamais faire échouer une action de file.
-    raise warning 'Wallet : mise en file impossible pour le ticket % : %', new.public_id, sqlerrm;
+    raise warning 'Wallet : mise en file impossible pour % pass : %', cardinality(v_ids), sqlerrm;
   end;
 
   return null;
@@ -444,14 +502,14 @@ end;
 $$;
 
 create trigger queue_entries_wallet_touch
-  after update of status, people_ahead, staff_id on public.queue_entries
-  for each row
-  when (old.status is distinct from new.status
-        or old.people_ahead is distinct from new.people_ahead
-        or old.staff_id is distinct from new.staff_id)
+  after update on public.queue_entries
+  referencing old table as wallet_entries_old new table as wallet_entries_new
+  for each statement
   execute function internal.wallet_entry_touch();
 
 -- Laisser-passer d'un drop : émission, validation, expiration, révocation.
+-- Par instruction, comme les tickets : close_event_campaign révoque tous
+-- les accès d'un événement en une instruction.
 create or replace function internal.wallet_event_pass_touch()
 returns trigger
 language plpgsql
@@ -461,11 +519,21 @@ as $$
 declare
   v_ids uuid[];
 begin
-  select array_agg(p.id) into v_ids
-  from public.wallet_passes p
-  where p.queue_entry_id = new.queue_entry_id
-    and p.live
-    and p.state in ('active', 'final');
+  if tg_op = 'INSERT' then
+    select array_agg(distinct p.id) into v_ids
+    from wallet_access_new n
+    join public.wallet_passes p
+      on p.queue_entry_id = n.queue_entry_id and p.live and p.state in ('active', 'final');
+  else
+    select array_agg(distinct p.id) into v_ids
+    from wallet_access_new n
+    join wallet_access_old o on o.id = n.id
+    join public.wallet_passes p
+      on p.queue_entry_id = n.queue_entry_id and p.live and p.state in ('active', 'final')
+    where o.status is distinct from n.status
+       or o.valid_until is distinct from n.valid_until
+       or o.grace_until is distinct from n.grace_until;
+  end if;
 
   if v_ids is null then
     return null;
@@ -474,7 +542,7 @@ begin
   begin
     perform internal.enqueue_wallet_updates(v_ids, 'event_pass', true);
   exception when others then
-    raise warning 'Wallet : mise en file impossible pour le laisser-passer % : %', new.public_id, sqlerrm;
+    raise warning 'Wallet : mise en file impossible pour % pass (laisser-passer) : %', cardinality(v_ids), sqlerrm;
   end;
 
   return null;
@@ -483,30 +551,38 @@ $$;
 
 create trigger event_access_passes_wallet_insert
   after insert on public.event_access_passes
-  for each row execute function internal.wallet_event_pass_touch();
-
-create trigger event_access_passes_wallet_touch
-  after update of status, valid_until, grace_until on public.event_access_passes
-  for each row
-  when (old.status is distinct from new.status
-        or old.valid_until is distinct from new.valid_until
-        or old.grace_until is distinct from new.grace_until)
+  referencing new table as wallet_access_new
+  for each statement
   execute function internal.wallet_event_pass_touch();
 
--- File : pause, fermeture, réouverture. Fermer une file n'annule pas les
--- tickets : le pass reste actif, seul son texte change.
+create trigger event_access_passes_wallet_touch
+  after update on public.event_access_passes
+  referencing old table as wallet_access_old new table as wallet_access_new
+  for each statement
+  execute function internal.wallet_event_pass_touch();
+
+-- File : pause, fermeture, réouverture, mode, seuil d'alerte, durée de vie
+-- des tickets (tous lus par l'instantané). Fermer une file n'annule pas
+-- les tickets : le pass reste actif, seul son texte change.
 create or replace function internal.wallet_queue_touch()
 returns trigger
 language plpgsql
 security definer
 set search_path = public, internal, extensions, pg_temp
 as $$
+declare
+  v_ids uuid[];
 begin
+  select array_agg(p.id) into v_ids
+  from public.wallet_passes p
+  where p.queue_id = new.id and p.live and p.state = 'active';
+
+  if v_ids is null then
+    return null;
+  end if;
+
   begin
-    perform internal.enqueue_wallet_updates(
-      (select array_agg(p.id) from public.wallet_passes p
-        where p.queue_id = new.id and p.live and p.state = 'active'),
-      'queue', false);
+    perform internal.enqueue_wallet_updates(v_ids, 'queue', false);
   exception when others then
     raise warning 'Wallet : mise en file impossible pour la file % : %', new.id, sqlerrm;
   end;
@@ -515,31 +591,60 @@ end;
 $$;
 
 create trigger queues_wallet_touch
-  after update of status on public.queues
+  after update of status, mode, notify_ahead_threshold, entry_ttl_minutes on public.queues
   for each row
-  when (old.status is distinct from new.status)
+  when (old.status is distinct from new.status
+        or old.mode is distinct from new.mode
+        or old.notify_ahead_threshold is distinct from new.notify_ahead_threshold
+        or old.entry_ttl_minutes is distinct from new.entry_ttl_minutes)
   execute function internal.wallet_queue_touch();
 
--- Événement : marque, règles, statut, acceptation du QR Wallet. La
--- classe Google de l'événement est salie ; le déclencheur ne la CRÉE pas
--- (son identifiant dépend de l'émetteur, que seule l'application connaît) :
--- wallet_google_classes_due signale les événements encore sans classe.
+-- Étiquette de salissure d'une classe Google : strictement croissante,
+-- à la milliseconde. Pas now() : c'est l'heure de DÉBUT de la transaction,
+-- et une transaction commencée avant une autre mais validée après ferait
+-- reculer l'étiquette. Le verrou de ligne sérialise les écritures d'une
+-- même classe ; l'étiquette précédente + 1 ms garantit la croissance même
+-- si deux écritures tombent dans la même milliseconde.
+create or replace function internal.wallet_class_dirty_stamp(p_prev timestamptz)
+returns timestamptz
+language sql
+volatile
+security definer
+set search_path = public, internal, extensions, pg_temp
+as $$
+  select greatest(date_trunc('milliseconds', clock_timestamp()),
+                  coalesce(p_prev, '-infinity'::timestamptz) + interval '1 millisecond');
+$$;
+
+-- Événement : marque, règles, statut, dates, acceptation du QR Wallet
+-- (tout ce que lit l'instantané). La classe Google de l'événement est
+-- salie ; le déclencheur ne la CRÉE pas (son identifiant dépend de
+-- l'émetteur, que seule l'application connaît) : wallet_google_classes_due
+-- signale les événements encore sans classe.
 create or replace function internal.wallet_event_touch()
 returns trigger
 language plpgsql
 security definer
 set search_path = public, internal, extensions, pg_temp
 as $$
+declare
+  v_ids uuid[];
 begin
-  begin
-    update public.wallet_google_classes
-       set dirty = true, dirty_at = now()
-     where event_id = new.id;
+  select array_agg(p.id) into v_ids
+  from public.wallet_passes p
+  where p.event_id = new.id and p.live and p.state = 'active';
 
-    perform internal.enqueue_wallet_updates(
-      (select array_agg(p.id) from public.wallet_passes p
-        where p.event_id = new.id and p.live and p.state = 'active'),
-      'event', old.status is distinct from new.status);
+  if v_ids is null
+     and not exists (select 1 from public.wallet_google_classes c where c.event_id = new.id) then
+    return null;
+  end if;
+
+  begin
+    update public.wallet_google_classes c
+       set dirty = true, dirty_at = internal.wallet_class_dirty_stamp(c.dirty_at)
+     where c.event_id = new.id;
+
+    perform internal.enqueue_wallet_updates(v_ids, 'event', old.status is distinct from new.status);
   exception when others then
     raise warning 'Wallet : mise en file impossible pour l''événement % : %', new.id, sqlerrm;
   end;
@@ -548,20 +653,26 @@ end;
 $$;
 
 create trigger event_campaigns_wallet_touch
-  after update of name, logo_url, cover_url, accent_hex, rules_text, status, wallet_qr_enabled
+  after update of name, hero_title, logo_url, cover_url, accent_hex, rules_text, status,
+                  started_at, ended_at, wallet_qr_enabled
   on public.event_campaigns
   for each row
   when (old.name is distinct from new.name
+        or old.hero_title is distinct from new.hero_title
         or old.logo_url is distinct from new.logo_url
         or old.cover_url is distinct from new.cover_url
         or old.accent_hex is distinct from new.accent_hex
         or old.rules_text is distinct from new.rules_text
         or old.status is distinct from new.status
+        or old.started_at is distinct from new.started_at
+        or old.ended_at is distinct from new.ended_at
         or old.wallet_qr_enabled is distinct from new.wallet_qr_enabled)
   execute function internal.wallet_event_touch();
 
--- Marque : établissement, accent de l'organisation, nom de l'organisation.
--- Rare, jamais urgent : même rythme que les changements de position.
+-- Marque : établissement, organisation, réglages lus par l'instantané.
+-- Rare, jamais urgent : même rythme que les changements de position. Le
+-- « Merci » (final) est redessiné aussi : il porte le logo et le lien
+-- d'avis. Le nom d'un professionnel renommé, lui, part au prochain envoi.
 create or replace function internal.wallet_branding_touch()
 returns trigger
 language plpgsql
@@ -571,19 +682,23 @@ as $$
 declare
   v_ids uuid[];
 begin
-  begin
-    if tg_table_name = 'locations' then
-      select array_agg(p.id) into v_ids from public.wallet_passes p
-       where p.organization_id = new.organization_id and p.location_id = new.id
-         and p.live and p.state = 'active';
-    elsif tg_table_name = 'organization_settings' then
-      select array_agg(p.id) into v_ids from public.wallet_passes p
-       where p.organization_id = new.organization_id and p.live and p.state = 'active';
-    else
-      select array_agg(p.id) into v_ids from public.wallet_passes p
-       where p.organization_id = new.id and p.live and p.state = 'active';
-    end if;
+  if tg_table_name = 'locations' then
+    select array_agg(p.id) into v_ids from public.wallet_passes p
+     where p.organization_id = new.organization_id and p.location_id = new.id
+       and p.live and p.state in ('active', 'final');
+  elsif tg_table_name = 'organization_settings' then
+    select array_agg(p.id) into v_ids from public.wallet_passes p
+     where p.organization_id = new.organization_id and p.live and p.state in ('active', 'final');
+  else
+    select array_agg(p.id) into v_ids from public.wallet_passes p
+     where p.organization_id = new.id and p.live and p.state in ('active', 'final');
+  end if;
 
+  if v_ids is null then
+    return null;
+  end if;
+
+  begin
     perform internal.enqueue_wallet_updates(v_ids, 'branding', false);
   exception when others then
     raise warning 'Wallet : mise en file impossible (marque, %) : %', tg_table_name, sqlerrm;
@@ -592,27 +707,41 @@ begin
 end;
 $$;
 
+-- Le lien d'avis n'est lu que par sa présence (hasReviewUrl) : changer
+-- d'adresse d'avis ne redessine rien, en ajouter ou en retirer une, si.
 create trigger locations_wallet_touch
-  after update of name, logo_url, address_line1, city, latitude, longitude on public.locations
+  after update of name, slug, logo_url, cover_url, address_line1, address_line2, postal_code,
+                  city, country_code, latitude, longitude, timezone, google_review_url
+  on public.locations
   for each row
   when (old.name is distinct from new.name
+        or old.slug is distinct from new.slug
         or old.logo_url is distinct from new.logo_url
+        or old.cover_url is distinct from new.cover_url
         or old.address_line1 is distinct from new.address_line1
+        or old.address_line2 is distinct from new.address_line2
+        or old.postal_code is distinct from new.postal_code
         or old.city is distinct from new.city
+        or old.country_code is distinct from new.country_code
         or old.latitude is distinct from new.latitude
-        or old.longitude is distinct from new.longitude)
+        or old.longitude is distinct from new.longitude
+        or old.timezone is distinct from new.timezone
+        or (old.google_review_url is null) <> (new.google_review_url is null))
   execute function internal.wallet_branding_touch();
 
 create trigger organization_settings_wallet_touch
-  after update of brand_accent on public.organization_settings
+  after update of brand_accent, features, send_completion_review on public.organization_settings
   for each row
-  when (old.brand_accent is distinct from new.brand_accent)
+  when (old.brand_accent is distinct from new.brand_accent
+        or old.features -> 'wallet' is distinct from new.features -> 'wallet'
+        or old.send_completion_review is distinct from new.send_completion_review)
   execute function internal.wallet_branding_touch();
 
 create trigger organizations_wallet_touch
-  after update of name on public.organizations
+  after update of name, logo_url on public.organizations
   for each row
-  when (old.name is distinct from new.name)
+  when (old.name is distinct from new.name
+        or old.logo_url is distinct from new.logo_url)
   execute function internal.wallet_branding_touch();
 
 -- ---------------------------------------------------------------------
@@ -621,8 +750,13 @@ create trigger organizations_wallet_touch
 -- Idempotente : un pass par fournisseur et par ticket ; un second clic
 -- renvoie le même pass (download_count compte les téléchargements).
 -- Le serveur a déjà vérifié le cookie ; la fonction revérifie en SQL :
--- le ticket appartient à la session, OU le laisser-passer (cookie
--- rv_event_pass signé) pointe ce ticket. Un public_id seul ne suffit pas.
+-- le ticket appartient à la session, OU le laisser-passer encore valable
+-- (émis ou utilisé ; cookie rv_event_pass signé) pointe ce ticket. Un
+-- public_id seul ne suffit pas.
+--
+-- VT005 (ticket introuvable) et VT009 (autre session) disent si un
+-- public_id existe : la route de distribution les traduit par UNE seule
+-- et même réponse (404), pour ne rien révéler.
 --
 -- p_naming (fourni par la configuration du fournisseur) :
 --   Apple  : { "passTypeId": "pass.fr.rangvia.ticket" }
@@ -664,7 +798,8 @@ begin
     (p_client_session_id is not null and v_entry.client_session_id = p_client_session_id)
     or (p_event_pass_public_id is not null and exists (
           select 1 from public.event_access_passes a
-          where a.public_id = p_event_pass_public_id and a.queue_entry_id = v_entry.id))
+          where a.public_id = p_event_pass_public_id and a.queue_entry_id = v_entry.id
+            and a.status in ('issued', 'redeemed')))
   ) then
     raise exception 'Ce ticket n''appartient pas à cette session' using errcode = 'VT009';
   end if;
@@ -688,11 +823,12 @@ begin
     raise exception 'Wallet désactivé pour cet établissement' using errcode = 'VT021';
   end if;
 
-  -- Pass existant : même pass, un téléchargement de plus.
+  -- Pass existant : même pass, un téléchargement de plus. `for no key
+  -- update` : voir l'en-tête (verrous).
   select * into v_pass
   from public.wallet_passes
   where provider = p_provider and queue_entry_id = v_entry.id
-  for update;
+  for no key update;
 
   if not found then
     select ev.id into v_event_id
@@ -740,7 +876,7 @@ begin
       select * into v_pass
       from public.wallet_passes
       where provider = p_provider and queue_entry_id = v_entry.id
-      for update;
+      for no key update;
     end if;
   end if;
 
@@ -1101,6 +1237,14 @@ $$;
 -- * nextRunAfter : transition différée (« Merci » archivé à +2 h).
 -- Une ligne qui n'est plus `processing` (bail expiré puis repris) est
 -- ignorée : rien n'est écrit, le prochain envoi remettra tout d'aplomb.
+-- Une alerte déjà acceptée par le fournisseur n'est alors pas inscrite :
+-- le prochain envoi pourrait la refaire sonner. Le vidage doit donc finir
+-- bien avant le bail (budget de 20 s pour un bail de 60 s) ; un fournisseur
+-- plus lent se règle en allongeant p_lease_seconds, pas ici.
+--
+-- Registre `alerts` : { "<moment>": "2026-09-24T10:00:00.000Z" }, ISO 8601
+-- en UTC à la milliseconde, lisible par new Date() et indépendant du
+-- fuseau de la session (contrat relu par les lots Apple et Google).
 create or replace function public.complete_wallet_outbox(p_id bigint, p_result jsonb)
 returns boolean
 language plpgsql
@@ -1143,7 +1287,7 @@ begin
     return false;
   end if;
 
-  select * into v_pass from public.wallet_passes where id = v_row.wallet_pass_id for update;
+  select * into v_pass from public.wallet_passes where id = v_row.wallet_pass_id for no key update;
   select * into v_entry from public.queue_entries where id = v_pass.queue_entry_id;
 
   update public.wallet_outbox
@@ -1161,10 +1305,7 @@ begin
     )
     select array_agg(device_library_identifier) into v_devices from gone;
 
-    delete from public.wallet_apple_devices d
-     where d.device_library_identifier = any (coalesce(v_devices, '{}'))
-       and not exists (select 1 from public.wallet_apple_registrations r
-                       where r.device_library_identifier = d.device_library_identifier);
+    perform internal.wallet_apple_forget_devices(v_devices);
 
     update public.wallet_passes
        set state = 'scrubbed',
@@ -1210,7 +1351,8 @@ begin
          -- avec notification_status quand un ticket revient en file.
          alerts         = (case when v_reopen then '{}'::jsonb else p.alerts end)
                           || case when v_kind is null then '{}'::jsonb
-                                  else jsonb_build_object(v_kind, to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SSOF')) end,
+                                  else jsonb_build_object(v_kind,
+                                         to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) end,
          notify_log     = array(
                             select t
                             from unnest(p.notify_log || case when v_notified then array[now()]
@@ -1280,13 +1422,23 @@ begin
      where id = p_id;
   else
     v_status := 'pending';
-    update public.wallet_outbox
-       set status = 'pending',
-           locked_until = null,
-           last_error = v_error,
-           run_after = now() + make_interval(
-             secs => least(greatest(coalesce(p_retry_after_seconds, 30), 1), 86400))
-     where id = p_id;
+    begin
+      update public.wallet_outbox
+         set status = 'pending',
+             locked_until = null,
+             last_error = v_error,
+             run_after = now() + make_interval(
+               secs => least(greatest(coalesce(p_retry_after_seconds, 30), 1), 86400))
+       where id = p_id;
+    exception when unique_violation then
+      -- Une mise en file concurrente, invisible au contrôle ci-dessus (pas
+      -- encore validée), vient de créer la ligne en attente : elle relira
+      -- l'état courant, celle-ci s'efface (même règle que claim).
+      v_status := 'done';
+      update public.wallet_outbox
+         set status = 'done', locked_until = null, last_error = v_error
+       where id = p_id;
+    end;
   end if;
 
   update public.wallet_passes set last_error = v_error where id = v_row.wallet_pass_id;
@@ -1317,11 +1469,13 @@ begin
     raise exception 'Appareil ou jeton Apple invalide' using errcode = '22023';
   end if;
 
-  -- Verrou du pass : sérialise le contrôle du nombre d'appareils.
+  -- Verrou du pass : sérialise le contrôle du nombre d'appareils. `for no
+  -- key update` : la mise en file concurrente du moteur (clé étrangère,
+  -- FOR KEY SHARE) passe sans attendre ; voir l'en-tête (verrous).
   select * into v_pass
   from public.wallet_passes
   where provider = 'apple' and external_id = p_serial
-  for update;
+  for no key update;
 
   if not found or v_pass.state in ('revoked', 'scrubbed') then
     return 'gone';
@@ -1344,6 +1498,9 @@ begin
     return 'limit';
   end if;
 
+  -- ON CONFLICT DO UPDATE verrouille l'appareil existant même quand le
+  -- jeton ne change pas : une désinscription concurrente ne peut plus le
+  -- supprimer avant la validation (internal.wallet_apple_forget_devices).
   insert into public.wallet_apple_devices (device_library_identifier, push_token)
   values (p_device, p_push_token)
   on conflict (device_library_identifier) do update
@@ -1365,6 +1522,48 @@ begin
 end;
 $$;
 
+-- Appareils à oublier : ceux de la liste qui n'ont plus aucune
+-- inscription. Chaque appareil est d'abord verrouillé, `skip locked` :
+-- une inscription concurrente du même appareil (wallet_apple_register)
+-- tient ce verrou depuis son ON CONFLICT jusqu'à sa validation, et
+-- l'appareil est alors laissé en place (la purge horaire le reprendra
+-- s'il reste orphelin). Le contrôle « sans inscription » vient APRÈS le
+-- verrou, dans une nouvelle instruction : il voit les inscriptions
+-- validées entre-temps. En une seule instruction, la suppression jugeait
+-- sur l'instantané de la requête et pouvait emporter en cascade
+-- l'inscription validée pendant son attente.
+create or replace function internal.wallet_apple_forget_devices(p_devices text[])
+returns int
+language plpgsql
+security definer
+set search_path = public, internal, extensions, pg_temp
+as $$
+declare
+  v_locked text[];
+  v_count  int;
+begin
+  if p_devices is null or cardinality(p_devices) = 0 then
+    return 0;
+  end if;
+
+  select array_agg(d.device_library_identifier) into v_locked
+  from (
+    select x.device_library_identifier
+    from public.wallet_apple_devices x
+    where x.device_library_identifier = any (p_devices)
+    order by x.device_library_identifier
+    for update skip locked
+  ) d;
+
+  delete from public.wallet_apple_devices d
+   where d.device_library_identifier = any (coalesce(v_locked, '{}'))
+     and not exists (select 1 from public.wallet_apple_registrations r
+                     where r.device_library_identifier = d.device_library_identifier);
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
 -- Désinscription. S'il ne reste aucun appareil, plus rien n'est tenu à
 -- jour : `live` retombe et le pass reste consultable jusqu'à sa purge.
 create or replace function public.wallet_apple_unregister(p_serial text, p_device text)
@@ -1380,7 +1579,7 @@ begin
   select id into v_pass_id
   from public.wallet_passes
   where provider = 'apple' and external_id = p_serial
-  for update;
+  for no key update;
 
   if not found then
     return false;
@@ -1390,10 +1589,7 @@ begin
    where device_library_identifier = p_device and wallet_pass_id = v_pass_id;
   get diagnostics v_deleted = row_count;
 
-  delete from public.wallet_apple_devices d
-   where d.device_library_identifier = p_device
-     and not exists (select 1 from public.wallet_apple_registrations r
-                     where r.device_library_identifier = d.device_library_identifier);
+  perform internal.wallet_apple_forget_devices(array[p_device]);
 
   if not exists (select 1 from public.wallet_apple_registrations where wallet_pass_id = v_pass_id) then
     update public.wallet_passes
@@ -1496,7 +1692,18 @@ $$;
 -- ---------------------------------------------------------------------
 -- Classes à synchroniser : salies, jamais synchronisées, en erreur depuis
 -- plus de 10 min, ou événement en cours sans classe (class_id nul :
--- l'application la crée avec wallet_google_class_upsert).
+-- l'application la crée avec wallet_google_class_upsert, avant tout
+-- billet : le bouton Google reste masqué tant que la classe manque).
+--
+-- Une classe d'événement ne part chez Google que pour une organisation
+-- active qui n'a pas désactivé Wallet (features.wallet, comme
+-- wallet_issue_pass) : nom, logo et règles de l'événement n'ont rien à y
+-- faire sinon (minimisation, § 12.1). Une classe salie pendant une
+-- suspension le reste, et part à la réactivation.
+--
+-- dirty_at : l'étiquette à rendre à wallet_google_class_synced. Nulle pour
+-- un événement encore sans classe : le serveur rend alors celle que
+-- renvoie wallet_google_class_upsert.
 create or replace function public.wallet_google_classes_due(p_limit int default 20)
 returns table (
   class_id      text,
@@ -1518,16 +1725,28 @@ as $$
     select c.class_id, c.kind, c.event_id, c.review_status, c.synced_hash,
            c.dirty, c.dirty_at, c.synced_at, c.last_error
     from public.wallet_google_classes c
-    where (c.last_error is null and (c.dirty or c.synced_at is null))
-       or (c.last_error is not null and c.updated_at < now() - interval '10 minutes')
+    where ((c.last_error is null and (c.dirty or c.synced_at is null))
+           or (c.last_error is not null and c.updated_at < now() - interval '10 minutes'))
+      and (c.kind = 'queue' or exists (
+            select 1
+            from public.event_campaigns ev
+            join public.organizations o on o.id = ev.organization_id
+            left join public.organization_settings s on s.organization_id = ev.organization_id
+            where ev.id = c.event_id
+              and o.status = 'active'
+              and coalesce(s.features ->> 'wallet', 'true') <> 'false'))
     union all
     select null::text, 'event'::text, ev.id, null::text, null::text,
-           true, ev.updated_at, null::timestamptz, null::text
+           true, null::timestamptz, null::timestamptz, null::text
     from public.event_campaigns ev
+    join public.organizations o on o.id = ev.organization_id
+    left join public.organization_settings s on s.organization_id = ev.organization_id
     where ev.status in ('live', 'paused')
+      and o.status = 'active'
+      and coalesce(s.features ->> 'wallet', 'true') <> 'false'
       and not exists (select 1 from public.wallet_google_classes c where c.event_id = ev.id)
   ) due
-  order by due.synced_at nulls first, due.dirty_at
+  order by due.synced_at nulls first, due.dirty_at nulls first
   limit least(greatest(coalesce(p_limit, 20), 1), 200);
 $$;
 
@@ -1566,9 +1785,14 @@ begin
 end;
 $$;
 
--- Résultat d'une synchronisation de classe. p_dirty_at (facultatif) : la
--- valeur dirty_at lue avant l'envoi ; si la classe a été salie depuis, elle
--- reste à synchroniser.
+-- Résultat d'une synchronisation de classe. p_dirty_at : l'étiquette
+-- dirty_at lue AVANT l'envoi (wallet_google_classes_due, ou le retour de
+-- wallet_google_class_upsert pour une classe neuve). Si elle a changé
+-- depuis, la classe a été salie pendant l'envoi : elle reste à
+-- synchroniser. Comparaison à égalité, sûre puisque l'étiquette ne fait
+-- que croître ; une salissure encore en cours (non validée) tient le
+-- verrou de la ligne, et cette mise à jour la relit après validation.
+-- p_dirty_at nul : classe déclarée propre sans condition (à éviter).
 create or replace function public.wallet_google_class_synced(
   p_class_id      text,
   p_hash          text,
@@ -1585,7 +1809,7 @@ begin
     update public.wallet_google_classes c
        set synced_hash   = coalesce(p_hash, c.synced_hash),
            review_status = coalesce(nullif(p_review_status, ''), c.review_status),
-           dirty         = case when p_dirty_at is not null and c.dirty_at > p_dirty_at
+           dirty         = case when p_dirty_at is not null and c.dirty_at is distinct from p_dirty_at
                                 then c.dirty else false end,
            synced_at     = now(),
            last_error    = null
@@ -1627,7 +1851,9 @@ $$;
 -- une fois le passage terminé.
 --   1. Filet : pass actif dont le ticket est terminé depuis plus de 2 h,
 --      ou créé depuis plus de 3 jours (ticket resté absent) → final, avec
---      une dernière synchronisation s'il est tenu à jour.
+--      une dernière synchronisation s'il est tenu à jour. final_at = fin
+--      réelle du passage (pas l'heure de la purge) : la fenêtre de
+--      réouverture de 2 h et le délai d'effacement de 24 h en partent.
 --   2. Pass final (ou révoqué) depuis plus de 24 h → effacement : travail
 --      `scrub` s'il est tenu à jour, directement sinon.
 --   3. Organisation en suppression → effacement immédiat de ses passes.
@@ -1635,7 +1861,13 @@ $$;
 --   5. Filet ultime : pass créé depuis plus de 30 jours → supprimé, même
 --      si le fournisseur n'a jamais pu l'effacer (retiré de la
 --      configuration) : on ne garde pas d'identifiant d'appareil sans fin.
---   6. Appareils Apple sans inscription → supprimés.
+--      Conséquence assumée, à dire dans la mention § 12.3 : un pass Google
+--      dont l'effacement n'a jamais abouti garde chez Google son dernier
+--      contenu (jamais de prénom : marque, statut, heures), et Rangvia n'a
+--      plus de quoi l'effacer. Apple : l'iPhone garde de toute façon la
+--      dernière version reçue.
+--   6. Appareils Apple sans inscription → supprimés (sauf inscription en
+--      cours, voir internal.wallet_apple_forget_devices).
 --   7. File d'envoi : ligne en attente depuis plus de 2 jours (fournisseur
 --      non configuré) → abandonnée ; lignes closes de plus de 7 jours → supprimées.
 create or replace function public.purge_wallet_data()
@@ -1645,7 +1877,6 @@ security definer
 set search_path = public, internal, extensions, pg_temp
 as $$
 declare
-  v_ids        uuid[];
   v_live       uuid[];
   v_finalized  int := 0;
   v_scrub_jobs int := 0;
@@ -1659,20 +1890,26 @@ declare
   v_n          int;
 begin
   -- 1. Filet.
-  select array_agg(p.id), array_agg(p.id) filter (where p.live)
-    into v_ids, v_live
-  from public.wallet_passes p
-  join public.queue_entries e on e.id = p.queue_entry_id
-  where p.state = 'active'
-    and (p.created_at < now() - interval '3 days'
-         or (e.status in ('completed', 'cancelled', 'expired', 'skipped')
-             and coalesce(e.completed_at, e.cancelled_at, e.expired_at, e.updated_at)
-                 < now() - interval '2 hours'));
-
-  update public.wallet_passes
-     set state = 'final', final_at = now()
-   where id = any (coalesce(v_ids, '{}')) and state = 'active';
-  get diagnostics v_finalized = row_count;
+  with done as (
+    update public.wallet_passes p
+       set state = 'final',
+           final_at = case
+             when e.status in ('completed', 'cancelled', 'expired', 'skipped')
+               then least(now(), coalesce(e.completed_at, e.cancelled_at, e.expired_at, e.updated_at))
+             else now()
+           end
+      from public.queue_entries e
+     where e.id = p.queue_entry_id
+       and p.state = 'active'
+       and (p.created_at < now() - interval '3 days'
+            or (e.status in ('completed', 'cancelled', 'expired', 'skipped')
+                and coalesce(e.completed_at, e.cancelled_at, e.expired_at, e.updated_at)
+                    < now() - interval '2 hours'))
+    returning p.id, p.live
+  )
+  select count(*)::int, array_agg(done.id) filter (where done.live)
+    into v_finalized, v_live
+  from done;
   perform internal.enqueue_wallet_updates(v_live, 'archive', false);
 
   -- 2. Effacement 24 h après la fin.
@@ -1718,10 +1955,11 @@ begin
   get diagnostics v_expired = row_count;
 
   -- 6. Appareils orphelins.
-  delete from public.wallet_apple_devices d
-   where not exists (select 1 from public.wallet_apple_registrations r
-                     where r.device_library_identifier = d.device_library_identifier);
-  get diagnostics v_devices = row_count;
+  v_devices := internal.wallet_apple_forget_devices(array(
+    select d.device_library_identifier
+    from public.wallet_apple_devices d
+    where not exists (select 1 from public.wallet_apple_registrations r
+                      where r.device_library_identifier = d.device_library_identifier)));
 
   -- 7. File d'envoi.
   update public.wallet_outbox
@@ -1811,7 +2049,9 @@ begin
     'internal.wallet_event_pass_touch()',
     'internal.wallet_queue_touch()',
     'internal.wallet_event_touch()',
-    'internal.wallet_branding_touch()'
+    'internal.wallet_branding_touch()',
+    'internal.wallet_class_dirty_stamp(timestamptz)',
+    'internal.wallet_apple_forget_devices(text[])'
   ] loop
     execute format('revoke all on function %s from public, anon, authenticated, service_role', fn);
   end loop;
