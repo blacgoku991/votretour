@@ -24,6 +24,13 @@ import { describe, expect, it } from 'vitest';
  * relire un humain, un faux négatif casserait la production. Le script
  * scripts/verify-db-order.sh complète ce test en rejouant réellement les
  * deux ordres et en comparant les schémas obtenus.
+ *
+ * Pourquoi « paire par paire » : la production ne voit pas seulement les
+ * deux ordres extrêmes que rejoue le script. 0021 est déjà fusionnée, et
+ * les fusions suivantes peuvent entrelacer les plages (0021, 0031-0038,
+ * 0022-0030…). Deux migrations qui ne partagent aucun objet commutent ;
+ * si chaque paire (Wallet, profils) commute, tous les entrelacements
+ * donnent la même base. Les bornes de rangeOf() sont celles du script.
  */
 
 const DIR = fileURLToPath(new URL('../../../supabase/migrations/', import.meta.url));

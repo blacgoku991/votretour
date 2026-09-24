@@ -17,6 +17,16 @@
 # trivialement vert. apps/web/tests/migrations-commute.test.ts fait la même
 # vérification par lecture des fichiers ; ce script la fait pour de vrai.
 #
+# D'autres entrelacements existent en production : 0021 est déjà sur la
+# branche principale, la production peut donc recevoir 0021, puis
+# 0031-0038, puis 0022-0030 (ou n'importe quel mélange, au gré des
+# fusions). Le script n'en rejoue que deux, les extrêmes. Les autres sont
+# couverts par le test lexical, qui vérifie la règle PAIRE PAR PAIRE :
+# aucun fichier Wallet ne touche ni ne cite un objet d'un fichier profils,
+# et réciproquement. Deux migrations qui ne se touchent pas commutent ;
+# si toutes les paires commutent, tous les entrelacements donnent la même
+# base. Les bornes des plages sont les mêmes ici et dans rangeOf() du test.
+#
 #   ./scripts/verify-db-order.sh
 #   DBNAME=votretour_moi_ord ./scripts/verify-db-order.sh
 #

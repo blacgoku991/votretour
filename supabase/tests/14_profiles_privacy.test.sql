@@ -2,13 +2,16 @@
 -- Rangvia — profils métier : confidentialité, écran de salle, statistiques
 -- (migration 0036, [SEC § 14.2] cas 1 à 8)
 -- ---------------------------------------------------------------------
---   0. Parité walkin : le scénario du test 12 rejoué ; display_snapshot
---      (0036) rend EXACTEMENT le JSON attendu de 0031, écrit ici en clair,
---      clés et valeurs. Même sortie pour une file event.
---   1. Atelier véhicule : immatriculation masquée (3 derniers caractères),
---      ni plaque en clair, ni registrationKey, ni details, ni prénom, ni
---      modèle, ni motif, ni devis, ni note. tvRegistration = 'none' (et
---      'model_only') : aucune immatriculation, même masquée.
+--   0. Parité walkin : le scénario du test 12 rejoué. display_snapshot
+--      (0036) est comparée au corps de 0031, relu dans son fichier de
+--      migration et chargé sous un autre nom le temps de la transaction :
+--      même JSON, en walkin comme en event. Le JSON attendu est aussi
+--      écrit en clair, clés et valeurs, pour que le contrat se lise ici.
+--   1. Atelier véhicule : seules les lignes « prêt » partent, plaque
+--      masquée (3 derniers caractères) ; ni plaque en clair, ni
+--      registrationKey, ni details, ni prénom, ni modèle, ni motif, ni
+--      devis, ni note. tvRegistration = 'none' (et 'model_only') :
+--      compteurs seulement.
 --   2. Guichet en santé : aucun prénom, même quand client_name est
 --      renseigné, ni le motif. Toujours vrai si la file demande le prénom.
 --   3. (le 0) walkin : mêmes prénoms et initiales, aucune note ni journal.
@@ -18,20 +21,31 @@
 --      messages ni les details ; anon ne lit rien.
 --   6. Droits : display_snapshot, claim_entry, peek_claim, desk_call_next,
 --      profile_stats et claim_entry_notification_key refusés à anon et à
---      authenticated.
+--      authenticated ; les 13 fonctions internes de 0036 fermées.
 --   7. details de plus de 2 Ko : violation de contrainte.
 --   8. Aucun événement (étape comprise) ne contient l'immatriculation.
--- Plus : table, boutique et atelier appareil à l'écran ; profile_stats
--- (atelier, table, guichet, changement de profil) sans donnée personnelle.
+-- Plus : masquage en défense en profondeur (caractères hors ASCII), fin
+-- de numéro de commande ; table, boutique et atelier appareil à l'écran ;
+-- bornes et ordres de chaque liste ; profile_stats (atelier, table,
+-- guichet, changement de profil) sans donnée personnelle.
 --
 -- Tout se joue dans une transaction annulée à la fin : la purge, les
--- dates reculées et les organisations d'essai ne restent pas en base.
+-- dates reculées, les organisations d'essai et la copie de 0031 ne
+-- restent pas en base.
 -- =====================================================================
 
 \set ON_ERROR_STOP on
 \timing off
 
+-- Le fichier de 0031, pour la parité directe du bloc 0. psql ne donne pas
+-- le dossier du script : on le lit dans la ligne de commande de psql
+-- (verify-db.sh et verify-db-order.sh passent un chemin absolu), sinon
+-- depuis la racine du dépôt. Introuvable : le bloc 0 échoue, il ne saute pas.
+\set m0031 `d=''; for a in $(tr '\0' ' ' < /proc/$PPID/cmdline 2>/dev/null); do case "$a" in *14_profiles_privacy.test.sql) d="$(dirname "$a")/../migrations";; esac; done; [ -n "$d" ] || d="$(git rev-parse --show-toplevel 2>/dev/null || pwd)/supabase/migrations"; cat "$d/20260101000031_display_snapshot.sql" 2>/dev/null || true`
+
 begin;
+
+select set_config('p14.m0031', :'m0031', true) is not null as m0031_loaded \gset
 
 create or replace function internal.assert(p_condition boolean, p_label text)
 returns void language plpgsql as $$
@@ -118,6 +132,8 @@ declare
   v_wait    text[] := '{}';   -- les dix personnes en attente, dans l'ordre
   v_disp    jsonb;
   v_expect  jsonb;
+  v_src     text;
+  v_at      int;
   i         int;
   c_waiting constant text[] := array[
     'Sarah', 'Jean-Luc Picard', null, 'Émilie', 'Zoé Dupont — Paris',
@@ -210,21 +226,54 @@ begin
       jsonb_build_object('id', v_wait[6], 'called', false, 'initials', 'LM'))
   );
 
+  -- Le corps de 0031, tel que publié, sous un nom de test : la parité se
+  -- prouve en comparant les deux fonctions, pas seulement à un JSON écrit
+  -- à la main. Superutilisateur ici : security definer n'y change rien.
+  v_src := coalesce(current_setting('p14.m0031', true), '');
+  v_at := position('create or replace function public.display_snapshot(' in v_src);
+  if v_at = 0 then
+    raise exception 'ÉCHEC: 20260101000031_display_snapshot.sql introuvable ou sans display_snapshot (lancez la suite par scripts/verify-db.sh)';
+  end if;
+  v_src := substr(v_src, v_at);
+  -- Fin du corps : deux dollars et un point-virgule en début de ligne,
+  -- écrits sans dollars consécutifs (ils fermeraient ce bloc do).
+  v_src := substr(v_src, 1, position(E'\n' || repeat('$', 2) || ';' in v_src) + 3);
+  v_src := replace(v_src, 'create or replace function public.display_snapshot(',
+                          'create function internal.test_display_snapshot_0031(');
+  execute v_src;
+
   v_disp := public.display_snapshot(v_queue);
+  perform internal.assert(v_disp = internal.test_display_snapshot_0031(v_queue),
+    'walkin : display_snapshot (0036) = display_snapshot (0031), fonction contre fonction');
   if v_disp is distinct from v_expect then
     raise exception 'ÉCHEC: sortie walkin différente de 0031.% attendu : % % obtenu  : %',
       E'\n', v_expect, E'\n', v_disp;
   end if;
-  raise notice '  ok  walkin : JSON identique à celui de 0031 (clés, valeurs, ordres)';
+  raise notice '  ok  walkin : JSON identique à celui de 0031 écrit en clair (clés, valeurs, ordres)';
   perform internal.assert(not (v_disp ? 'profile'), 'walkin : aucune clé profile');
   perform internal.test_absent(v_disp::text, array['NOTE-PRIVEE', 'Thomas', 'Sarah', 'Picard', 'Chloé'],
     'walkin : ni note, ni prénom de la file d''attente, ni quatrième prestation');
 
   -- Une file event rend la même chose (le module Événements a son écran).
   update public.queues set profile = 'event' where id = v_queue;
-  perform internal.assert(public.display_snapshot(v_queue) = v_expect,
+  perform internal.assert(public.display_snapshot(v_queue) = v_expect
+                            and public.display_snapshot(v_queue) = internal.test_display_snapshot_0031(v_queue),
     'event : JSON identique à celui de 0031');
   update public.queues set profile = 'walkin' where id = v_queue;
+
+  -- File vide et fermée, file inconnue : mêmes sorties aussi.
+  insert into auth.users (id, email) values (extensions.gen_random_uuid(), 'p14-vide@profils.test')
+  returning id into v_sid;
+  v_old := (public.provision_organization(v_sid, 'Salon Vide', 'barber', 'Salon Vide', 'shared', 'pro')
+            -> 'queue' ->> 'id')::uuid;
+  perform internal.assert(
+    public.display_snapshot(v_old) = internal.test_display_snapshot_0031(v_old)
+      and public.display_snapshot(v_old) -> 'upcoming' = '[]'::jsonb,
+    'walkin vide et fermée : même JSON qu''en 0031');
+  perform internal.assert(
+    public.display_snapshot(extensions.gen_random_uuid()) is null
+      and internal.test_display_snapshot_0031(extensions.gen_random_uuid()) is null,
+    'file inconnue : null, comme en 0031');
 
   insert into p14 values ('salon_loc', v_loc::text), ('salon_queue', v_queue::text);
 end
@@ -309,7 +358,7 @@ begin
 
   v_disp := public.display_snapshot(v_queue);
   v_text := v_disp::text;
-  v_cols := v_disp -> 'workshop' -> 'columns';
+  v_cols := v_disp -> 'workshop' -> 'ready';
 
   perform internal.assert_eq(internal.test_keys(v_disp),
     array['counts','location','profile','queue','serving','staff','upcoming','workshop'], 'clés de premier niveau');
@@ -319,24 +368,24 @@ begin
     'listes nominatives de 0031 vides (l''écran d''avant P5 reste cohérent, sans nom)');
   perform internal.assert_eq(internal.test_keys(v_disp -> 'counts'),
     array['active','completedToday','serving','upcoming','waiting'], 'compteurs de 0031 présents');
-  perform internal.assert_eq(internal.test_keys(v_disp -> 'workshop'), array['columns','today'], 'clés du bloc atelier');
-  perform internal.assert_eq(
-    (select array_agg(c ->> 'key' order by n) from jsonb_array_elements(v_cols) with ordinality as t(c, n)),
-    array['intake','workshop','waiting','ready'], 'quatre colonnes, dans l''ordre du planning');
-  perform internal.assert_eq(
-    (select array_agg((c ->> 'total')::int order by n) from jsonb_array_elements(v_cols) with ordinality as t(c, n)),
-    array[1, 1, 1, 1], 'une fiche par colonne');
-  perform internal.assert_eq(internal.test_keys(v_cols -> 0 -> 'items' -> 0),
-    array['deviceKind','id','registration','since','ticketNo'], 'clés d''une ligne d''atelier');
-  perform internal.assert_eq(v_cols -> 0 -> 'items' -> 0 ->> 'registration', '••-••9-NP', 'à prendre en charge : ••-••9-NP');
-  perform internal.assert_eq(v_cols -> 1 -> 'items' -> 0 ->> 'registration', '•••• •B 75', 'en atelier (FNI) : •••• •B 75');
-  perform internal.assert_eq(v_cols -> 2 -> 'items' -> 0 ->> 'registration', '••-••3-CD', 'devis ou pièce : ••-••3-CD');
-  perform internal.assert_eq(v_cols -> 3 -> 'items' -> 0 ->> 'registration', '••-••6-JK', 'prêt : ••-••6-JK');
-  perform internal.assert_eq(v_cols -> 3 -> 'items' -> 0 ->> 'id', v_v[3], 'prêt : la bonne fiche');
-  perform internal.assert_eq(v_disp -> 'workshop' -> 'today',
-    jsonb_build_object('received', 5, 'handedOver', 1), 'reçus et rendus aujourd''hui');
+  perform internal.assert_eq(internal.test_keys(v_disp -> 'workshop'), array['counts','ready'], 'clés du bloc atelier');
+  perform internal.assert_eq(v_disp -> 'workshop' -> 'counts', jsonb_build_object(
+      'intake', 1, 'workshop', 1, 'waiting', 1, 'ready', 1, 'inWorkshop', 3,
+      'receivedToday', 5, 'handedOverToday', 1),
+    'compteurs : une fiche par colonne, trois à l''atelier, cinq reçus, un rendu');
+  perform internal.assert_eq(jsonb_array_length(v_cols), 1, 'une seule ligne : le véhicule prêt');
+  perform internal.assert_eq(internal.test_keys(v_cols -> 0),
+    array['deviceKind','id','readySince','registrationMasked','ticketNo'], 'clés d''une ligne « prêt »');
+  perform internal.assert_eq(v_cols -> 0 ->> 'registrationMasked', '••-••6-JK', 'prêt : ••-••6-JK');
+  perform internal.assert_eq(v_cols -> 0 ->> 'id', v_v[3], 'prêt : la bonne fiche');
 
-  perform internal.assert(position('••-••3-CD' in v_text) > 0, 'le texte contient ••-••3-CD');
+  -- Les véhicules encore à l'atelier ne partent pas, même masqués
+  -- ([SEC § 4.2] : « Véhicules prêts » et des compteurs).
+  perform internal.test_absent(v_text, array['••-••3-CD', '••-••9-NP', '•••• •B 75', '••••3CD', 'B 75'],
+    'aucune plaque, même masquée, des véhicules pas encore prêts');
+  perform internal.assert(
+    position(v_v[1] in v_text) = 0 and position(v_v[2] in v_text) = 0 and position(v_v[4] in v_text) = 0,
+    'ni l''identifiant des fiches à l''atelier');
   perform internal.test_absent(v_text, v_secret,
     'ni plaque en clair, ni prénom, ni modèle, ni motif, ni devis, ni note');
   perform internal.assert(not (internal.test_all_keys(v_disp) && internal.test_forbidden_keys()),
@@ -348,8 +397,16 @@ begin
       and position(v_sid::text in v_text) = 0,
     'ni l''organisation, ni l''établissement, ni la session du client');
 
-  -- tvRegistration : 'none' et 'model_only' ne montrent AUCUNE plaque, et
-  -- jamais le modèle (décision du propriétaire).
+  -- Plus de saisie dans details (fiche corrigée à la main, reprise d'un
+  -- import…) : registration_key, normalisée, sert de repli, masquée aussi.
+  update public.queue_entries set details = details - 'registration' where public_id = v_v[3];
+  perform internal.assert_eq(
+    public.display_snapshot(v_queue) -> 'workshop' -> 'ready' -> 0 ->> 'registrationMasked', '••••6JK',
+    'repli sur registration_key : ••••6JK');
+  update public.queue_entries set details = details || '{"registration":"GH-456-JK"}' where public_id = v_v[3];
+
+  -- tvRegistration : 'none' et 'model_only' n'envoient AUCUNE ligne, les
+  -- compteurs seulement, et jamais le modèle (décision du propriétaire).
   foreach v_mode in array array['none', 'model_only'] loop
     update public.queues
        set profile_options = profile_options || jsonb_build_object('tvRegistration', v_mode)
@@ -357,12 +414,10 @@ begin
     v_disp := public.display_snapshot(v_queue);
     v_text := v_disp::text;
     perform internal.assert(
-      position('•' in v_text) = 0 and position('3-CD' in v_text) = 0 and position('6-JK' in v_text) = 0
-        and not exists (
-          select 1 from jsonb_array_elements(v_disp -> 'workshop' -> 'columns') c,
-                        jsonb_array_elements(c -> 'items') it
-          where it -> 'registration' <> 'null'::jsonb),
-      format('tvRegistration = %s : aucune immatriculation, même masquée', v_mode));
+      v_disp -> 'workshop' -> 'ready' = '[]'::jsonb
+        and (v_disp -> 'workshop' -> 'counts' ->> 'ready')::int = 1
+        and position('•' in v_text) = 0 and position('6-JK' in v_text) = 0,
+      format('tvRegistration = %s : compteurs seulement, aucune immatriculation', v_mode));
     perform internal.test_absent(v_text, v_secret, format('tvRegistration = %s : ni modèle ni prénom', v_mode));
   end loop;
   update public.queues
@@ -414,14 +469,25 @@ begin
   v_id := public.add_walkin(v_queue, 'Salomé', null, null, v_owner, null,
     '{"deviceKind":"phone","model":"iPhone 13 mini"}') -> 'entry' ->> 'id';
   perform public.staff_queue_action(v_id, 'set_stage', v_owner, null, '{"stage":"ready"}');
+  -- Une tablette encore en diagnostic : comptée, pas listée.
+  perform public.staff_queue_action(
+    public.add_walkin(v_queue, 'Timothée', null, null, v_owner, null,
+      '{"deviceKind":"tablet","model":"iPad Air"}') -> 'entry' ->> 'id',
+    'set_stage', v_owner, null, '{"stage":"diagnosis"}');
 
   v_disp := public.display_snapshot(v_queue);
-  v_item := v_disp -> 'workshop' -> 'columns' -> 3 -> 'items' -> 0;
+  v_item := v_disp -> 'workshop' -> 'ready' -> 0;
   perform internal.assert_eq(v_disp ->> 'profile', 'device', 'profile = device');
+  perform internal.assert_eq(jsonb_array_length(v_disp -> 'workshop' -> 'ready'), 1, 'une ligne : l''appareil prêt');
   perform internal.assert_eq(v_item ->> 'ticketNo', '0001', 'dossier 0001');
   perform internal.assert_eq(v_item ->> 'deviceKind', 'phone', 'pictogramme : téléphone');
-  perform internal.assert(v_item -> 'registration' = 'null'::jsonb, 'aucune immatriculation en atelier appareil');
-  perform internal.test_absent(v_disp::text, array['iPhone', 'Salomé'], 'ni le modèle ni le prénom');
+  perform internal.assert(v_item -> 'registrationMasked' = 'null'::jsonb, 'aucune immatriculation en atelier appareil');
+  perform internal.assert(
+    (v_disp -> 'workshop' -> 'counts' ->> 'workshop')::int = 1
+      and (v_disp -> 'workshop' -> 'counts' ->> 'inWorkshop')::int = 1,
+    'la tablette en diagnostic est comptée « en atelier »');
+  perform internal.test_absent(v_disp::text, array['iPhone', 'iPad', 'Salomé', 'Timothée', 'tablet'],
+    'ni le modèle, ni le prénom, ni l''appareil qui n''est pas prêt');
   perform internal.assert(not (internal.test_all_keys(v_disp) && internal.test_forbidden_keys()),
     'aucune clé interdite');
 end
@@ -507,20 +573,20 @@ begin
       format('passe %s : aucune clé de nom ni clé interdite', v_pass));
   end loop;
 
-  perform internal.assert_eq(internal.test_keys(v_disp -> 'desks'), array['counts','current','recent'],
+  perform internal.assert_eq(internal.test_keys(v_disp -> 'desks'), array['counts','currentCalls','recentCalls'],
     'clés du tableau d''appel');
-  perform internal.assert_eq(internal.test_keys(v_disp -> 'desks' -> 'current' -> 0),
+  perform internal.assert_eq(internal.test_keys(v_disp -> 'desks' -> 'currentCalls' -> 0),
     array['calledAt','deskLabel','id','ticketNo'], 'clés d''un appel');
   perform internal.assert(
-    exists (select 1 from jsonb_array_elements(v_disp -> 'desks' -> 'current') c
+    exists (select 1 from jsonb_array_elements(v_disp -> 'desks' -> 'currentCalls') c
             where c ->> 'ticketNo' = 'A-002' and c ->> 'deskLabel' = 'Box 2'),
     'appel en cours : A-002 → Box 2 (repli sur le nom de la fiche)');
   perform internal.assert(
-    exists (select 1 from jsonb_array_elements(v_disp -> 'desks' -> 'current') c
+    exists (select 1 from jsonb_array_elements(v_disp -> 'desks' -> 'currentCalls') c
             where c ->> 'ticketNo' = 'A-003' and c ->> 'deskLabel' = 'Guichet 3'),
     'Terminer au guichet 3 appelle le suivant au même guichet : A-003 → Guichet 3');
   perform internal.assert(
-    exists (select 1 from jsonb_array_elements(v_disp -> 'desks' -> 'recent') c
+    exists (select 1 from jsonb_array_elements(v_disp -> 'desks' -> 'recentCalls') c
             where c ->> 'ticketNo' = 'A-001' and c ->> 'deskLabel' = 'Guichet 3'),
     'derniers appels : A-001 → Guichet 3');
   perform internal.assert_eq(v_disp -> 'desks' -> 'counts',
@@ -543,6 +609,7 @@ declare
   v_lea   text;
   v_nemo  text;
   v_num   text;
+  v_bere  text;
   v_disp  jsonb;
   v_row   jsonb;
 begin
@@ -574,17 +641,27 @@ begin
   perform internal.test_absent(v_disp::text, array['Léa', 'Némo', 'terrace', 'highchair'],
     'ni les prénoms de l''attente, ni les préférences');
 
-  -- Numérotée, la file n'envoie plus que le numéro.
+  -- Numérotée, la file n'envoie plus que le numéro. Bérénice s'est
+  -- inscrite AVANT l'activation : son ticket n'a pas de numéro, et son
+  -- prénom ne part pas pour autant.
+  v_bere := public.add_walkin(v_queue, 'Bérénice', null, null, v_owner, null, '{"partySize":3}') -> 'entry' ->> 'id';
   update public.queues set profile_options = profile_options || '{"numbering":true}' where id = v_queue;
   v_num := public.add_walkin(v_queue, 'Zacharie', null, null, v_owner, null, '{"partySize":6}') -> 'entry' ->> 'id';
   perform public.staff_queue_action(v_karim, 'complete', v_owner, null);
   perform public.staff_queue_action(v_num, 'call', v_owner, null);
+  perform public.staff_queue_action(v_bere, 'call', v_owner, null);
+  update public.queue_entries set called_at = now() - interval '2 minutes' where public_id = v_num;
   v_disp := public.display_snapshot(v_queue);
   v_row := v_disp -> 'tables' -> 'ready' -> 0;
   perform internal.assert(v_row ->> 'ticketNo' = 'A-001' and v_row -> 'name' = 'null'::jsonb
                             and (v_row ->> 'partySize')::int = 6,
     'file numérotée : A-001 · 6, sans prénom');
-  perform internal.test_absent(v_disp::text, array['Zacharie', 'Karim'], 'aucun prénom dès qu''un numéro existe');
+  v_row := v_disp -> 'tables' -> 'ready' -> 1;
+  perform internal.assert_eq(v_row, jsonb_build_object(
+      'id', v_bere, 'ticketNo', null, 'name', null, 'partySize', 3, 'calledAt', v_row -> 'calledAt'),
+    'inscrite avant la numérotation : · 3, ni numéro ni prénom');
+  perform internal.test_absent(v_disp::text, array['Zacharie', 'Karim', 'Bérénice'],
+    'aucun prénom dès que la file numérote');
   perform internal.assert_eq(
     (v_disp -> 'tables' -> 'counts' ->> 'coversSeatedToday')::int, 4, 'Karim installé : 4 couverts aujourd''hui');
 
@@ -618,28 +695,243 @@ declare
   v_prov  jsonb;
   v_queue uuid;
   v_order text;
+  v_short text;
+  v_irene text;
+  v_jules text;
   v_disp  jsonb;
 begin
   raise notice '';
-  raise notice '── Boutique : commandes prêtes ──';
+  raise notice '── Boutique : commandes prêtes, appels au comptoir ──';
   insert into auth.users (id, email) values (v_owner, 'p14-shop@profils.test');
   v_prov := public.provision_organization(v_owner, 'P14 Boutique', 'shop', 'Boutique Oberkampf', 'shared', 'pro');
   v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
   perform public.set_queue_status(v_queue, 'open', v_owner);
   v_order := public.add_walkin(v_queue, 'Capucine', null, null, v_owner, null,
     '{"orderRef":"CMD-2026-88731"}') -> 'entry' ->> 'id';
+  -- Une référence courte (« A-12 ») : sa fin serait la référence entière.
+  v_short := public.add_walkin(v_queue, 'Anselme', null, null, v_owner, null,
+    '{"orderRef":"A-12"}') -> 'entry' ->> 'id';
   perform public.add_walkin(v_queue, 'Hector', null, null, v_owner, null);
-  perform public.staff_queue_action(v_order, 'set_stage', v_owner, null, '{"stage":"preparing"}');
-  perform public.staff_queue_action(v_order, 'set_stage', v_owner, null, '{"stage":"ready"}');
+  -- Irène, venue pour un conseil, est appelée : la file ne numérote pas.
+  v_irene := public.add_walkin(v_queue, 'Irène', null, null, v_owner, null) -> 'entry' ->> 'id';
+  perform public.staff_queue_action(v_irene, 'call', v_owner, null);
+  foreach v_order in array array[v_order, v_short] loop
+    perform public.staff_queue_action(v_order, 'set_stage', v_owner, null, '{"stage":"preparing"}');
+    perform public.staff_queue_action(v_order, 'set_stage', v_owner, null, '{"stage":"ready"}');
+  end loop;
+  v_order := (select public_id from public.queue_entries where queue_id = v_queue and client_name = 'Capucine');
+  -- Capucine prête il y a dix minutes, Anselme à l'instant : Anselme en tête.
+  update public.queue_entries set stage_changed_at = now() - interval '10 minutes' where public_id = v_order;
 
   v_disp := public.display_snapshot(v_queue);
   perform internal.assert_eq(v_disp ->> 'profile', 'retail', 'profile = retail');
   perform internal.assert_eq(internal.test_keys(v_disp -> 'pickup'), array['calls','counts','ready'], 'clés du bloc boutique');
-  perform internal.assert_eq(v_disp -> 'pickup' -> 'ready' -> 0 ->> 'orderTail', '8731', 'commande prête : n° …8731');
+  perform internal.assert_eq(internal.test_keys(v_disp -> 'pickup' -> 'ready' -> 0),
+    array['id','orderRefTail','readySince','ticketNo'], 'clés d''une commande prête');
+  perform internal.assert_eq(
+    (select array_agg(r ->> 'id' order by n) from jsonb_array_elements(v_disp -> 'pickup' -> 'ready') with ordinality t(r, n)),
+    array[v_short, v_order], 'la dernière prête en tête');
+  perform internal.assert(v_disp -> 'pickup' -> 'ready' -> 0 -> 'orderRefTail' = 'null'::jsonb,
+    'référence de moins de 6 caractères : aucune fin affichée');
+  perform internal.assert_eq(v_disp -> 'pickup' -> 'ready' -> 1 ->> 'orderRefTail', '8731', 'commande prête : n° …8731');
   perform internal.assert_eq(v_disp -> 'pickup' -> 'counts',
-    jsonb_build_object('waiting', 1, 'preparing', 0, 'ready', 1), 'compteurs de la boutique');
-  perform internal.test_absent(v_disp::text, array['CMD-2026', '88731', 'Capucine', 'Hector'],
+    jsonb_build_object('waiting', 1, 'called', 1, 'preparing', 0, 'ready', 2),
+    'compteurs : Irène, appelée sans numéro, est comptée');
+  perform internal.assert_eq(v_disp -> 'pickup' -> 'calls', '[]'::jsonb, 'appel sans numéro : aucune ligne');
+  perform internal.test_absent(v_disp::text, array['CMD-2026', '88731', 'A-12', 'Capucine', 'Anselme', 'Hector', 'Irène'],
     'ni le numéro de commande entier, ni un prénom');
+
+  -- Numérotée : Jules est appelé au comptoir sous son numéro.
+  update public.queues set profile_options = profile_options || '{"numbering":true}' where id = v_queue;
+  v_jules := public.add_walkin(v_queue, 'Jules', null, null, v_owner, null) -> 'entry' ->> 'id';
+  perform public.staff_queue_action(v_jules, 'call', v_owner, null);
+  v_disp := public.display_snapshot(v_queue);
+  perform internal.assert_eq(v_disp -> 'pickup' -> 'calls', jsonb_build_array(jsonb_build_object(
+      'id', v_jules, 'ticketNo', 'A-001', 'calledAt', v_disp -> 'pickup' -> 'calls' -> 0 -> 'calledAt')),
+    'appel numéroté : A-001, sans prénom');
+  perform internal.assert_eq((v_disp -> 'pickup' -> 'counts' ->> 'called')::int, 2, 'deux clients appelés au comptoir');
+  perform internal.test_absent(v_disp::text, array['Jules', 'Irène'], 'aucun prénom au comptoir');
+end
+$$;
+
+-- =====================================================================
+-- Bornes et ordres : chaque liste de l'écran s'arrête où elle le doit
+-- =====================================================================
+-- Les statuts et les heures sont posés directement : on teste ce que
+-- l'écran reçoit, pas le moteur (tests 01 et 13).
+do $$
+declare
+  v_owner uuid := extensions.gen_random_uuid();
+  v_prov  jsonb;
+  v_org   uuid;
+  v_loc   uuid;
+  v_queue uuid;
+  v_sid   uuid;
+  v_ids   text[];
+  v_first text;
+  v_disp  jsonb;
+  v_list  jsonb;
+  i       int;
+begin
+  raise notice '';
+  raise notice '── Bornes et ordres des listes ──';
+  insert into auth.users (id, email) values (v_owner, 'p14-bornes@profils.test');
+
+  -- Atelier : dix véhicules prêts, 8 lignes, le dernier prêt en tête.
+  v_prov := public.provision_organization(v_owner, 'P14 Bornes Garage', 'garage', 'Bornes Garage', 'shared', 'pro');
+  v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
+  perform public.set_queue_status(v_queue, 'open', v_owner);
+  v_ids := '{}';
+  for i in 1..10 loop
+    v_ids := v_ids || (public.add_walkin(v_queue, 'Garage ' || i, null, null, v_owner, null,
+      jsonb_build_object('registration', format('AB-%s-CD', lpad(i::text, 3, '0')))) -> 'entry' ->> 'id');
+    perform public.staff_queue_action(v_ids[i], 'set_stage', v_owner, null, '{"stage":"ready"}');
+    update public.queue_entries set stage_changed_at = now() - make_interval(mins => i) where public_id = v_ids[i];
+  end loop;
+  v_disp := public.display_snapshot(v_queue);
+  v_list := v_disp -> 'workshop' -> 'ready';
+  perform internal.assert(
+    jsonb_array_length(v_list) = 8 and (v_disp -> 'workshop' -> 'counts' ->> 'ready')::int = 10,
+    'atelier : 8 lignes « prêt » sur 10, le compteur dit 10');
+  perform internal.assert_eq(
+    (select array_agg(r ->> 'id' order by n) from jsonb_array_elements(v_list) with ordinality t(r, n)),
+    v_ids[1:8], 'atelier : le dernier prêt en tête, puis les précédents');
+  perform internal.assert_eq(v_list -> 0 ->> 'registrationMasked', '••-••1-CD', 'atelier : ••-••1-CD en tête');
+
+  -- Restaurant : huit groupes appelés, 6 lignes, l'appel le plus ancien
+  -- d'abord. Gaspard, le plus ancien, a répondu « J'arrive » : il reste
+  -- « prêt » (present après l'appel).
+  v_prov := public.provision_organization(v_owner, 'P14 Bornes Resto', 'restaurant', 'Bornes Resto', 'shared', 'pro');
+  v_org   := (v_prov -> 'organization' ->> 'id')::uuid;
+  v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
+  perform public.set_queue_status(v_queue, 'open', v_owner);
+  v_sid := (public.upsert_client_session(v_org, 'hash-p14-gaspard', 'web', 'Gaspard') ->> 'id')::uuid;
+  v_first := public.join_queue(v_queue, v_sid, 'Gaspard', null, null, 'qr', null, '{"partySize":2}') -> 'entry' ->> 'id';
+  perform public.staff_queue_action(v_first, 'call', v_owner, null);
+  perform public.client_queue_action(v_first, v_sid, 'present');
+  perform internal.assert_eq((select status::text from public.queue_entries where public_id = v_first), 'present',
+    'Gaspard a répondu « J''arrive »');
+  v_ids := array[v_first];
+  for i in 2..8 loop
+    v_ids := v_ids || (public.add_walkin(v_queue, 'Table ' || i, null, null, v_owner, null,
+      jsonb_build_object('partySize', 2)) -> 'entry' ->> 'id');
+    perform public.staff_queue_action(v_ids[i], 'call', v_owner, null);
+  end loop;
+  for i in 1..8 loop
+    update public.queue_entries set called_at = now() - make_interval(mins => 20 - i) where public_id = v_ids[i];
+  end loop;
+  v_disp := public.display_snapshot(v_queue);
+  v_list := v_disp -> 'tables' -> 'ready';
+  perform internal.assert(
+    jsonb_array_length(v_list) = 6 and (v_disp -> 'tables' -> 'counts' ->> 'groupsCalled')::int = 8,
+    'restaurant : 6 lignes sur 8 groupes appelés, le compteur dit 8');
+  perform internal.assert_eq(
+    (select array_agg(r ->> 'id' order by n) from jsonb_array_elements(v_list) with ordinality t(r, n)),
+    v_ids[1:6], 'restaurant : l''appel le plus ancien d''abord, Gaspard (present) compris');
+  perform internal.assert_eq((v_disp -> 'tables' -> 'counts' ->> 'groupsWaiting')::int, 0,
+    'restaurant : un groupe present après l''appel n''attend plus');
+
+  -- Guichet : huit appels en cours (6 lignes, le plus récent d'abord) et
+  -- sept tickets terminés (5 lignes).
+  v_prov := public.provision_organization(v_owner, 'P14 Bornes Mairie', 'admin_service', 'Bornes Mairie', 'shared', 'pro');
+  v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
+  perform public.set_queue_status(v_queue, 'open', v_owner);
+  v_ids := '{}';
+  for i in 1..15 loop
+    v_ids := v_ids || (public.add_walkin(v_queue, 'Guichet ' || i, null, null, v_owner, null) -> 'entry' ->> 'id');
+  end loop;
+  update public.queue_entries e
+     set status = case when k.n <= 8 then 'next' else 'completed' end::public.entry_status,
+         called_at = now() - make_interval(mins => k.n::int),
+         completed_at = case when k.n > 8 then now() - make_interval(secs => k.n::int) end
+    from unnest(v_ids) with ordinality k(pid, n)
+   where e.public_id = k.pid;
+  v_disp := public.display_snapshot(v_queue);
+  perform internal.assert(
+    jsonb_array_length(v_disp -> 'desks' -> 'currentCalls') = 6
+      and jsonb_array_length(v_disp -> 'desks' -> 'recentCalls') = 5
+      and (v_disp -> 'desks' -> 'counts' ->> 'called')::int = 8
+      and (v_disp -> 'desks' -> 'counts' ->> 'servedToday')::int = 7,
+    'guichet : 6 appels en cours sur 8, 5 derniers appels sur 7');
+  perform internal.assert_eq(
+    (select array_agg(r ->> 'id' order by n) from jsonb_array_elements(v_disp -> 'desks' -> 'currentCalls') with ordinality t(r, n)),
+    v_ids[1:6], 'guichet : l''appel le plus récent d''abord');
+  perform internal.assert_eq(
+    (select array_agg(r ->> 'id' order by n) from jsonb_array_elements(v_disp -> 'desks' -> 'recentCalls') with ordinality t(r, n)),
+    v_ids[9:13], 'guichet : derniers appels, le plus récent d''abord');
+
+  -- Boutique : dix commandes prêtes (8 lignes), six appels numérotés (4).
+  v_prov := public.provision_organization(v_owner, 'P14 Bornes Boutique', 'shop', 'Bornes Boutique', 'shared', 'pro');
+  v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
+  perform public.set_queue_status(v_queue, 'open', v_owner);
+  update public.queues set profile_options = profile_options || '{"numbering":true}' where id = v_queue;
+  v_ids := '{}';
+  for i in 1..16 loop
+    v_ids := v_ids || (public.add_walkin(v_queue, 'Boutique ' || i, null, null, v_owner, null,
+      case when i <= 10 then jsonb_build_object('orderRef', format('CMD-%s', lpad(i::text, 6, '0')))
+           else '{}'::jsonb end)
+      -> 'entry' ->> 'id');
+  end loop;
+  update public.queue_entries e
+     set status = 'next',
+         stage = case when k.n <= 10 then 'ready' end,
+         stage_changed_at = case when k.n <= 10 then now() - make_interval(mins => k.n::int) end,
+         called_at = now() - make_interval(mins => k.n::int)
+    from unnest(v_ids) with ordinality k(pid, n)
+   where e.public_id = k.pid;
+  v_disp := public.display_snapshot(v_queue);
+  perform internal.assert(
+    jsonb_array_length(v_disp -> 'pickup' -> 'ready') = 8
+      and jsonb_array_length(v_disp -> 'pickup' -> 'calls') = 4
+      and v_disp -> 'pickup' -> 'counts' = jsonb_build_object('waiting', 0, 'called', 6, 'preparing', 0, 'ready', 10),
+    'boutique : 8 commandes prêtes sur 10, 4 appels sur 6');
+  perform internal.assert_eq(
+    (select array_agg(r ->> 'id' order by n) from jsonb_array_elements(v_disp -> 'pickup' -> 'ready') with ordinality t(r, n)),
+    v_ids[1:8], 'boutique : la dernière prête en tête');
+  perform internal.assert_eq(
+    (select array_agg(r ->> 'id' order by n) from jsonb_array_elements(v_disp -> 'pickup' -> 'calls') with ordinality t(r, n)),
+    v_ids[11:14], 'boutique : l''appel le plus récent d''abord');
+end
+$$;
+
+-- =====================================================================
+-- Masquage en défense en profondeur, fin de numéro de commande
+-- =====================================================================
+do $$
+declare
+  v_case record;
+begin
+  raise notice '';
+  raise notice '── Écran : masquage de l''immatriculation, fin de commande ──';
+  -- Hors ASCII, mask_registration (0034) laisse passer la lettre : l'écran
+  -- ne la reçoit jamais. Au plus 3 caractères lisibles, toujours.
+  for v_case in
+    select * from (values
+      ('AB-123-CD',    '••-••3-CD'),
+      ('1234 AB 75',   '•••• •B 75'),
+      ('AB123CD',      '••••3CD'),
+      ('АВ-123-СD',    '••-•23-•D'),   -- А, В, С cyrilliques
+      ('MÜ-AB 1234',   '••-•• •234'),
+      ('Ø.1/2_3',      '••••2•3'),     -- ponctuation hors espace et tiret : masquée aussi
+      ('AB1',          '•B1'),
+      (null,           null)
+    ) as t(input, expected)
+  loop
+    perform internal.assert_eq(internal.display_registration(v_case.input), v_case.expected,
+      format('display_registration(%s)', coalesce(v_case.input, 'null')));
+  end loop;
+  perform internal.assert(
+    not exists (
+      select 1 from (values ('AB-123-CD'), ('АВ-123-СD'), ('MÜ-AB 1234'), ('ab 123-cd'), ('ÀÉÎ-ÕÜ-123')) v(x)
+      where length(regexp_replace(coalesce(internal.display_registration(v.x), ''), '[^A-Z0-9]', '', 'g')) > 3
+         or internal.display_registration(v.x) ~ '[^A-Z0-9• -]'),
+    'jamais plus de 3 caractères lisibles, jamais un caractère hors [A-Z0-9 •-]');
+
+  perform internal.assert_eq(internal.display_order_tail('CMD-2026-88731'), '8731', 'fin de commande : 8731');
+  perform internal.assert_eq(internal.display_order_tail('cmd-00a1b2'), 'A1B2', 'fin de commande en capitales');
+  perform internal.assert(internal.display_order_tail('A-12') is null and internal.display_order_tail('12345') is null
+                            and internal.display_order_tail(null) is null and internal.display_order_tail('--') is null,
+    'référence de moins de 6 caractères utiles : rien');
 end
 $$;
 
@@ -913,20 +1205,34 @@ begin
       format('%s : security definer, search_path figé', v_fn));
   end loop;
 
+  -- Les 13 fonctions internes de 0036, toutes : fermées au navigateur,
+  -- search_path figé.
   foreach v_fn in array array[
+    'internal.display_desk_label(uuid,uuid)',
+    'internal.display_order_tail(text)',
+    'internal.display_registration(text)',
     'internal.display_workshop(public.queues,timestamptz)',
     'internal.display_tables(public.queues,timestamptz)',
     'internal.display_desks(public.queues,timestamptz)',
     'internal.display_pickup(public.queues,timestamptz)',
-    'internal.display_desk_label(uuid,uuid)',
     'internal.profile_stats_entries(uuid,public.queue_profile,timestamptz,timestamptz)',
-    'internal.profile_stats_workshop(uuid,public.queue_profile,timestamptz,timestamptz)'
+    'internal.stats_rate(bigint,bigint)',
+    'internal.profile_stats_workshop(uuid,public.queue_profile,timestamptz,timestamptz)',
+    'internal.profile_stats_table(uuid,timestamptz,timestamptz,text)',
+    'internal.profile_stats_desk(uuid,timestamptz,timestamptz)',
+    'internal.profile_stats_retail(uuid,timestamptz,timestamptz)'
   ] loop
     perform internal.assert(
       not has_function_privilege('anon', v_fn, 'execute')
-        and not has_function_privilege('authenticated', v_fn, 'execute'),
-      format('%s : fermée au navigateur', v_fn));
+        and not has_function_privilege('authenticated', v_fn, 'execute')
+        and (select proconfig is not null and array_to_string(proconfig, ',') like 'search_path=%'
+               from pg_proc where oid = v_fn::regprocedure),
+      format('%s : fermée au navigateur, search_path figé', v_fn));
   end loop;
+  perform internal.assert(
+    not has_schema_privilege('anon', 'internal', 'usage')
+      and not has_schema_privilege('authenticated', 'internal', 'usage'),
+    'schéma internal : aucun usage pour anon ni authenticated');
 
   -- Et l'appel réel est refusé.
   foreach v_role in array array['anon', 'authenticated'] loop

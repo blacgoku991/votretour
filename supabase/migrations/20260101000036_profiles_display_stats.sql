@@ -16,10 +16,13 @@
 --                                nombres, aucune donnée personnelle) ;
 --      staff, serving, upcoming  toujours VIDES : ce sont les listes qui
 --                                portent des prénoms et des noms de pros ;
---    puis la clé profile et UN bloc propre au métier :
---      vehicle, device  workshop : les quatre colonnes du planning
---                       d'atelier ; immatriculation MASQUÉE en SQL
---                       (internal.mask_registration : 3 derniers
+--    puis la clé profile et UN bloc propre au métier. Noms de clés : ceux
+--    de [SEC § 6.6] quand il les nomme ; apps/web/src/server/display.ts
+--    est le contrat complet.
+--      vehicle, device  workshop : « Véhicules prêts » ([SEC § 4.2]), les
+--                       seules lignes envoyées, plus les compteurs des
+--                       quatre colonnes du planning d'atelier.
+--                       Immatriculation MASQUÉE en SQL (3 derniers
 --                       caractères visibles), numéro de dossier, type
 --                       d'appareil. Jamais de prénom, de modèle, de
 --                       motif, de devis ni de note ;
@@ -83,6 +86,11 @@ $$;
 -- les 4 derniers caractères alphanumériques, en capitales (« CMD-2026-88731 »
 -- donne 8731). Un numéro de commande n'identifie personne sans le système
 -- du commerçant ; la fin suffit au client pour s'y reconnaître.
+--
+-- Référence de moins de 6 caractères utiles : rien. Sa fin serait presque
+-- la référence entière, et un champ libre reçoit parfois autre chose
+-- qu'un numéro de commande (un code court, une fin de téléphone). Le
+-- ticket reste alors reconnaissable par son numéro (ticketNo).
 -- ---------------------------------------------------------------------
 create or replace function internal.display_order_tail(p_ref text)
 returns text
@@ -90,32 +98,61 @@ language sql
 immutable
 set search_path = pg_catalog
 as $$
-  select nullif(right(upper(regexp_replace(coalesce(p_ref, ''), '[^A-Za-z0-9]', '', 'g')), 4), '');
+  select case when length(v.norm) >= 6 then right(v.norm, 4) end
+  from (select upper(regexp_replace(coalesce(p_ref, ''), '[^A-Za-z0-9]', '', 'g')) as norm) v;
 $$;
 
 -- ---------------------------------------------------------------------
--- Atelier (vehicle, device) : le planning d'atelier en quatre colonnes,
--- les mêmes que le poste du pro (WorkshopColumn, lib/profiles/stages.ts) :
+-- Immatriculation telle qu'un téléviseur peut la recevoir.
+--
+-- internal.mask_registration (0034) ne masque que [A-Za-z0-9] : un autre
+-- caractère (lettre accentuée, cyrillique…) passerait en clair. Ce n'est
+-- pas exploitable aujourd'hui (clean_details refuse tout ce qui sort de
+-- [A-Za-z0-9 -]), mais l'écran public ne doit pas dépendre de la saisie.
+-- Défense en profondeur, sur la sortie :
+--   1. tout caractère autre qu'un séparateur (espace, tiret), une puce ou
+--      [A-Z0-9] devient une puce : « АВ-123-СD » donne ••-•23-•D ;
+--   2. plus de 3 caractères lisibles (impossible par construction) : null,
+--      l'écran n'affiche alors aucune plaque plutôt qu'une plaque de trop.
+-- ---------------------------------------------------------------------
+create or replace function internal.display_registration(p_value text)
+returns text
+language sql
+immutable
+set search_path = public, internal, extensions
+as $$
+  select case when length(regexp_replace(v.out, '[^A-Z0-9]', '', 'g')) <= 3 then v.out end
+  from (select regexp_replace(internal.mask_registration(p_value), '[^A-Z0-9• -]', '•', 'g') as out) v;
+$$;
+
+-- ---------------------------------------------------------------------
+-- Atelier (vehicle, device) : « Véhicules prêts » ([SEC § 4.2]) et les
+-- compteurs du planning d'atelier.
+--
+-- counts : les quatre colonnes du poste du pro (WorkshopColumn,
+-- lib/profiles/stages.ts), en nombres seulement :
 --   intake    received                     « À prendre en charge »
 --   workshop  diagnosis, in_repair         « En atelier »
 --   waiting   quote_pending, waiting_parts « En attente client / pièce »
 --   ready     ready                        « Prêts à récupérer »
--- La colonne « waiting » réunit volontairement le devis et la pièce : sur
--- un écran public, rien ne dit qu'un client a un devis en attente.
+-- plus inWorkshop (tout ce qui n'est pas prêt : « À l'atelier : 7 »),
+-- receivedToday et handedOverToday. « waiting » réunit volontairement le
+-- devis et la pièce : sur un écran public, rien ne dit qu'un client a un
+-- devis en attente.
 --
--- Ligne : id, registration (masquée, ou null), ticketNo (dossier), le type
--- d'appareil (pictogramme, pas le modèle) et since (entrée dans l'étape :
--- « prêt depuis 14:32 »).
+-- ready : les SEULES lignes envoyées, celles que le client cherche des
+-- yeux. Pas de liste des véhicules en cours : l'écran n'a pas à montrer
+-- qui a laissé quoi à l'atelier. Ligne : id, registrationMasked (masquée
+-- en SQL, 3 derniers caractères visibles), ticketNo (dossier), deviceKind
+-- (pictogramme, jamais le modèle) et readySince (« prêt depuis 14:32 »).
+-- Le dernier prêt en tête (c'est le client qu'on vient de prévenir), 8 au
+-- plus.
 --
--- Immatriculation : option tvRegistration de la file. 'masked' (défaut,
--- posé par apply_profile_defaults) donne ••-••3-CD ; 'none' et
--- 'model_only' ne donnent RIEN : le modèle n'est jamais envoyé à un
--- téléviseur (décision du propriétaire, plus stricte que [SEC § 4.2]).
---
--- Bornes : 6 lignes par colonne, 8 pour « Prêts » (la colonne que le
--- client cherche des yeux) ; total donne la colonne entière. « Prêts »
--- met le dernier véhicule prêt en tête (le client qu'on vient de prévenir
--- arrive) ; les autres colonnes suivent l'ordre d'arrivée.
+-- Option tvRegistration (vehicle) : 'masked' (défaut, posé par
+-- apply_profile_defaults) envoie les lignes ; 'none' et 'model_only' n'en
+-- envoient AUCUNE, compteurs seulement ([SEC § 4.2] : « none (compteurs
+-- seulement) »). Le modèle n'est jamais envoyé à un téléviseur (décision
+-- du propriétaire) : 'model_only' revient donc à 'none'.
 -- ---------------------------------------------------------------------
 create or replace function internal.display_workshop(p_queue public.queues, p_day_start timestamptz)
 returns jsonb
@@ -124,18 +161,8 @@ stable
 set search_path = public, internal, extensions
 as $$
   with active as (
-    select e.public_id, e.sort_order, e.joined_at, e.id, e.ticket_no,
+    select e.public_id, e.id, e.ticket_no, e.details, e.registration_key,
            coalesce(e.stage_changed_at, e.joined_at) as since,
-           -- Plaque : jamais registration_key ni details bruts ; seule la
-           -- forme masquée quitte la fonction.
-           case when p_queue.profile = 'vehicle'
-                     and coalesce(p_queue.profile_options ->> 'tvRegistration', 'masked') = 'masked'
-                then internal.mask_registration(coalesce(e.details ->> 'registration', e.registration_key))
-           end as registration,
-           case when p_queue.profile = 'device'
-                     and e.details ->> 'deviceKind' in ('phone', 'tablet', 'computer', 'console', 'watch', 'other')
-                then e.details ->> 'deviceKind'
-           end as device_kind,
            -- L'étape décide de la colonne ; sans étape connue (cas
            -- défensif), le statut.
            coalesce(
@@ -153,42 +180,46 @@ as $$
            ) as col
     from public.queue_entries e
     where e.queue_id = p_queue.id and public.entry_is_active(e.status)
+  ),
+  ready as (
+    select a.*,
+           row_number() over (order by a.since desc, a.id) as rank
+    from active a
+    where a.col = 'ready'
+      and (p_queue.profile = 'device'
+           or coalesce(p_queue.profile_options ->> 'tvRegistration', 'masked') = 'masked')
   )
   select jsonb_build_object(
-    'columns', (
-      select jsonb_agg(jsonb_build_object(
-               'key',   k.key,
-               'total', (select count(*) from active a where a.col = k.key),
-               'items', coalesce((
-                 select jsonb_agg(jsonb_build_object(
-                          'id',           x.public_id,
-                          'registration', x.registration,
-                          'ticketNo',     internal.format_ticket_no(p_queue.profile, p_queue.ticket_prefix, x.ticket_no),
-                          'deviceKind',   x.device_kind,
-                          'since',        x.since
-                        ) order by x.rank)
-                 from (
-                   select a.*,
-                          row_number() over (
-                            order by case when k.key = 'ready' then a.since end desc nulls last,
-                                     a.sort_order, a.joined_at, a.id
-                          ) as rank
-                   from active a
-                   where a.col = k.key
-                 ) x
-                 where x.rank <= k.lim
-               ), '[]'::jsonb)
-             ) order by k.ord)
-      from (values ('intake', 1, 6), ('workshop', 2, 6), ('waiting', 3, 6), ('ready', 4, 8))
-           as k(key, ord, lim)
+    'counts', jsonb_build_object(
+      'intake',     (select count(*) from active where col = 'intake'),
+      'workshop',   (select count(*) from active where col = 'workshop'),
+      'waiting',    (select count(*) from active where col = 'waiting'),
+      'ready',      (select count(*) from active where col = 'ready'),
+      'inWorkshop', (select count(*) from active where col <> 'ready'),
+      'receivedToday', (select count(*) from public.queue_entries e
+                        where e.queue_id = p_queue.id and e.joined_at >= p_day_start),
+      'handedOverToday', (select count(*) from public.queue_entries e
+                          where e.queue_id = p_queue.id and e.status = 'completed'
+                            and e.completed_at >= p_day_start)
     ),
-    'today', jsonb_build_object(
-      'received', (select count(*) from public.queue_entries e
-                   where e.queue_id = p_queue.id and e.joined_at >= p_day_start),
-      'handedOver', (select count(*) from public.queue_entries e
-                     where e.queue_id = p_queue.id and e.status = 'completed'
-                       and e.completed_at >= p_day_start)
-    )
+    'ready', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', r.public_id,
+               -- Plaque : jamais registration_key ni details bruts ; seule
+               -- la forme masquée quitte la fonction. registration_key
+               -- (normalisée) sert de repli si details n'a plus la saisie.
+               'registrationMasked', case when p_queue.profile = 'vehicle' then
+                   internal.display_registration(coalesce(r.details ->> 'registration', r.registration_key))
+                 end,
+               'ticketNo',   internal.format_ticket_no(p_queue.profile, p_queue.ticket_prefix, r.ticket_no),
+               'deviceKind', case when p_queue.profile = 'device'
+                                   and r.details ->> 'deviceKind' in ('phone', 'tablet', 'computer', 'console', 'watch', 'other')
+                                  then r.details ->> 'deviceKind' end,
+               'readySince', r.since
+             ) order by r.rank)
+      from ready r
+      where r.rank <= 8
+    ), '[]'::jsonb)
   );
 $$;
 
@@ -203,9 +234,12 @@ $$;
 --
 -- Prénom : seulement quand la file ne numérote pas. L'accueil appelle
 -- alors les noms à voix haute, et le groupe doit se reconnaître à l'écran
--- (« KARIM · 4 », comme le prénom au comptoir d'un barbier). Dès qu'un
--- numéro existe, il suffit : le prénom ne part plus. En file sensible, les
--- initiales seulement ([SEC § 6.6]).
+-- (« KARIM · 4 », comme le prénom au comptoir d'un barbier). Le prénom ne
+-- part plus dès que le ticket a un numéro OU que la file numérote : un
+-- groupe inscrit avant qu'on active la numérotation n'a pas de numéro, et
+-- il n'affiche pas pour autant son prénom sur une file qui n'en montre
+-- plus (il reste reconnaissable à sa taille de groupe et à l'appel). En
+-- file sensible, les initiales seulement ([SEC § 6.6]).
 --
 -- counts : groupes et couverts qui attendent, groupes appelés, groupes et
 -- couverts installés aujourd'hui. Un groupe sans taille compte pour un
@@ -250,7 +284,11 @@ as $$
                'id',        r.public_id,
                'ticketNo',  internal.format_ticket_no(p_queue.profile, p_queue.ticket_prefix, r.ticket_no),
                'name',      case
-                              when r.ticket_no is not null or coalesce(trim(r.client_name), '') = '' then null
+                              when r.ticket_no is not null
+                                   -- Comparaison textuelle, pas de cast : une option
+                                   -- mal formée ne doit pas figer l'écran.
+                                   or coalesce(p_queue.profile_options ->> 'numbering' = 'true', false)
+                                   or coalesce(trim(r.client_name), '') = '' then null
                               when p_queue.profile_options ->> 'sensitive' = 'true'
                                 then internal.display_initials(r.client_name)
                               else trim(r.client_name)
@@ -268,11 +306,12 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------
--- Guichet (desk) : le tableau d'appel.
---   current  appels en cours (next, ou present après l'appel) : le plus
---            récent d'abord, c'est lui que l'écran met en grand. 6 au plus.
---   recent   derniers appels du jour déjà pris en charge (au guichet ou
---            terminés), le plus récent d'abord. 5 au plus.
+-- Guichet (desk) : le tableau d'appel ([SEC § 6.6]).
+--   currentCalls  appels en cours (next, ou present après l'appel) : le
+--                 plus récent d'abord, c'est lui que l'écran met en grand.
+--                 6 au plus.
+--   recentCalls   derniers appels du jour déjà pris en charge (au guichet
+--                 ou terminés), le plus récent d'abord. 5 au plus.
 -- Ligne : id, ticketNo, deskLabel, calledAt. Aucune clé de nom : ni le
 -- prénom du client (même si la file le demande), ni le motif (en santé, il
 -- peut révéler une information médicale).
@@ -299,7 +338,7 @@ as $$
       'called',  (select count(*) from e where e.is_call),
       'servedToday', (select count(*) from e where e.status = 'completed')
     ),
-    'current', coalesce((
+    'currentCalls', coalesce((
       select jsonb_agg(jsonb_build_object(
                'id',        c.public_id,
                'ticketNo',  internal.format_ticket_no(p_queue.profile, p_queue.ticket_prefix, c.ticket_no),
@@ -312,7 +351,7 @@ as $$
       ) c
       where c.rank <= 6
     ), '[]'::jsonb),
-    'recent', coalesce((
+    'recentCalls', coalesce((
       select jsonb_agg(jsonb_build_object(
                'id',        c.public_id,
                'ticketNo',  internal.format_ticket_no(p_queue.profile, p_queue.ticket_prefix, c.ticket_no),
@@ -331,11 +370,14 @@ $$;
 
 -- ---------------------------------------------------------------------
 -- Boutique (retail) : « Commandes prêtes ».
---   ready  commandes suivies arrivées à l'étape « prête » : fin du numéro
---          de commande (orderTail) ou numéro de ticket, depuis quand. La
---          dernière prête en tête. 8 au plus.
---   calls  clients « conseil » appelés au comptoir, s'ils ont un numéro
---          (sans numéro, il n'y a rien à afficher). 4 au plus.
+--   ready   commandes suivies arrivées à l'étape « prête » : fin du numéro
+--           de commande (orderRefTail) ou numéro de ticket, readySince. La
+--           dernière prête en tête. 8 au plus.
+--   calls   clients « conseil » appelés au comptoir, s'ils ont un numéro.
+--           4 au plus.
+--   counts  waiting (conseil en attente), called (conseil appelés, avec ou
+--           sans numéro : sans numéro, le client appelé n'a pas de ligne,
+--           mais l'écran sait que le comptoir l'attend), preparing, ready.
 -- ---------------------------------------------------------------------
 create or replace function internal.display_pickup(p_queue public.queues, p_day_start timestamptz)
 returns jsonb
@@ -344,9 +386,11 @@ stable
 set search_path = public, internal, extensions
 as $$
   with e as (
-    select x.public_id, x.status, x.stage, x.called_at, x.ticket_no,
+    select x.public_id, x.id, x.status, x.stage, x.called_at, x.ticket_no,
            coalesce(x.stage_changed_at, x.joined_at) as since,
-           internal.display_order_tail(x.details ->> 'orderRef') as order_tail
+           internal.display_order_tail(x.details ->> 'orderRef') as order_tail,
+           (x.stage is null
+            and (x.status = 'next' or (x.status = 'present' and x.called_at is not null))) as is_call
     from public.queue_entries x
     where x.queue_id = p_queue.id and public.entry_is_active(x.status)
   )
@@ -356,18 +400,19 @@ as $$
                     where e.stage is null
                       and (e.status in ('waiting', 'notified', 'returning')
                            or (e.status = 'present' and e.called_at is null))),
+      'called',    (select count(*) from e where e.is_call),
       'preparing', (select count(*) from e where e.stage = 'preparing'),
       'ready',     (select count(*) from e where e.stage = 'ready')
     ),
     'ready', coalesce((
       select jsonb_agg(jsonb_build_object(
-               'id',        r.public_id,
-               'orderTail', r.order_tail,
-               'ticketNo',  internal.format_ticket_no(p_queue.profile, p_queue.ticket_prefix, r.ticket_no),
-               'since',     r.since
+               'id',           r.public_id,
+               'orderRefTail', r.order_tail,
+               'ticketNo',     internal.format_ticket_no(p_queue.profile, p_queue.ticket_prefix, r.ticket_no),
+               'readySince',   r.since
              ) order by r.rank)
       from (
-        select e.*, row_number() over (order by e.since desc, e.public_id) as rank
+        select e.*, row_number() over (order by e.since desc, e.id) as rank
         from e where e.stage = 'ready'
       ) r
       where r.rank <= 8
@@ -379,10 +424,9 @@ as $$
                'calledAt', c.called_at
              ) order by c.rank)
       from (
-        select e.*, row_number() over (order by e.called_at desc nulls last, e.public_id) as rank
+        select e.*, row_number() over (order by e.called_at desc nulls last, e.id) as rank
         from e
-        where e.stage is null and e.ticket_no is not null
-          and (e.status = 'next' or (e.status = 'present' and e.called_at is not null))
+        where e.is_call and e.ticket_no is not null
       ) c
       where c.rank <= 4
     ), '[]'::jsonb)
@@ -535,7 +579,7 @@ end;
 $$;
 
 comment on function public.display_snapshot(uuid) is
-  'Écran de salle (TV) : uniquement les champs affichés. walkin/event : forme de 0031 à l''identique ; autres profils : clé profile et un bloc (workshop, tables, desks, pickup), immatriculation masquée, jamais de prénom au guichet. Réservée à service_role.';
+  'Écran de salle (TV) : uniquement les champs affichés. walkin/event : forme de 0031 à l''identique ; autres profils : clé profile et un bloc (workshop, tables, desks, pickup), véhicules prêts seulement, immatriculation masquée, jamais de prénom au guichet. Réservée à service_role.';
 
 -- =====================================================================
 -- 2. Statistiques par profil
@@ -732,7 +776,10 @@ $$;
 --   groupsSeated, coversSeated     groupes installés et leurs couverts
 --   medianWaitByPartySize          attente médiane jusqu'à l'appel, par
 --                                  taille (1-2, 3-4, 5-6, 7+), groupes
---                                  installés seulement
+--                                  installés seulement. [SEC § 6.7] écrit
+--                                  « 2 » : une personne seule y entre
+--                                  aussi, le libellé le dit (P6 reprend
+--                                  les mêmes libellés)
 --   noShowAfterCallRate            appelés qui ne se sont pas présentés
 --                                  (absents ou expirés)
 --   byHour                         groupes et couverts inscrits, par heure
@@ -984,6 +1031,7 @@ begin
   foreach fn in array array[
     'internal.display_desk_label(uuid,uuid)',
     'internal.display_order_tail(text)',
+    'internal.display_registration(text)',
     'internal.display_workshop(public.queues,timestamptz)',
     'internal.display_tables(public.queues,timestamptz)',
     'internal.display_desks(public.queues,timestamptz)',

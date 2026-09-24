@@ -30,6 +30,12 @@ import { assertQueueAccess } from './auth';
  *     connaît pas encore ces blocs (TVBoard avant le lot P5) affiche donc
  *     les compteurs d'une file cohérente, sans planter ni rien divulguer.
  *
+ * Les noms de clés suivent [SEC § 6.6] quand il les nomme
+ * (`registrationMasked`, `readySince`, `inWorkshop`, `receivedToday`,
+ * `currentCalls`, `recentCalls`, `orderRefTail`) ; pour le reste, ce
+ * fichier fait foi. Le lot P5 (écran TV par profil) code contre ces types.
+ * Repris du lot T0 par P0b (qui l'étend aux profils), une fois T0 terminé.
+ *
  * Cette forme est un contrat. Un changement qui casse la lecture d'un
  * bundle déjà chargé change aussi TV_SNAPSHOT_SHAPE (TVBoard.tsx et
  * api/tv/snapshot/route.ts), pour que les téléviseurs allumés se rechargent.
@@ -104,40 +110,48 @@ interface ProfileDisplayHead<P extends QueueProfile> extends DisplayHead {
 /* Atelier (vehicle, device) : bloc `workshop`                          */
 /* ------------------------------------------------------------------ */
 
-export interface DisplayWorkshopItem {
+/** Une ligne « Véhicules prêts » (ou « Appareils prêts »). */
+export interface DisplayWorkshopReadyRow {
   /** Identifiant public du ticket (clé d'animation), jamais l'identifiant interne. */
   id: string;
   /**
    * Immatriculation MASQUÉE en base (`••-••3-CD` : 3 derniers caractères),
-   * ou null (atelier appareil, `tvRegistration` à `none` ou `model_only`).
-   * L'immatriculation en clair ne quitte jamais le serveur, le modèle non plus.
+   * null en atelier appareil. L'immatriculation en clair ne quitte jamais
+   * le serveur, le modèle non plus.
    */
-  registration: string | null;
+  registrationMasked: string | null;
   /** Numéro de dossier formaté (« 0042 »), si la file numérote. */
   ticketNo: string | null;
   /** Pictogramme de l'appareil (atelier appareil) ; jamais le modèle. */
   deviceKind: DeviceKind | null;
-  /** Entrée dans l'étape (ISO 8601) : « prêt depuis 14:32 ». */
-  since: string;
+  /** Passage à « prêt » (ISO 8601) : « prêt depuis 14:32 ». */
+  readySince: string;
 }
 
-export interface DisplayWorkshopColumn {
-  key: WorkshopColumn;
-  /** Toute la colonne ; `items` n'en porte que les premières lignes. */
-  total: number;
-  /** 6 lignes au plus, 8 pour « ready » (le dernier prêt en tête). */
-  items: DisplayWorkshopItem[];
-}
+/**
+ * Compteurs du planning d'atelier : des nombres seulement. Les colonnes
+ * sont celles du poste du pro (`WorkshopColumn`) ; « waiting » réunit devis
+ * et pièce (rien ne dit à la salle qu'un client a un devis en attente).
+ */
+export type DisplayWorkshopCounts = Record<WorkshopColumn, number> & {
+  /** Tout ce qui n'est pas prêt : « À l'atelier : 7 ». */
+  inWorkshop: number;
+  /** Déposés aujourd'hui (jour local de l'établissement). */
+  receivedToday: number;
+  /** Rendus aujourd'hui. */
+  handedOverToday: number;
+};
 
 export interface WorkshopDisplaySnapshot extends ProfileDisplayHead<'vehicle' | 'device'> {
   workshop: {
+    counts: DisplayWorkshopCounts;
     /**
-     * Toujours quatre colonnes, dans l'ordre du planning : intake, workshop,
-     * waiting (devis et pièce réunis : rien ne dit qu'un client a un devis),
-     * ready.
+     * Les seules lignes envoyées ([SEC § 4.2] : pas de liste des véhicules
+     * en cours). Le dernier prêt en tête, 8 au plus. Toujours vide en
+     * vehicle quand `tvRegistration` vaut `none` ou `model_only`
+     * (compteurs seulement).
      */
-    columns: DisplayWorkshopColumn[];
-    today: { received: number; handedOver: number };
+    ready: DisplayWorkshopReadyRow[];
   };
 }
 
@@ -147,9 +161,12 @@ export interface WorkshopDisplaySnapshot extends ProfileDisplayHead<'vehicle' | 
 
 export interface DisplayTableRow {
   id: string;
-  /** « A-012 » si la file numérote ; le numéro remplace alors le prénom. */
+  /** « A-012 » si le ticket a un numéro. */
   ticketNo: string | null;
-  /** Prénom que l'accueil appelle, seulement quand il n'y a pas de numéro. */
+  /**
+   * Prénom que l'accueil appelle, seulement si la file ne numérote pas et
+   * que le ticket n'a pas de numéro ; initiales en file sensible.
+   */
   name: string | null;
   /** Couverts ; null si l'accueil ne les a pas saisis. */
   partySize: number | null;
@@ -188,9 +205,9 @@ export interface DeskDisplaySnapshot extends ProfileDisplayHead<'desk'> {
   desks: {
     counts: { waiting: number; called: number; servedToday: number };
     /** Appels en cours, le plus récent d'abord (l'écran le met en grand). 6 au plus. */
-    current: DisplayDeskCall[];
+    currentCalls: DisplayDeskCall[];
     /** Derniers appels du jour déjà pris en charge. 5 au plus. */
-    recent: DisplayDeskCall[];
+    recentCalls: DisplayDeskCall[];
   };
 }
 
@@ -200,10 +217,14 @@ export interface DeskDisplaySnapshot extends ProfileDisplayHead<'desk'> {
 
 export interface DisplayPickupRow {
   id: string;
-  /** 4 derniers caractères du numéro de commande (« 8731 »). */
-  orderTail: string | null;
+  /**
+   * 4 derniers caractères du numéro de commande (« 8731 ») ; null si la
+   * référence a moins de 6 caractères utiles (la fin serait presque tout).
+   */
+  orderRefTail: string | null;
   ticketNo: string | null;
-  since: string;
+  /** Passage à « prête » (ISO 8601). */
+  readySince: string;
 }
 
 export interface DisplayPickupCall {
@@ -214,7 +235,11 @@ export interface DisplayPickupCall {
 
 export interface RetailDisplaySnapshot extends ProfileDisplayHead<'retail'> {
   pickup: {
-    counts: { waiting: number; preparing: number; ready: number };
+    /**
+     * `called` compte aussi les clients « conseil » appelés sans numéro :
+     * ils n'ont pas de ligne dans `calls`, mais le comptoir les attend.
+     */
+    counts: { waiting: number; called: number; preparing: number; ready: number };
     /** « Commandes prêtes » : 8 au plus, la dernière prête en tête. */
     ready: DisplayPickupRow[];
     /** Clients « conseil » appelés, s'ils ont un numéro. 4 au plus. */
