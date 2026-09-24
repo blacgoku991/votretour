@@ -8,7 +8,10 @@ export const dynamic = 'force-dynamic';
 
 const querySchema = z.object({
   entry: publicIdSchema,
-  source: z.enum(['notification', 'appclip_done', 'web_done', 'unknown']).default('unknown'),
+  // `wallet` : lien « Donner mon avis » au dos du pass Apple / Google
+  // Wallet, présent seulement après la visite (contrainte review_clicks,
+  // migration 0021).
+  source: z.enum(['notification', 'appclip_done', 'web_done', 'wallet', 'unknown']).default('unknown'),
 });
 
 /**
