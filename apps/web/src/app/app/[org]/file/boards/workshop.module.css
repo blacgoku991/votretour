@@ -1,0 +1,505 @@
+/* =====================================================================
+   LE POSTE D'ATELIER — un planning d'atelier en relief.
+   Téléphone (390 px) : le pupitre des étapes choisit UNE colonne.
+   Bureau (conteneur ≥ 900 px) : les sept colonnes côte à côte, les
+   colonnes vides repliées en lattes fines, défilement horizontal DANS le
+   planning, jamais de la page.
+   Une seule couleur forte : le vermillon, réservé à « Prêt ».
+   ===================================================================== */
+
+.board {
+  container: workshop / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-top: var(--sp-5);
+  padding-bottom: var(--sp-8);
+}
+
+/* Teinte d'étape : les jetons du rail (StageRail), pour que colonne,
+   pupitre et fiche parlent la même couleur. */
+.board [data-tone='neutral'] { --tone: var(--text-muted); --tone-ink: var(--text-inverse); }
+.board [data-tone='cobalt']  { --tone: var(--cobalt-500); --tone-ink: #FFFFFF; }
+.board [data-tone='copper']  { --tone: var(--copper-500); --tone-ink: var(--ink-1000); }
+.board [data-tone='ardoise'] { --tone: var(--ardoise-500); --tone-ink: #FFFFFF; }
+.board [data-tone='signal']  { --tone: var(--signal-500); --tone-ink: var(--ink-1000); }
+.board [data-tone='done']    { --tone: var(--jade-500); --tone-ink: var(--ink-1000); }
+
+/* ------------------------------------------------ Barre d'outils */
+.toolbar { padding-top: 4px; }
+.sortSeg { flex: none; }
+.addBtn { flex: none; margin-left: auto; gap: 10px; }
+.plus {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  font-size: 1.125rem;
+  line-height: 1;
+  font-variation-settings: 'wght' 500;
+}
+@media (max-width: 599px) {
+  .toolbar > label { flex-basis: 100%; max-width: none; }
+  .sortSeg { flex: 1 1 0; min-width: 0; }
+  .sortSeg > button { flex: 1 1 0; min-width: 0; padding-inline: 4px; font-size: 0.8125rem; }
+  /* Au pouce : le tri et l'ajout sur la même ligne. */
+  .addBtn { margin-left: 0; padding-inline: 14px; }
+  .addLong { display: none; }
+}
+
+/* ------------------------------------------------ Le pupitre des étapes
+   Sept stations sur un rail, chacune une petite latte qui porte son
+   compte en volet. Au téléphone, il choisit la colonne affichée ; au
+   bureau, il amène la colonne dans la vue. */
+.strip {
+  position: relative;
+  margin-inline: -4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.strip::-webkit-scrollbar { display: none; }
+.stripList {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 4px 4px 2px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(74px, 1fr));
+  min-width: max-content;
+}
+/* Le rail qui relie les stations, à hauteur du centre des lattes. */
+.stripList::before {
+  content: '';
+  position: absolute;
+  left: calc(4px + 100% / 14);
+  right: calc(4px + 100% / 14);
+  top: 24px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.station { position: relative; display: flex; justify-content: center; }
+.stationBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 70px;
+  padding: 0 4px 8px;
+  border-radius: 12px;
+  color: var(--text-muted);
+  -webkit-tap-highlight-color: transparent;
+}
+.stationPip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 48px;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: var(--r-slat);
+  background: var(--surface);
+  border: 1.5px dashed var(--line-strong);
+  color: var(--text-faint);
+  transition: transform var(--dur-2) var(--ease-slat);
+}
+.stationPip :global(.flap-row) { font-variation-settings: 'wdth' 118, 'wght' 800; }
+.station[data-filled='1'] .stationPip {
+  border: 0;
+  background: var(--tone);
+  color: var(--tone-ink);
+  box-shadow: 0 3px 0 color-mix(in oklab, var(--tone) 55%, var(--ink-1000));
+}
+.station[data-tone='neutral'][data-filled='1'] .stationPip {
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+  box-shadow: 0 3px 0 var(--ink-500);
+}
+.stationLabel {
+  font-variation-settings: 'wdth' 92, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.stationBtn[aria-pressed='true'] { color: var(--text); }
+.stationBtn[aria-pressed='true'] .stationPip { transform: translateY(-2px); }
+/* Repère de la colonne ouverte : un trait sous le libellé. */
+.stationBtn[aria-pressed='true'] .stationLabel {
+  text-decoration: underline;
+  text-decoration-color: var(--tone);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+}
+.stationBtn:hover .stationLabel { color: var(--text); }
+.stationBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ------------------------------------------------ Les colonnes */
+.lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.lane {
+  display: none;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.lane[data-active='1'] { display: flex; }
+
+.laneHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-height: 24px;
+}
+.laneDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+  background: var(--tone);
+}
+.laneName {
+  font-variation-settings: 'wdth' 92, 'wght' 760;
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.laneStaff {
+  flex-basis: 100%;
+  padding-left: 20px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.laneEmpty {
+  padding: 22px 18px;
+  border-radius: var(--r-card);
+  border: 1.5px dashed var(--line-strong);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* BUREAU : le planning côte à côte, défilé dans son propre cadre. */
+@container workshop (min-width: 900px) {
+  .strip { overflow: visible; }
+  .stripList { min-width: 0; }
+
+  .lanes {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 10px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    padding: 2px 2px 14px;
+    margin-inline: -2px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+  .lane {
+    display: flex;
+    flex: 0 0 320px;
+    scroll-snap-align: start;
+    padding: 14px 12px 16px;
+    border-radius: 18px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--line);
+    /* Rainure : la colonne est creusée, les fiches posées dessus. */
+    box-shadow: inset 0 2px 0 color-mix(in oklab, var(--ink-1000) 18%, transparent);
+  }
+  .lane[data-active='1'] { border-color: color-mix(in oklab, var(--tone) 55%, var(--line)); }
+  .laneHead { padding: 0 4px 2px; }
+
+  /* Colonne vide : repliée en latte fine, son nom écrit en travers. */
+  .lane[data-empty='1'] {
+    flex: 0 0 60px;
+    padding: 14px 0;
+    align-items: center;
+  }
+  .lane[data-empty='1'] .laneHead {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 12px;
+    padding: 0;
+  }
+  .lane[data-empty='1'] .laneName {
+    writing-mode: vertical-rl;
+    rotate: 180deg;
+    color: var(--text-muted);
+  }
+  .lane[data-empty='1'] :is(.laneStaff, .laneEmpty, .done) { display: none; }
+  .lane[data-empty='1'] .laneDot { opacity: 0.45; }
+}
+/* Grand bureau : les colonnes pleines s'élargissent si la place le permet. */
+@container workshop (min-width: 1500px) {
+  .lane:not([data-empty='1']) { flex: 1 0 320px; max-width: 380px; }
+}
+
+/* ------------------------------------------------ La fiche d'atelier
+   Une latte dont l'encoche est devenue l'œillet d'une étiquette de clé. */
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 16px 16px 42px;
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: var(--edge-light), 0 2px 0 var(--slat-edge), 0 18px 34px -30px rgba(0, 0, 0, 0.9);
+  min-width: 0;
+}
+/* Liseré d'étape, le long de la latte. */
+.card::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 58px;
+  bottom: 18px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--tone);
+  opacity: 0.9;
+}
+.card[data-tone='neutral']::before { background: var(--line-strong); }
+.card[data-busy='1'] { cursor: progress; }
+
+.eyelet {
+  position: absolute;
+  left: 14px;
+  top: 24px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface-sunken);
+  box-shadow: inset 0 1.5px 2px rgb(0 0 0 / 0.4), 0 0 0 2px var(--line-strong);
+}
+/* Le cordon qui part de l'œillet, vers le haut de la latte. */
+.eyelet::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  width: 2px;
+  height: 18px;
+  translate: -50% 0;
+  border-radius: 2px;
+  background: var(--rail);
+}
+
+/* « Prêt » : la seule latte vermillon du planning. */
+.card[data-lane='ready'] {
+  border-color: color-mix(in oklab, var(--signal-500) 50%, transparent);
+  box-shadow:
+    var(--edge-light),
+    0 2px 0 var(--signal-600),
+    0 22px 44px -30px color-mix(in oklab, var(--signal-500) 70%, transparent);
+}
+.card[data-lane='ready'] .eyelet { box-shadow: inset 0 1.5px 2px rgb(0 0 0 / 0.4), 0 0 0 2px var(--signal-500); }
+
+.cardTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+.plate { flex: none; }
+.flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: -2px; }
+.noPlate {
+  font-variation-settings: 'wdth' 100, 'wght' 700;
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+}
+.dossier {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+  min-width: 0;
+}
+.meta strong { font-variation-settings: 'wdth' 100, 'wght' 740; }
+.who { color: var(--text-muted); }
+.reason {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.onsite { color: var(--copper-500); font-variation-settings: 'wght' 660; }
+.eta {
+  color: var(--jade-500);
+  font-variation-settings: 'wght' 700;
+}
+.eta[data-late='1'] { color: var(--danger-text); }
+
+.actions { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding-top: 2px; }
+/* La touche principale et, à sa droite, le menu « … ». */
+.keyRow { display: flex; align-items: stretch; gap: 8px; min-width: 0; }
+.keyRow > :first-child { flex: 1 1 auto; min-width: 0; }
+.more { align-self: stretch; height: auto; min-height: 44px; width: 48px; border-radius: var(--r-field); }
+.secondary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: -4px; }
+.secondary > :global(.btn) { padding-inline: 8px; }
+
+/* Touche d'étape (prendre en charge, réparer) : un contour à la teinte de
+   l'étape. Le plein est réservé au vermillon de « Prêt » et au « Rendu ». */
+.primary {
+  min-height: 52px;
+  padding-inline: 12px;
+  border-width: 1.5px;
+  --btn-bd: color-mix(in oklab, var(--tone) 70%, var(--line-strong));
+  font-variation-settings: 'wdth' 102, 'wght' 720;
+}
+.card[data-tone='neutral'] .primary { --btn-bd: var(--text-muted); }
+.primary:hover:not(:disabled) { --btn-bg: color-mix(in oklab, var(--tone) 12%, transparent); }
+.handover { min-height: 56px; padding-inline: 12px; font-variation-settings: 'wdth' 104, 'wght' 740; }
+/* La touche vermillon, taillée pour une fiche : le mot du métier en
+   entier, sur une ligne (« Prêt · prévenir » ne se coupe jamais). */
+.key {
+  min-height: 64px;
+  padding-inline: 12px;
+  font-size: 1.125rem;
+  font-variation-settings: 'wdth' 104, 'wght' 780;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+/* Au téléphone, la fiche a la place d'une vraie touche. */
+@container workshop (max-width: 899px) {
+  .key { font-size: 1.375rem; min-height: 72px; }
+}
+
+.waitNote {
+  padding: 12px 14px;
+  border-radius: var(--r-field);
+  background: color-mix(in oklab, var(--copper-500) 12%, transparent);
+  color: var(--copper-500);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  font-variation-settings: 'wght' 620;
+}
+.waitNote[data-declined='1'] {
+  background: color-mix(in oklab, var(--brique-500) 14%, transparent);
+  color: var(--danger-text);
+}
+
+/* ------------------------------------------------ Panneaux de la fiche */
+.quoteFields { display: grid; grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr); gap: 8px; }
+@container workshop (max-width: 899px) {
+  .quoteFields { grid-template-columns: minmax(0, 9rem) minmax(0, 1fr); }
+}
+@container workshop (min-width: 900px) {
+  /* Dans une colonne de 296 px : un champ par ligne. */
+  .quoteFields { grid-template-columns: minmax(0, 1fr); }
+}
+.amount { position: relative; display: block; }
+.amount > :global(.input) {
+  padding-right: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-variation-settings: 'wdth' 112, 'wght' 760;
+  font-size: 1.125rem;
+}
+.euro {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  translate: 0 -50%;
+  color: var(--text-muted);
+  font-variation-settings: 'wght' 700;
+  pointer-events: none;
+}
+.quoteLabel { display: block; min-width: 0; }
+.legal { font-size: 0.75rem; line-height: 1.45; color: var(--text-muted); }
+
+.field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.fieldLabel {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.fieldLabel .muted, .fieldLabel span { text-transform: none; letter-spacing: 0; font-variation-settings: 'wght' 500; }
+
+/* ------------------------------------------------ Ajout au comptoir */
+.plateField { grid-column: 1 / -1; }
+.plateInput { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.plateInput > :global(.input) { flex: 1 1 200px; }
+.plateInput > :global(.seg) { flex: none; }
+.regInput {
+  font-variation-settings: 'wdth' 75, 'wght' 760;
+  font-size: 1.375rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.platePreview { padding-top: 4px; }
+.toggles { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.warnCode {
+  font-size: 0.8125rem;
+  color: var(--copper-500);
+  font-variation-settings: 'wght' 640;
+}
+
+/* ------------------------------------------------ « Rendu » */
+.done { display: flex; flex-direction: column; gap: 14px; padding: 4px 4px 0; }
+.doneCount { display: flex; align-items: flex-end; gap: 12px; color: var(--jade-500); }
+.doneLabel {
+  padding-bottom: 6px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.doneList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.doneList > li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 2px;
+  border-top: 1px solid var(--line);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+.doneAt { font-variant-numeric: tabular-nums; flex: none; }
+
+/* ------------------------------------------------ Mouvement */
+@media (prefers-reduced-motion: no-preference) {
+  .card[data-fresh='1'] { animation: card-in var(--dur-3) var(--ease-slat) backwards; }
+}
+@keyframes card-in { from { opacity: 0; transform: translateY(6px); } }

@@ -1,0 +1,289 @@
+/* =====================================================================
+   LE POSTE DE GUICHET — le tableau d'appel, poussé à l'extrême.
+   Le guichet du pro est un panneau de gare : encre dans les deux thèmes,
+   numéro en volets larges, guichet en capitales étroites. Le vermillon
+   n'est que sur la touche « Appeler le suivant ».
+   ===================================================================== */
+
+.board {
+  container: guichet / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-top: var(--sp-5);
+  padding-bottom: var(--sp-8);
+}
+
+.plus { display: inline-grid; place-items: center; width: 20px; height: 20px; font-size: 1.125rem; line-height: 1; }
+.giveBtn { gap: 10px; }
+
+.deskPick { display: flex; align-items: center; gap: 12px; flex: 0 1 320px; min-width: 0; }
+.deskPick > :global(.select) { min-height: 48px; }
+.deskPickLabel {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+@media (max-width: 599px) {
+  .deskPick, .giveBtn { flex: 1 1 100%; }
+}
+
+.columns { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; }
+@container guichet (min-width: 980px) {
+  .columns { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 48px; align-items: start; }
+}
+.main { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+
+/* ------------------------------------------------ Mon guichet */
+.station {
+  --text: var(--bone-100);
+  --text-muted: #9AA3AF;
+  --text-faint: #69737F;
+  --line: color-mix(in oklab, var(--bone-100) 10%, transparent);
+  --line-strong: color-mix(in oklab, var(--bone-100) 20%, transparent);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 22px 22px 24px;
+  border-radius: 22px;
+  background: var(--floor);
+  color: var(--bone-100);
+  box-shadow: var(--edge-light), 0 3px 0 var(--ink-1000), 0 30px 60px -36px rgba(0, 0, 0, 0.9);
+  overflow: hidden;
+}
+/* Le marquage au sol du tableau : des traits de place, très en retrait. */
+.station::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(to bottom, var(--floor-line) 0 1px, transparent 1px 52px);
+}
+.station > * { position: relative; }
+.stationHead { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px; }
+.deskName {
+  font-variation-settings: 'wdth' 75, 'wght' 800;
+  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.25rem);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.stationState { font-size: 0.875rem; color: var(--text-muted); font-variation-settings: 'wght' 640; }
+.station[data-state='next'] .stationState { color: var(--copper-500); }
+.station[data-state='serving'] .stationState { color: var(--jade-500); }
+
+.board3 { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; min-height: 96px; }
+.callMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.callMeta :global(.chip) { background: color-mix(in oklab, var(--bone-100) 10%, transparent); color: var(--bone-100); border-color: transparent; }
+.callName { font-variation-settings: 'wght' 660; }
+
+/* Tableau vide : les cases attendent le numéro. */
+.idleNumber {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.12em;
+  font-size: clamp(3.25rem, 2rem + 6vw, 5.5rem);
+  height: 1em;
+}
+.idleNumber > span {
+  width: 0.74em;
+  height: 1em;
+  border-radius: 0.1em;
+  border: 2px dashed color-mix(in oklab, var(--bone-100) 16%, transparent);
+}
+.idleNumber > .idleDash {
+  width: 0.26em;
+  height: 0.085em;
+  border: 0;
+  border-radius: 0.04em;
+  background: color-mix(in oklab, var(--bone-100) 20%, transparent);
+  margin-inline: 0.12em;
+}
+
+.stationActions { display: flex; flex-direction: column; gap: 10px; }
+.callKey {
+  width: 100%;
+  min-height: 80px;
+  font-size: clamp(1.375rem, 1.1rem + 1vw, 1.75rem);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  padding-inline: 12px;
+}
+@container guichet (max-width: 599px) {
+  .callKey { font-size: 1.25rem; letter-spacing: 0.03em; min-height: 72px; }
+  .station { padding: 18px 16px 20px; }
+}
+.finish {
+  width: 100%;
+  min-height: 64px;
+  font-size: 1.25rem;
+  font-variation-settings: 'wdth' 108, 'wght' 780;
+  --btn-bg: var(--bone-100);
+  --btn-fg: var(--ink-900);
+}
+.stationMinor { display: flex; flex-wrap: wrap; gap: 8px; }
+.stationMinor > :global(.btn) { flex: 1 1 0; --btn-fg: var(--bone-100); }
+.stationMinor > :global(.btn:disabled) { --btn-fg: var(--text-faint); }
+.autoHint { font-size: 0.8125rem; color: var(--text-muted); }
+
+/* ------------------------------------------------ Autres guichets */
+.others { display: flex; flex-direction: column; gap: 12px; }
+.otherList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr));
+  gap: 10px;
+}
+.other {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 60px;
+  padding: 10px 14px;
+  border-radius: var(--r-field);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: 0 2px 0 var(--slat-edge);
+}
+.other[data-state='free'] { background: transparent; border-style: dashed; box-shadow: none; }
+.otherName {
+  font-variation-settings: 'wdth' 80, 'wght' 760;
+  font-size: 0.875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.otherTicket { display: inline-flex; align-items: center; gap: 8px; }
+.otherState { font-size: 0.75rem; color: var(--text-muted); }
+.other[data-state='next'] .otherState { color: var(--copper-500); }
+.other[data-state='serving'] .otherState { color: var(--jade-500); }
+
+/* ------------------------------------------------ File d'attente */
+.queue { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.waitList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 14px;
+  min-height: 68px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.row:last-child { border-bottom: 1px solid var(--line); }
+.row[data-kind='advice'] { grid-template-columns: 34px minmax(0, 1fr) auto; }
+.pos {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--floor-number);
+}
+.who { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rowMain { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 0.9375rem; }
+.motif { font-variation-settings: 'wght' 680; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rowName { color: var(--text-muted); white-space: nowrap; }
+.rowMeta { font-size: 0.8125rem; color: var(--text-muted); }
+.rowMenu { grid-column: 1 / -1; }
+.nobody {
+  padding: 18px;
+  border-radius: var(--r-card);
+  border: 1.5px dashed var(--line-strong);
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+}
+.privacy {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  padding-left: 12px;
+  border-left: 2px solid var(--jade-500);
+}
+
+.given { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+
+/* ------------------------------------------------ Boutique */
+.retailCols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 36px; }
+@container guichet (min-width: 980px) {
+  .retailCols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: start; }
+}
+.advice, .orders { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.counterList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.atCounter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 14px 16px;
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--edge-light), 0 2px 0 var(--slat-edge);
+}
+.inlineActions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.orderGroup { display: flex; flex-direction: column; gap: 10px; }
+.orderGroupTitle {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.orderGroup[data-tone='ready'] .orderGroupTitle { color: var(--accent); }
+.orderList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+/* Une étiquette de sac : latte à œillet en haut. */
+.order {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  padding: 20px 16px 14px;
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: var(--edge-light), 0 2px 0 var(--slat-edge);
+}
+.order[data-tone='ready'] {
+  border-color: color-mix(in oklab, var(--signal-500) 50%, transparent);
+  box-shadow: var(--edge-light), 0 2px 0 var(--signal-600), 0 20px 40px -30px color-mix(in oklab, var(--signal-500) 70%, transparent);
+}
+.order[data-tone='preparing'] { border-left: 3px solid var(--cobalt-500); }
+.bagEyelet {
+  position: absolute;
+  left: 50%;
+  top: 7px;
+  width: 12px;
+  height: 12px;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: var(--surface-sunken);
+  box-shadow: inset 0 1.5px 2px rgb(0 0 0 / 0.4), 0 0 0 2px var(--line-strong);
+}
+.orderMain { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.orderRef {
+  font-variation-settings: 'wdth' 112, 'wght' 800;
+  font-size: 1.25rem;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.readyBtn { font-variation-settings: 'wdth' 104, 'wght' 740; }
+
+.field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.fieldLabel {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}

@@ -541,7 +541,7 @@ const STATUS_OPTIONS: ReadonlyArray<{ value: QueueStatus; label: string }> = [
   { value: 'closed', label: 'Fermée' },
 ];
 
-function StatusHeader({
+export function StatusHeader({
   snapshot, queues, orgSlug, canOperate, pending, onStatus,
 }: {
   snapshot: QueueSnapshot;
@@ -973,7 +973,7 @@ function WaitingRow({
   );
 }
 
-function StatusChip({ entry }: { entry: StaffEntry }) {
+export function StatusChip({ entry }: { entry: StaffEntry }) {
   const className =
     entry.status === 'returning' ? 'chip chip--jade'
     : entry.status === 'present' ? 'chip chip--jade'
@@ -1116,7 +1116,7 @@ function waitText(joinedAt: string): string {
  * Horloge partagée : `null` au rendu serveur et à l'hydratation, puis
  * l'heure courante, rafraîchie à intervalle régulier.
  */
-function useNow(interval: number): number | null {
+export function useNow(interval: number): number | null {
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     setNow(Date.now());
@@ -1134,7 +1134,7 @@ function useNow(interval: number): number | null {
  * côté serveur et « 1 min » une seconde plus tard côté client suffisent
  * à casser l'hydratation de React. On ne compte donc qu'une fois monté.
  */
-function useLiveElapsed(from: string | null): number | null {
+export function useLiveElapsed(from: string | null): number | null {
   const [value, setValue] = useState<number | null>(null);
   useEffect(() => {
     setValue(elapsedSeconds(from));

@@ -1,0 +1,178 @@
+/* =====================================================================
+   L'ÉTIQUETTE DE CLÉ — 62 × 100 mm, papier blanc dans les deux thèmes
+   (c'est un objet), encre, jamais de noir pur. À l'écran : l'étiquette
+   pend à son cordon ; à l'impression : elle seule, bord à bord.
+   ===================================================================== */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding-top: var(--sp-6);
+  padding-bottom: var(--sp-9);
+}
+.intro { display: flex; flex-direction: column; gap: 12px; max-width: 60ch; }
+.title {
+  font-variation-settings: 'wdth' 110, 'wght' 780;
+  font-size: clamp(1.75rem, 1.4rem + 1.4vw, 2.5rem);
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.stage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 32px 48px;
+}
+
+.label {
+  --ink: var(--ink-900);
+  position: relative;
+  flex: none;
+  width: 62mm;
+  height: 100mm;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2.4mm;
+  padding: 11mm 4mm 4mm;
+  border-radius: 3mm;
+  background: #FFFFFF;
+  color: var(--ink);
+  box-shadow: 0 2px 0 var(--bone-500), 0 30px 60px -30px rgb(0 0 0 / 0.6);
+  margin-top: 28px;
+}
+/* Le cordon qui tient l'étiquette, à l'écran seulement. */
+.label::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - 6mm);
+  width: 2px;
+  height: calc(28px + 6mm);
+  translate: -50% 0;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.hole {
+  position: absolute;
+  top: 3.5mm;
+  left: 50%;
+  width: 5mm;
+  height: 5mm;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.35), 0 0 0 0.5mm var(--bone-400);
+}
+.place {
+  font-variation-settings: 'wdth' 88, 'wght' 760;
+  font-size: 7.5pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--ink-400);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plate { display: flex; justify-content: center; width: 100%; }
+.noPlate { font-variation-settings: 'wght' 700; font-size: 11pt; color: var(--ink-400); }
+.dossier { display: flex; align-items: center; gap: 2.5mm; color: var(--ink-500); }
+.model {
+  min-height: 1.2em;
+  font-variation-settings: 'wdth' 100, 'wght' 720;
+  font-size: 10pt;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ref {
+  display: flex;
+  align-items: baseline;
+  gap: 1.5mm;
+  font-size: 8pt;
+  color: var(--ink-400);
+}
+.ref strong {
+  font-variation-settings: 'wdth' 118, 'wght' 820;
+  font-size: 15pt;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+.qrZone {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.6mm;
+  width: 100%;
+}
+.qr, .qrPlaceholder { width: 30mm; height: 30mm; }
+.qr :global(svg) { display: block; width: 100%; height: 100%; }
+.qrPlaceholder {
+  display: grid;
+  place-items: center;
+  border-radius: 2mm;
+  border: 0.4mm dashed var(--bone-500);
+  font-size: 7pt;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--ink-300);
+}
+.scan {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6mm;
+  font-size: 7pt;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--ink-500);
+}
+.expires { font-size: 6pt; color: var(--ink-300); }
+
+.actions { display: flex; flex-direction: column; gap: 12px; min-width: min(100%, 300px); margin-top: 28px; }
+.error { font-size: 0.875rem; color: var(--danger-text); font-variation-settings: 'wght' 620; max-width: 40ch; }
+.back {
+  align-self: flex-start;
+  padding-block: 11px;
+  font-size: 0.9375rem;
+  font-variation-settings: 'wght' 640;
+  color: var(--text-muted);
+}
+.back:hover { color: var(--text); }
+
+.gone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 72px 0;
+  max-width: 520px;
+}
+
+/* ------------------------------------------------ Impression */
+@page { size: 62mm 100mm; margin: 0; }
+@media print {
+  :global(html):has(.label) :global(body *) { visibility: hidden; }
+  .label, .label * { visibility: visible; }
+  .label {
+    position: fixed;
+    left: 0;
+    top: 0;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .label::before { display: none; }
+  .hole { box-shadow: 0 0 0 0.3mm var(--bone-500); background: #FFFFFF; }
+  .qrPlaceholder { visibility: hidden !important; }
+}
