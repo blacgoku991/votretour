@@ -7,6 +7,7 @@ import type {
 } from '@/lib/types';
 import { broadcastQueueState, broadcastTicketEvent } from './realtime';
 import { dispatchEntryNotification, dispatchQueueNotifications } from './notifications/dispatch';
+import { scheduleWalletFlush } from './wallet/outbox';
 
 /**
  * Service de file : la seule porte d'entrée applicative vers le moteur
@@ -94,6 +95,17 @@ export async function propagate(queueId: string): Promise<{
     notifications = await dispatchQueueNotifications(queueId);
   } catch (error) {
     console.error('[queue] notifications impossibles', error);
+  }
+
+  // Passes Wallet de la file : les déclencheurs SQL ont déjà enfilé les
+  // mises à jour dans la même transaction que la mutation. Le vidage part
+  // APRÈS la réponse (after) et après les notifications de l'action
+  // (« Merci », « retiré »), jamais en travers : une panne Wallet ne
+  // retarde ni ne fait échouer l'action du pro.
+  try {
+    scheduleWalletFlush(queueId);
+  } catch (error) {
+    console.error('[queue] vidage Wallet non programmé', error);
   }
 
   return { state, notifications };

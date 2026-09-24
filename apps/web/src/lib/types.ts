@@ -14,7 +14,10 @@ export type AbsentPolicy = 'hold' | 'move_back' | 'remove';
 export type AdvanceMode = 'auto_serve' | 'call_next';
 export type MemberRole = 'owner' | 'admin' | 'manager' | 'member';
 export type ClientPlatform = 'web' | 'ios_appclip' | 'ios_app' | 'android_web' | 'unknown';
-export type NotificationChannel = 'web_push' | 'apns_appclip' | 'apns_app' | 'fcm';
+export type NotificationChannel =
+  | 'web_push' | 'apns_appclip' | 'apns_app' | 'fcm'
+  /** Alerte portée par une mise à jour de pass (acceptée par Apple ou Google). */
+  | 'apple_wallet' | 'google_wallet';
 export type NotificationKind =
   | 'ahead_two' | 'ahead_one' | 'your_turn' | 'visit_completed'
   | 'removed' | 'queue_closed' | 'event_access' | 'event_sold_out'
@@ -194,6 +197,13 @@ export interface TicketState {
     googleReviewUrl: string | null;
   };
   organization: { name: string; logoUrl: string | null };
+  /**
+   * Passes Wallet du ticket, renseigné par /api/client/ticket (lot W4).
+   * `appleSaved` : au moins un appareil a RÉELLEMENT inscrit le pass
+   * (service web Apple) ; la page ne dit « Wallet vous préviendra »
+   * qu'après cette preuve, jamais au clic.
+   */
+  wallet?: { appleSaved: boolean };
   at: string;
 }
 

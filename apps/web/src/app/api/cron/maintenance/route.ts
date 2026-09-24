@@ -62,6 +62,20 @@ export async function GET(request: Request) {
   }
 
   try {
+    // Passes Wallet : effacement 24 h après la fin du passage, suppression
+    // 7 jours plus tard, file d'envoi nettoyée (purge_wallet_data, 0021).
+    // Délais plus courts que data_retention_days : un pass n'a plus
+    // d'utilité une fois le passage terminé.
+    const { data, error } = await supabaseAdmin().rpc('purge_wallet_data');
+    if (error) throw error;
+    report.wallet = data;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : (error as { message?: string })?.message ?? 'inconnu';
+    report.walletError = message;
+    await reportError({ source: 'cron.maintenance.wallet', message });
+  }
+
+  try {
     // Codes d'appairage TV : utiles 10 minutes, conservés un jour pour
     // l'enquête en cas d'appairage suspect, puis supprimés. Sans cela la
     // table grossit indéfiniment d'empreintes qui ne servent plus à rien.

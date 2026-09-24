@@ -47,7 +47,10 @@ const nextConfig: NextConfig = {
   // Pas de badge « N » de développement : il masquait les captures de revue.
   devIndicators: false,
   poweredByHeader: false,
-  serverExternalPackages: ['web-push'],
+  /* Chargés par Node à l'exécution, jamais empaquetés : node-forge
+     (signature CMS des passes Apple Wallet) et sharp (images des passes,
+     binaires natifs linuxmusl de l'image Docker). */
+  serverExternalPackages: ['web-push', 'node-forge', 'sharp'],
   /* Polices des images de partage (lib/seo/og.tsx) : lues par readFile,
      donc invisibles pour le traçage automatique de la sortie standalone.
      Les images sont générées au build, mais une revalidation ou une route

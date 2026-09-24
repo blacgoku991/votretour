@@ -99,7 +99,12 @@ export const config = {
      *
      * /apple-icon.png aussi : c'est une ressource statique, qu'iOS et les
      * robots demandent sans session.
+     *
+     * /api/wallet/… : le service web Apple Wallet est appelé par l'iPhone,
+     * sans cookie et souvent en rafale (une vague de 200 accès), et les
+     * images d'en-tête Google sont lues par les serveurs de Google. Aucune
+     * session à rafraîchir : chaque route s'authentifie elle-même.
      */
-    '/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|sw.js|manifest.webmanifest|\\.well-known|e/|tv(?:/|$)|media/|api/client/|api/cron/|api/stripe/|api/tv/|api/event/|pour(?:/|$)|sitemap\\.xml$|robots\\.txt$|opengraph-image(?:/|$)|videos/|s/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|sw.js|manifest.webmanifest|\\.well-known|e/|tv(?:/|$)|media/|api/client/|api/cron/|api/stripe/|api/tv/|api/event/|api/wallet/|pour(?:/|$)|sitemap\\.xml$|robots\\.txt$|opengraph-image(?:/|$)|videos/|s/).*)',
   ],
 };

@@ -4,6 +4,8 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { dispatchQueueNotifications } from '@/server/notifications/dispatch';
 import { expireEventPasses } from '@/server/queue';
 import { reportError } from '@/server/audit';
+import { flushWalletOutbox, type WalletFlushSummary } from '@/server/wallet/outbox';
+import { runWalletMaintenance } from '@/server/wallet/providers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -56,7 +58,22 @@ export async function GET(request: Request) {
     return Response.json({ ok: false, error: message }, { status: 500 });
   }
 
-  return Response.json({ ok: true, ...summary });
+  // Passes Wallet : filet de sécurité du vidage fait après chaque action,
+  // et transitions différées (« Merci » archivé à +2 h). À part, dans son
+  // propre try/catch : une panne Wallet ne fait pas échouer ce cron. 20 s
+  // au plus : le conteneur cron coupe l'appel à 30 s (curl -m 30).
+  let wallet: WalletFlushSummary | { error: string } | null = null;
+  try {
+    // Tâches de fond des fournisseurs d'abord (Google : classes).
+    await runWalletMaintenance();
+    wallet = await flushWalletOutbox({ budgetMs: 20_000, limit: 400 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'inconnu';
+    wallet = { error: message };
+    await reportError({ source: 'cron.wallet', message });
+  }
+
+  return Response.json({ ok: true, ...summary, wallet });
 }
 
 export const POST = GET;
