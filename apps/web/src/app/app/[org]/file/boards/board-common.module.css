@@ -94,7 +94,8 @@
   color: var(--text-muted);
   pointer-events: none;
 }
-@media (pointer: coarse) { .kbd { display: none; } }
+/* Pas de clavier physique (téléphone, tablette tactile) : pas de touche « / ». */
+@media (pointer: coarse), (hover: none), (max-width: 599px) { .kbd { display: none; } }
 .searchCount { font-size: 0.8125rem; color: var(--text-muted); white-space: nowrap; }
 /* Sans recherche, le compteur ne prend aucune place (il reste une région
    vivante, prête à annoncer le nombre de fiches trouvées). */
@@ -111,7 +112,6 @@
   border-radius: 10px;
   border: 1px solid var(--line-strong);
   color: var(--text-muted);
-  transition: color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
 }
 .moreBtn:hover, .moreBtn[aria-expanded='true'] { border-color: var(--text-muted); color: var(--text); }
 @media (pointer: coarse) { .moreBtn { width: 44px; height: 44px; } }
@@ -233,7 +233,6 @@
   font-size: 0.875rem;
   font-variation-settings: 'wght' 620;
   color: var(--text-muted);
-  transition: border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
 }
 @media (pointer: coarse) { .chipBtn { min-height: 44px; } }
 .chipBtn:hover { color: var(--text); border-color: var(--text-muted); }

@@ -76,9 +76,21 @@ export function useProfileBoard({ orgSlug, initialSnapshot, canOperate }: Option
      l'action serveur authentifiée.
      --------------------------------------------------------------- */
   const refresh = useCallback(async () => {
+    // Lecture seule (sans `queue.operate`) : l'action serveur des postes
+    // refuserait ; la page se relit elle-même, et renvoie un instantané
+    // expurgé (`readOnlySnapshot`).
+    if (!canOperate) { router.refresh(); return; }
     const result = await fetchProfileQueueSnapshot(orgSlug, queueId);
     if (result.ok) setSnapshot(result.data.snapshot);
-  }, [orgSlug, queueId, setSnapshot]);
+  }, [canOperate, orgSlug, queueId, router, setSnapshot]);
+
+  // Un nouvel instantané rendu par le serveur (page relue) remplace l'écran.
+  const firstSnapshot = useRef(initialSnapshot);
+  useEffect(() => {
+    if (initialSnapshot === firstSnapshot.current) return;
+    firstSnapshot.current = initialSnapshot;
+    setSnapshotState(initialSnapshot);
+  }, [initialSnapshot]);
 
   const refreshRef = useRef(refresh);
   useEffect(() => { refreshRef.current = refresh; }, [refresh]);

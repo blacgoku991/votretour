@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  columnOf,
+  fromZonedInput,
+  labelKind,
   laneOf,
+  storedColumn,
+  toZonedInput,
+  WORKSHOP_COLUMNS,
+  workshopColumns,
   matchesWorkshopQuery,
   parseAmountToCents,
   quoteStateOf,
@@ -193,5 +200,82 @@ describe('saisies du poste', () => {
     expect(formatEta('2026-09-25T07:30:00Z', now)).toBe('prévu demain 9 h 30');
     expect(formatEta('2026-09-28T15:00:00Z', now)).toMatch(/^prévu lun\. 28 sept\. 17 h$/);
     expect(formatEta(null, now)).toBeNull();
+  });
+});
+
+describe('les quatre colonnes du planning (conception, § 4.2)', () => {
+  it('à prendre en charge | en atelier | en attente client / pièce | prêts à récupérer', () => {
+    expect(WORKSHOP_COLUMNS.map((c) => c.label)).toEqual([
+      'À prendre en charge', 'En atelier', 'En attente client / pièce', 'Prêts à récupérer',
+    ]);
+    expect(WORKSHOP_COLUMNS.map((c) => c.stages)).toEqual([
+      ['received'], ['diagnosis', 'in_repair'], ['quote_pending', 'waiting_parts'], ['ready'],
+    ]);
+  });
+
+  it('chaque étape du registre est dans exactement une colonne, et seule « Prêts » est vermillon', () => {
+    const all = WORKSHOP_COLUMNS.flatMap((c) => c.stages);
+    expect([...all].sort()).toEqual(WORKSHOP_STAGES.map((s) => s.key).sort());
+    expect(WORKSHOP_COLUMNS.filter((c) => c.tone === 'signal').map((c) => c.key)).toEqual(['ready']);
+  });
+
+  it('noms courts du pupitre : quatre mots brefs, qui tiennent à 390 px', () => {
+    for (const c of WORKSHOP_COLUMNS) expect(c.short.length).toBeLessThanOrEqual(8);
+  });
+
+  it('range chaque fiche dans la colonne de sa famille, triée comme les étapes', () => {
+    const entries = [
+      fiche({ stage: 'in_repair', status: 'serving', at: '2026-09-24T08:05:00Z' }),
+      fiche({ stage: 'diagnosis', status: 'serving', at: '2026-09-24T08:01:00Z' }),
+      fiche({ stage: 'waiting_parts', status: 'serving' }),
+      fiche({ stage: 'quote_pending', status: 'serving' }),
+      fiche({ stage: 'received' }),
+      fiche({ stage: 'ready', status: 'next' }),
+      fiche({ stage: null, status: 'serving' }),
+    ];
+    const cols = workshopColumns('vehicle', entries);
+    expect(cols.get('intake')!.length).toBe(1);
+    expect(cols.get('workshop')!.map((e) => e.stage)).toEqual(['diagnosis', 'in_repair', null]);
+    expect(cols.get('waiting')!.length).toBe(2);
+    expect(cols.get('ready')!.length).toBe(1);
+    expect(columnOf('device', { stage: 'quote_pending', status: 'serving' })).toBe('waiting');
+  });
+
+  it('une colonne mémorisée par une version précédente (une étape) est ramenée à sa famille', () => {
+    expect(storedColumn('ready')).toBe('ready');
+    expect(storedColumn('waiting_parts')).toBe('waiting');
+    expect(storedColumn('in_repair')).toBe('workshop');
+    expect(storedColumn('handed_over')).toBeNull();
+    expect(storedColumn(null)).toBeNull();
+  });
+});
+
+describe('étiquette : de clé au garage, de dépôt pour un appareil', () => {
+  it('un téléphone n’a pas de clé', () => {
+    expect(labelKind('vehicle').title).toBe('Étiquette de clé');
+    expect(labelKind('device').title).toBe('Étiquette de dépôt');
+    expect(labelKind('device').print).not.toMatch(/clé/);
+  });
+});
+
+describe('promesse de délai saisie à l’heure du lieu, pas du navigateur', () => {
+  it('affiche la promesse à l’heure de l’établissement', () => {
+    expect(toZonedInput('2026-09-24T15:00:00Z', 'Europe/Paris')).toBe('2026-09-24T17:00');
+    expect(toZonedInput('2026-09-24T15:00:00Z', 'America/Guadeloupe')).toBe('2026-09-24T11:00');
+  });
+
+  it('sans promesse : dans deux heures, à l’heure pile, à l’heure du lieu', () => {
+    expect(toZonedInput(null, 'Europe/Paris', Date.parse('2026-09-24T12:34:00Z'))).toBe('2026-09-24T16:00');
+  });
+
+  it('relit la saisie dans le fuseau du lieu, changements d’heure compris', () => {
+    expect(fromZonedInput('2026-09-24T17:00', 'Europe/Paris')).toBe('2026-09-24T15:00:00.000Z');
+    expect(fromZonedInput('2026-01-15T17:00', 'Europe/Paris')).toBe('2026-01-15T16:00:00.000Z');
+    // 2 h 30 n'existe pas le 29 mars 2026 à Paris : l'heure avance.
+    expect(fromZonedInput('2026-03-29T02:30', 'Europe/Paris')).toBe('2026-03-29T01:30:00.000Z');
+    expect(fromZonedInput('pas une date', 'Europe/Paris')).toBeNull();
+    for (const iso of ['2026-10-25T03:30:00.000Z', '2026-07-01T09:15:00.000Z']) {
+      expect(fromZonedInput(toZonedInput(iso, 'Europe/Paris'), 'Europe/Paris')).toBe(iso);
+    }
   });
 });

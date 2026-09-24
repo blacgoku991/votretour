@@ -6,7 +6,8 @@ import { TicketNumber } from '@/components/objects/TicketNumber';
 import { TicketNumberFlap } from '@/components/objects/TicketNumberFlap';
 import { getProfile } from '@/lib/profiles';
 import type { ProfileQueueSnapshot, ProfileStaffEntry } from '@/lib/profiles/types';
-import { addProfileEntryAction, callNextAtDesk } from '@/server/actions/profile-queue';
+import { addProfileEntryAction } from '@/server/actions/profile-queue';
+import { callNextWithNotice } from './desk-call';
 import { useNow } from '../QueueBoard';
 import { BoardToasts, NoticeBadge, ProfileStatusHeader, StatusNotice, useDisclosure, waitShort } from './BoardChrome';
 import {
@@ -118,7 +119,7 @@ function DeskStation({ orgSlug, queues, canOperate, actorStaffId = null, api }: 
       api.say('Choisissez d’abord votre guichet.', 'warn');
       return;
     }
-    const result = await api.run('call-next', () => callNextAtDesk(orgSlug, { queueId: snapshot.queue.id, deskStaffId: desk }));
+    const result = await api.run('call-next', () => callNextWithNotice(orgSlug, { queueId: snapshot.queue.id, deskStaffId: desk }));
     if (!result.ok) {
       // Guichet supprimé ou renommé entre-temps : on l'oublie, et le pro
       // en choisit un autre dans la liste relue.
@@ -131,7 +132,12 @@ function DeskStation({ orgSlug, queues, canOperate, actorStaffId = null, api }: 
       }
       return;
     }
-    if (!result.data.calledId) api.say('Personne n’attend pour le moment.', 'muted');
+    const { calledId, notice } = result.data;
+    if (!calledId) { api.say('Personne n’attend pour le moment.', 'muted'); return; }
+    // Ce que l'agent doit savoir tout de suite : la personne appelée
+    // a-t-elle vraiment été prévenue ? (« A-004 : Prévenu 14:32 ✓ »)
+    const called = [...(result.data.snapshot?.called ?? []), ...(result.data.snapshot?.serving ?? [])].find((e) => e.id === calledId);
+    api.recordNotice(calledId, notice, called ? ticketOf(called) : undefined);
   };
 
   return (
@@ -172,7 +178,7 @@ function DeskStation({ orgSlug, queues, canOperate, actorStaffId = null, api }: 
       <StatusNotice
         status={snapshot.queue.status}
         pauseReason={snapshot.queue.pauseReason}
-        closedText="Guichets fermés : plus personne ne peut prendre de ticket."
+        closedText="Guichets fermés : plus personne ne peut prendre de ticket."
       />
 
       {giving && canOperate && (
@@ -199,9 +205,11 @@ function DeskStation({ orgSlug, queues, canOperate, actorStaffId = null, api }: 
               {current ? (
                 <TicketNumberFlap value={ticketOf(current)} size="clamp(3.25rem, 2rem + 6vw, 5.5rem)" live />
               ) : (
-                // Guichet libre : les cases du tableau, vides, attendent le numéro.
+                // Guichet libre : les cases du tableau affichent un tiret, comme
+                // un tableau d'appel au repos (des cases vides se liraient
+                // comme un chargement).
                 <span className={styles.idleNumber} aria-hidden="true">
-                  <span /><span className={styles.idleDash} /><span /><span /><span />
+                  <span>–</span><span className={styles.idleDash} /><span>–</span><span>–</span><span>–</span>
                 </span>
               )}
               {current && (
@@ -291,7 +299,7 @@ function DeskStation({ orgSlug, queues, canOperate, actorStaffId = null, api }: 
           )}
           {sensitive && (
             <p className={styles.privacy}>
-              Accueil de patients : aucun prénom n’est affiché, ici comme sur l’écran de la salle.
+              Accueil de patients : aucun prénom n’est affiché, ici comme sur l’écran de la salle.
             </p>
           )}
         </section>
@@ -405,7 +413,7 @@ function GiveTicket({ orgSlug, snapshot, api, onDone }: { orgSlug: string; snaps
       {given ? (
         <div className={styles.given}>
           <TicketNumber value={given} size="3.5rem" />
-          <p className="t-small t-muted">Annoncez ce numéro à la personne : il sera appelé sur l’écran de la salle.</p>
+          <p className="t-small t-muted">Annoncez ce numéro à la personne : il sera appelé sur l’écran de la salle.</p>
           <button type="button" className="btn btn--solid btn--sm" onClick={() => setGiven(null)}>Un autre ticket</button>
         </div>
       ) : (
@@ -479,7 +487,7 @@ function RetailCounter({ orgSlug, queues, canOperate, api }: Props & { api: Prof
       </ProfileStatusHeader>
 
       <BoardToasts error={api.error} flash={api.flash} onClose={api.clearError} />
-      <StatusNotice status={snapshot.queue.status} pauseReason={snapshot.queue.pauseReason} closedText="File fermée : plus personne ne peut s’inscrire." />
+      <StatusNotice status={snapshot.queue.status} pauseReason={snapshot.queue.pauseReason} closedText="File fermée : plus personne ne peut s’inscrire." />
 
       {adding && canOperate && (
         <div id="boutique-ajout">
@@ -531,19 +539,7 @@ function RetailCounter({ orgSlug, queues, canOperate, api }: Props & { api: Prof
           ) : (
             <ol className={styles.waitList}>
               {adviceWaiting.map((e, i) => (
-                <li key={e.id} className={styles.row} data-kind="advice">
-                  <span className={styles.pos} aria-label={`Position ${i + 1}`}>{String(i + 1).padStart(2, '0')}</span>
-                  <div className={styles.who}>
-                    <p className={styles.rowMain}><span className={styles.motif}>{e.name ?? 'Client sans prénom'}</span></p>
-                    <p className={styles.rowMeta}>{now == null ? ' ' : `${waitShort(e.joinedAt, now)} d’attente`}</p>
-                  </div>
-                  {canOperate && (
-                    <button type="button" className="btn btn--quiet btn--sm" disabled={api.busy === e.id}
-                      onClick={() => api.advance(e.id, 'remove', undefined, { success: `${e.name ?? 'Client'} retiré` })}>
-                      Retirer
-                    </button>
-                  )}
-                </li>
+                <AdviceRow key={e.id} entry={e} position={i + 1} now={now} api={api} canOperate={canOperate} />
               ))}
             </ol>
           )}
@@ -561,6 +557,58 @@ function RetailCounter({ orgSlug, queues, canOperate, api }: Props & { api: Prof
         </section>
       </div>
     </>
+  );
+}
+
+/**
+ * Un client qui attend un conseil. Le sortir de la file est destructeur
+ * (il perd sa place) : un premier geste demande confirmation, en ligne,
+ * comme sur la fiche d'atelier ; jamais de retrait en un seul toucher.
+ * « Sortir de la file », pas « Retirer » : le mot ne se confond pas avec
+ * les « Retraits de commande » d'à côté.
+ */
+function AdviceRow({
+  entry, position, now, api, canOperate,
+}: { entry: ProfileStaffEntry; position: number; now: number | null; api: ProfileBoardApi; canOperate: boolean }) {
+  const [confirming, setConfirming] = useState(false);
+  const busy = api.busy === entry.id;
+  const titleId = useId();
+  return (
+    <li className={styles.row} data-kind="advice">
+      <span className={styles.pos} aria-label={`Position ${position}`}>{String(position).padStart(2, '0')}</span>
+      <div className={styles.who}>
+        <p className={styles.rowMain}><span className={styles.motif}>{entry.name ?? 'Client sans prénom'}</span></p>
+        <p className={styles.rowMeta}>{now == null ? '\u00a0' : `${waitShort(entry.joinedAt, now)} d’attente`}</p>
+      </div>
+      {canOperate && !confirming && (
+        <button type="button" className="btn btn--quiet btn--sm" disabled={busy} onClick={() => setConfirming(true)}>
+          Sortir de la file
+        </button>
+      )}
+      {canOperate && confirming && (
+        <div
+          className={`${common.inline} ${styles.rowMenu}`}
+          role="alertdialog"
+          aria-labelledby={titleId}
+          style={{ ['--tone' as string]: 'var(--danger-text)' }}
+          onKeyDown={(event) => { if (event.key === 'Escape') setConfirming(false); }}
+        >
+          <p id={titleId} className={common.inlineTitle}>
+            Sortir {entry.name ?? 'ce client'} de la file ? Il perdra sa place.
+          </p>
+          <div className={common.inlineRow}>
+            <button type="button" className="btn btn--danger btn--sm" disabled={busy}
+              onClick={async () => {
+                const r = await api.advance(entry.id, 'remove', undefined, { success: `${entry.name ?? 'Client'} sorti de la file` });
+                if (r.ok) setConfirming(false);
+              }}>
+              Sortir de la file
+            </button>
+            <button type="button" className="btn btn--quiet btn--sm" autoFocus onClick={() => setConfirming(false)}>Annuler</button>
+          </div>
+        </div>
+      )}
+    </li>
   );
 }
 

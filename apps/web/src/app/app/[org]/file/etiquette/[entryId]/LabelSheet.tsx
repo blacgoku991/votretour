@@ -8,7 +8,7 @@ import { TicketNumber } from '@/components/objects/TicketNumber';
 import { asMaskedRegistration } from '@/lib/profiles/registration';
 import type { DeviceKind, RegistrationCountry } from '@/lib/profiles/types';
 import { issueTrackingLink, type TrackingLink } from '@/server/actions/profile-queue';
-import { shortRef } from '../../boards/logic';
+import { labelKind, shortRef } from '../../boards/logic';
 import styles from './etiquette.module.css';
 
 /**
@@ -16,13 +16,29 @@ import styles from './etiquette.module.css';
  * « Imprimer ». Le QR de suivi est émis À CE MOMENT (jeton à usage unique,
  * dont la base ne garde que l'empreinte), posé sur l'étiquette, et la
  * boîte d'impression du navigateur s'ouvre. Si la fiche est déjà suivie
- * par un téléphone, l'étiquette s'imprime sans QR : elle garde son rôle
- * de repère entre la clé et la fiche.
+ * par un téléphone, l'étiquette s'imprime sans QR, et sans la zone du QR :
+ * elle garde son rôle de repère entre la clé (ou le sachet) et la fiche.
  */
+
+/**
+ * La page imprimée a exactement la taille de l'étiquette, sur fond blanc
+ * (voir etiquette.module.css). Posée par un `<style>` rendu avec la
+ * feuille : elle n'existe que sur cette page et disparaît avec elle ; un
+ * module CSS ne peut pas viser `html` seul.
+ */
+const PRINT_PAGE_CSS = `@media print {
+  html, body {
+    width: 62mm !important; height: 100mm !important; min-height: 0 !important;
+    margin: 0 !important; padding: 0 !important; overflow: hidden !important;
+    background: #FFFFFF !important;
+  }
+}`;
 
 export interface LabelData {
   profile: 'vehicle' | 'device';
   locationName: string;
+  /** Fuseau de l'établissement : l'échéance du QR se lit à son heure. */
+  timeZone: string;
   /** Déjà masquée côté serveur (`••-••3-CD`) ; jamais la forme complète. */
   maskedRegistration: string | null;
   country: RegistrationCountry;
@@ -42,6 +58,10 @@ export function LabelSheet({
   const printed = useRef(false);
   const masked = asMaskedRegistration(label.maskedRegistration);
   const ref = label.ticketNo ?? shortRef(entryId);
+  const kind = labelKind(label.profile);
+  // Sur l'étiquette de dépôt, le numéro de dossier est déjà écrit en
+  // grand : la ligne « Réf. » le répéterait.
+  const showRef = label.profile === 'vehicle' || !label.ticketNo;
 
   // L'impression attend que le QR soit posé dans la page.
   useEffect(() => {
@@ -62,22 +82,29 @@ export function LabelSheet({
   };
 
   const expires = link
-    ? new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(link.expiresAt))
+    ? new Intl.DateTimeFormat('fr-FR', {
+        weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: label.timeZone,
+      }).format(new Date(link.expiresAt))
     : null;
 
   return (
     <div className={`shell ${styles.page}`}>
+      <style>{PRINT_PAGE_CSS}</style>
       <div className={styles.intro}>
-        <p className="t-label">Étiquette de clé</p>
+        <p className="t-label">{kind.title}</p>
         <h1 className={styles.title}>Imprimer l’étiquette</h1>
         <p className="t-body t-muted">
-          Format 62 × 100 mm. Le QR est créé au moment d’imprimer : il remplace celui du poste,
+          Format 62 × 100 mm. Le QR est créé au moment d’imprimer : il remplace celui du poste,
           sert une seule fois et reste valable 24 h.
         </p>
       </div>
 
       <div className={styles.stage}>
-        <article className={styles.label} aria-label={`Étiquette de clé, ${label.profile === 'vehicle' ? 'véhicule' : 'dossier'} ${ref}`}>
+        <article
+          className={styles.label}
+          data-qr={link ? '1' : undefined}
+          aria-label={`${kind.title}, ${label.profile === 'vehicle' ? 'véhicule' : 'dossier'} ${ref}`}
+        >
           <span className={styles.hole} aria-hidden="true" />
           <p className={styles.place}>{label.locationName}</p>
 
@@ -99,9 +126,11 @@ export function LabelSheet({
           <p className={styles.model}>
             {label.model ?? (label.deviceKind ? DEVICE_LABEL[label.deviceKind] : '')}
           </p>
-          <p className={styles.ref}>
-            <span>Réf.</span> <strong>{ref}</strong>
-          </p>
+          {showRef && (
+            <p className={styles.ref}>
+              <span>Réf.</span> <strong>{ref}</strong>
+            </p>
+          )}
 
           <div className={styles.qrZone}>
             {link ? (

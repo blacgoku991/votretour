@@ -144,41 +144,64 @@ export interface Counter {
   value: number;
 }
 
+/**
+ * Accorde un libellé de compteur au nombre : « 1 prêt », « 2 prêts »,
+ * « 1 rendu aujourd’hui », « 0 commande prête ». En français, 0 et 1
+ * prennent le singulier. Le libellé est donné au pluriel (c'est ainsi que
+ * le registre les écrit : « rendus aujourd’hui », « couverts installés ») ;
+ * le singulier retire le « s » final de chaque mot qui en porte un.
+ * Une forme singulière explicite l'emporte (« au guichet » / « aux guichets »).
+ */
+export function agreeCount(value: number, plural: string, singular?: string): string {
+  if (Math.abs(value) >= 2) return plural;
+  return singular ?? plural.split(' ').map((w) => (w.length > 2 && w.endsWith('s') ? w.slice(0, -1) : w)).join(' ');
+}
+
+function counter(key: string, value: number, plural: string, singular?: string): Counter {
+  return { key, value, label: agreeCount(value, plural, singular) };
+}
+
 /** Les compteurs de l'en-tête, propres à chaque métier (conception, § 4.2 à 4.6). */
 export function profileCounters(snapshot: ProfileQueueSnapshot): Counter[] {
   const profile = snapshot.queue.profile;
   const { counts } = snapshot;
   const by = counts.byStage ?? {};
-  const today = { key: 'today', label: getProfile(profile).vocab.todayCounter, value: counts.completedToday };
+  const today = counter('today', counts.completedToday, getProfile(profile).vocab.todayCounter);
   switch (boardKindFor(profile)) {
     case 'workshop':
       return [
-        { key: 'received', label: 'à prendre en charge', value: by.received ?? 0 },
-        {
-          key: 'workshop',
-          label: 'en atelier',
-          value: (by.diagnosis ?? 0) + (by.quote_pending ?? 0) + (by.waiting_parts ?? 0) + (by.in_repair ?? 0),
-        },
-        { key: 'ready', label: 'prêts', value: by.ready ?? 0 },
+        counter('received', by.received ?? 0, 'à prendre en charge'),
+        counter(
+          'workshop',
+          (by.diagnosis ?? 0) + (by.quote_pending ?? 0) + (by.waiting_parts ?? 0) + (by.in_repair ?? 0),
+          'en atelier',
+        ),
+        counter('ready', by.ready ?? 0, 'prêts'),
         today,
       ];
-    case 'table':
+    case 'table': {
+      // « À placer » : les groupes en attente ET ceux déjà appelés, qui
+      // n'ont pas encore de table. C'est ce que compte `coversWaiting`
+      // (appelés compris) ; la liste voisine, « En attente », ne montre que
+      // ceux qui n'ont pas été appelés.
+      const groups = counts.waiting + snapshot.called.length;
       return [
-        { key: 'groups', label: 'groupes en attente', value: counts.waiting + snapshot.called.length },
-        { key: 'covers', label: 'couverts en attente', value: counts.coversWaiting ?? 0 },
-        { key: 'seated', label: 'couverts installés', value: counts.coversSeatedToday ?? 0 },
+        counter('groups', groups, 'groupes à placer'),
+        counter('covers', counts.coversWaiting ?? 0, 'couverts à placer'),
+        counter('seated', counts.coversSeatedToday ?? 0, 'couverts installés'),
       ];
+    }
     default:
       if (profile === 'retail') {
         return [
-          { key: 'waiting', label: 'en attente', value: counts.waiting },
-          { key: 'ready', label: 'commandes prêtes', value: by.ready ?? 0 },
+          counter('waiting', counts.waiting, 'en attente'),
+          counter('ready', by.ready ?? 0, 'commandes prêtes'),
           today,
         ];
       }
       return [
-        { key: 'waiting', label: 'en attente', value: counts.waiting },
-        { key: 'desks', label: 'aux guichets', value: snapshot.called.length + snapshot.serving.length },
+        counter('waiting', counts.waiting, 'en attente'),
+        counter('desks', snapshot.called.length + snapshot.serving.length, 'aux guichets', 'au guichet'),
         today,
       ];
   }
@@ -305,19 +328,119 @@ export function workshopLanes(
     if (!matchesWorkshopQuery(e, query)) continue;
     lanes.get(laneOf(profile, e))?.push(e);
   }
+  const compare = workshopComparator(sort);
+  for (const list of lanes.values()) list.sort(compare);
+  return lanes;
+}
+
+/** L'ordre d'une colonne : arrivée, promesse de délai ou ancienneté dans l'étape. */
+function workshopComparator(sort: WorkshopSort): (a: ProfileStaffEntry, b: ProfileStaffEntry) => number {
   const key = (e: ProfileStaffEntry): [number, number] => {
     if (sort === 'eta') return [time(e.details?.readyEta ?? null), time(e.joinedAt)];
     if (sort === 'stage') return [time(e.stageChangedAt ?? e.joinedAt), time(e.joinedAt)];
     return [time(e.joinedAt), 0];
   };
-  for (const list of lanes.values()) {
-    list.sort((a, b) => {
-      const [a1, a2] = key(a);
-      const [b1, b2] = key(b);
-      return a1 - b1 || a2 - b2 || a.id.localeCompare(b.id);
-    });
+  return (a, b) => {
+    const [a1, a2] = key(a);
+    const [b1, b2] = key(b);
+    return a1 - b1 || a2 - b2 || a.id.localeCompare(b.id);
+  };
+}
+
+/* ------------------------------------------------------------------
+   Les quatre colonnes du planning (conception, § 4.2)
+   ------------------------------------------------------------------ */
+
+export interface WorkshopColumnDef {
+  key: WorkshopColumn;
+  /** Titre de colonne au bureau : « En attente client / pièce ». */
+  label: string;
+  /** Nom court, sur le pupitre du téléphone : « Attente ». */
+  short: string;
+  tone: StageTone;
+  /** Les étapes du registre rangées dans cette colonne, dans l'ordre du rail. */
+  stages: readonly ProfileStage[];
+}
+
+const COLUMN_WORDS: Record<WorkshopColumn, Omit<WorkshopColumnDef, 'key' | 'stages'>> = {
+  intake: { label: 'À prendre en charge', short: 'Reçus', tone: 'neutral' },
+  workshop: { label: 'En atelier', short: 'Atelier', tone: 'cobalt' },
+  waiting: { label: 'En attente client / pièce', short: 'Attente', tone: 'copper' },
+  ready: { label: 'Prêts à récupérer', short: 'Prêts', tone: 'signal' },
+};
+
+/**
+ * Quatre colonnes, qui tiennent toujours dans la largeur : un planning se
+ * lit d'un coup d'œil, sans défilement horizontal. Ce sont les familles du
+ * registre (`StageDef.column`) : réception | atelier (diagnostic,
+ * réparation) | attente (devis, pièce) | prêts. Chaque fiche garde sa
+ * rampe et sa puce d'étape, et l'en-tête de colonne filtre par étape.
+ */
+export const WORKSHOP_COLUMNS: readonly WorkshopColumnDef[] = (['intake', 'workshop', 'waiting', 'ready'] as const).map(
+  (key): WorkshopColumnDef => ({
+    key,
+    ...COLUMN_WORDS[key],
+    stages: WORKSHOP_STAGES.filter((s) => s.column === key).map((s) => s.key),
+  }),
+);
+
+/** Colonne d'une fiche active : la famille de son étape (ou de son statut). */
+export function columnOf(profile: QueueProfile, entry: Pick<ProfileStaffEntry, 'stage' | 'status'>): WorkshopColumn {
+  const lane = laneOf(profile, entry);
+  if (lane === 'handed_over') return 'ready';
+  return stageDef(profile, lane)?.column ?? WORKSHOP_STAGES.find((s) => s.key === lane)?.column ?? 'intake';
+}
+
+/**
+ * Répartit les fiches dans les quatre colonnes, filtrées par la recherche
+ * et triées comme `workshopLanes`.
+ */
+export function workshopColumns(
+  profile: QueueProfile,
+  entries: readonly ProfileStaffEntry[],
+  { query = '', sort = 'arrival' }: { query?: string; sort?: WorkshopSort } = {},
+): Map<WorkshopColumn, ProfileStaffEntry[]> {
+  const columns = new Map<WorkshopColumn, ProfileStaffEntry[]>(WORKSHOP_COLUMNS.map((c) => [c.key, []]));
+  for (const e of entries) {
+    if (!matchesWorkshopQuery(e, query)) continue;
+    columns.get(columnOf(profile, e))?.push(e);
   }
-  return lanes;
+  const compare = workshopComparator(sort);
+  for (const list of columns.values()) list.sort(compare);
+  return columns;
+}
+
+/**
+ * Une valeur mémorisée sur l'appareil (colonne ouverte au téléphone) :
+ * une colonne connue, ou une étape d'une version précédente, ramenée à sa
+ * colonne. Autre chose : rien.
+ */
+export function storedColumn(value: string | null): WorkshopColumn | null {
+  if (!value) return null;
+  const column = WORKSHOP_COLUMNS.find((c) => c.key === value);
+  if (column) return column.key;
+  return WORKSHOP_STAGES.find((s) => s.key === value)?.column ?? null;
+}
+
+/* ------------------------------------------------------------------
+   L'étiquette imprimable : de clé au garage, de dépôt pour un appareil
+   ------------------------------------------------------------------ */
+
+export interface LabelKind {
+  /** « Étiquette de clé », « Étiquette de dépôt » : onglet, surtitre, menu. */
+  title: string;
+  /** La touche qui l'ouvre, depuis le QR de suivi. */
+  print: string;
+}
+
+/**
+ * Un téléphone n'a pas de clé : à l'atelier d'appareils, l'étiquette se
+ * colle sur le sachet de dépôt.
+ */
+export function labelKind(profile: 'vehicle' | 'device'): LabelKind {
+  return profile === 'device'
+    ? { title: 'Étiquette de dépôt', print: 'Imprimer l’étiquette de dépôt' }
+    : { title: 'Étiquette de clé', print: 'Imprimer l’étiquette de clé' };
 }
 
 /** État du devis d'une fiche, pour la puce (« Devis 184,00 € · en attente »). */
@@ -410,6 +533,56 @@ export function formatEta(iso: string | null | undefined, now: Date, timeZone = 
   if (day(at) === tomorrow) return `prévu demain ${hour}`;
   const date = new Intl.DateTimeFormat('fr-FR', { timeZone, weekday: 'short', day: 'numeric', month: 'short' }).format(at);
   return `prévu ${date} ${hour}`;
+}
+
+/* ------------------------------------------------------------------
+   Promesse de délai : saisie à l'heure de l'ÉTABLISSEMENT
+   ------------------------------------------------------------------
+   Le champ `datetime-local` n'a pas de fuseau : il montrerait l'heure du
+   navigateur (un poste réglé à l'heure d'hiver, un ordinateur portable
+   revenu de voyage) alors que le client lit « prêt vers 17 h » à l'heure
+   du garage. On convertit donc nous-mêmes, dans le fuseau du lieu. */
+
+/** Heure murale d'un instant dans un fuseau, lue comme si c'était de l'UTC (ms). */
+function wallClockMs(at: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(at);
+  const n = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return Date.UTC(n('year'), n('month') - 1, n('day'), n('hour'), n('minute'), n('second'));
+}
+
+/**
+ * Valeur d'un champ `datetime-local` (« 2026-09-24T17:00 ») pour une
+ * promesse, à l'heure du lieu. Sans promesse : dans deux heures, à l'heure
+ * pile.
+ */
+export function toZonedInput(iso: string | null, timeZone: string, now: number = Date.now()): string {
+  const t = iso ? Date.parse(iso) : NaN;
+  let wall: number;
+  if (Number.isFinite(t)) {
+    wall = wallClockMs(t, timeZone);
+  } else {
+    wall = wallClockMs(now + 2 * 3_600_000, timeZone);
+    wall -= wall % 3_600_000;
+  }
+  return new Date(wall).toISOString().slice(0, 16);
+}
+
+/**
+ * Instant (ISO, UTC) d'une saisie `datetime-local` lue à l'heure du lieu.
+ * Null si la saisie n'est pas une date. Au changement d'heure, une heure
+ * qui n'existe pas (2 h 30 le dernier dimanche de mars) avance d'une heure.
+ */
+export function fromZonedInput(value: string, timeZone: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!m) return null;
+  const wall = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
+  if (!Number.isFinite(wall)) return null;
+  // Deux passes : le décalage du fuseau dépend de l'instant cherché.
+  let at = wall - (wallClockMs(wall, timeZone) - wall);
+  at = wall - (wallClockMs(at, timeZone) - at);
+  return new Date(at).toISOString();
 }
 
 /**
@@ -509,4 +682,48 @@ export function tableCountdown(calledAt: string | null, graceMinutes: number, no
   const t = Date.parse(calledAt);
   if (!Number.isFinite(t)) return null;
   return Math.round((t + graceMinutes * 60_000 - now) / 1000);
+}
+
+/* ==================================================================
+   Lecture seule (membre sans `queue.operate`)
+   ================================================================== */
+
+/**
+ * L'instantané d'un poste métier pour un membre qui REGARDE sans faire
+ * avancer la file : le bon poste (le vocabulaire du métier), mais sans
+ * les informations réservées à `queue.operate`. Partent : immatriculation
+ * (et sa clé de recherche), devis, motif écrit par le client, accessoires,
+ * numéro de commande, note du pro ; en santé (`sensitive`), les prénoms.
+ * Restent : ce qui sert à lire la file d'un coup d'œil (étape, modèle,
+ * type d'appareil, couverts, préférence, promesse de délai).
+ * Fait côté serveur, avant d'envoyer l'instantané au navigateur.
+ */
+export function readOnlySnapshot(snapshot: ProfileQueueSnapshot): ProfileQueueSnapshot {
+  const sensitive = snapshot.queue.profileOptions?.sensitive === true;
+  const strip = (e: ProfileStaffEntry): ProfileStaffEntry => {
+    const d = e.details ?? {};
+    const details: ProfileStaffEntry['details'] = {};
+    if (d.model) details.model = d.model;
+    if (d.deviceKind) details.deviceKind = d.deviceKind;
+    if (d.stay) details.stay = d.stay;
+    if (d.readyEta) details.readyEta = d.readyEta;
+    if (typeof d.partySize === 'number') details.partySize = d.partySize;
+    if (d.seating) details.seating = d.seating;
+    if (d.needs) details.needs = d.needs;
+    return {
+      ...e,
+      name: sensitive ? null : e.name,
+      note: null,
+      details,
+      registrationKey: null,
+      claimPending: false,
+    };
+  };
+  return {
+    ...snapshot,
+    serving: snapshot.serving.map(strip),
+    called: snapshot.called.map(strip),
+    waiting: snapshot.waiting.map(strip),
+    parked: snapshot.parked.map(strip),
+  };
 }

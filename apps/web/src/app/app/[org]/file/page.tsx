@@ -3,11 +3,11 @@ import Link from 'next/link';
 import { getStaffRecord, requireOrgAccess } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { getQueueSnapshot } from '@/server/queue';
-import { fetchProfileQueueSnapshot } from '@/server/actions/profile-queue';
+import { getProfileQueueSnapshot } from '@/server/profiles/queue';
 import { getProfile, isLegacyProfile, profileForActivity } from '@/lib/profiles';
 import { profileAvailable } from '@/lib/profiles/capabilities';
 import { QueueBoard } from './QueueBoard';
-import { boardKindFor } from './boards/logic';
+import { boardKindFor, readOnlySnapshot } from './boards/logic';
 import { WorkshopBoard } from './boards/WorkshopBoard';
 import { TableBoard } from './boards/TableBoard';
 import { DeskBoard } from './boards/DeskBoard';
@@ -20,13 +20,18 @@ export const dynamic = 'force-dynamic';
 /**
  * LE POSTE DU PRO, AIGUILLÉ PAR MÉTIER.
  *
- * `snapshot.queue.profile` choisit le poste : walkin et event gardent
- * `QueueBoard`, avec EXACTEMENT les mêmes props qu'avant les profils
- * (mêmes pixels pour les barbiers) ; un atelier, une salle de restaurant,
- * un guichet ou une boutique ont le leur. Les postes à profil relisent
- * l'instantané par `fetchProfileQueueSnapshot`, le seul qui porte les
- * informations métier (immatriculation, devis, couverts), réservé à la
- * permission `queue.operate`.
+ * Le profil de la file (`queues.profile`) choisit le poste AVANT toute
+ * lecture d'instantané : walkin et event gardent `QueueBoard`, avec
+ * EXACTEMENT les mêmes props qu'avant les profils (mêmes pixels pour les
+ * barbiers) ; un atelier, une salle de restaurant, un guichet ou une
+ * boutique ont le leur, et ne lisent QUE l'instantané métier (une seule
+ * requête lourde par chargement).
+ *
+ * Les informations métier (immatriculation, devis, motif écrit) sont
+ * réservées à `queue.operate`. Un membre qui regarde sans faire avancer la
+ * file reçoit quand même le poste de son métier (le bon vocabulaire), en
+ * lecture seule, avec un instantané expurgé côté serveur
+ * (`readOnlySnapshot` : ni plaque, ni devis, ni prénom en santé).
  */
 export default async function QueuePage({
   params,
@@ -42,7 +47,7 @@ export default async function QueuePage({
   const db = supabaseAdmin();
   const { data: queues } = await db
     .from('queues')
-    .select('id, name, status, mode, location_id, is_default, locations(name, slug)')
+    .select('id, name, status, mode, location_id, is_default, profile, locations(name, slug)')
     .eq('organization_id', access.organization.organization_id)
     .order('is_default', { ascending: false })
     .order('created_at');
@@ -52,6 +57,8 @@ export default async function QueuePage({
   const list = (queues ?? []) as unknown as {
     id: string; name: string; status: string; mode: string;
     location_id: string; is_default: boolean;
+    /** Colonne ajoutée par les profils (0033) ; absente, c'est walkin. */
+    profile?: string | null;
     locations: { name: string; slug: string }[] | { name: string; slug: string } | null;
   }[];
 
@@ -77,42 +84,32 @@ export default async function QueuePage({
   }
 
   const selected = list.find((q) => q.id === file) ?? list[0]!;
-  const [snapshot, staff] = await Promise.all([
-    getQueueSnapshot(selected.id),
-    getStaffRecord(access.user.id, selected.location_id),
-  ]);
-
   const queueRefs = list.map((q) => ({
     id: q.id,
     name: q.name,
     locationName: locationName(q.locations),
     status: q.status,
   }));
-  const common = {
-    orgSlug: org,
-    queues: queueRefs,
-    canOperate: access.can('queue.operate'),
-    canConfigure: access.can('queue.configure'),
-    actorStaffId: staff?.id ?? null,
-  };
+  const canOperate = access.can('queue.operate');
+  const canConfigure = access.can('queue.configure');
+  const kind = boardKindFor(selected.profile ?? 'walkin');
 
-  // `queue_snapshot` ajoute la clé `profile` (0035) ; absente, c'est une
-  // base d'avant les profils : le poste d'aujourd'hui.
-  const profile = (snapshot?.queue as { profile?: string } | undefined)?.profile ?? 'walkin';
-  const kind = boardKindFor(profile);
-
-  // Un membre sans `queue.operate` (lecture seule) garde le poste
-  // d'aujourd'hui : les informations métier (immatriculation, devis) sont
-  // réservées à ceux qui font avancer la file.
-  if (kind === 'queue' || !common.canOperate) {
+  if (kind === 'queue') {
+    const [snapshot, staff] = await Promise.all([
+      getQueueSnapshot(selected.id),
+      getStaffRecord(access.user.id, selected.location_id),
+    ]);
+    // `queue_snapshot` ajoute la clé `profile` (0035) ; absente, c'est une
+    // base d'avant les profils : le poste d'aujourd'hui.
+    const profile = (snapshot?.queue as { profile?: string } | undefined)?.profile ?? 'walkin';
     const board = (
       <QueueBoard
         orgSlug={org}
         initialSnapshot={snapshot}
         queues={queueRefs}
-        canOperate={common.canOperate}
-        canConfigure={common.canConfigure}
-        actorStaffId={common.actorStaffId}
+        canOperate={canOperate}
+        canConfigure={canConfigure}
+        actorStaffId={staff?.id ?? null}
       />
     );
     // Un garage, un restaurant ou un guichet inscrit AVANT les profils
@@ -120,7 +117,7 @@ export default async function QueuePage({
     // discrète lui propose son poste. Un barbier (profil par défaut
     // walkin) ne lit rien de plus, et sa page ne change pas d'un pixel.
     const suggested = profileForActivity(access.organization.activity);
-    if (!isLegacyProfile(profile) || isLegacyProfile(suggested) || !common.canConfigure) return board;
+    if (!isLegacyProfile(profile) || isLegacyProfile(suggested) || !canConfigure) return board;
     const features = await loadFeatures(access.organization.organization_id);
     if (!profileAvailable(suggested, features)) return board;
     return (
@@ -133,20 +130,34 @@ export default async function QueuePage({
     );
   }
 
-  const result = await fetchProfileQueueSnapshot(org, selected.id);
-  const profileSnapshot = result.ok ? result.data.snapshot : null;
-  if (!profileSnapshot) {
+  // Poste métier : l'instantané avec les informations métier, lu une fois.
+  // La file appartient à l'organisation (liste filtrée ci-dessus) et
+  // l'accès à l'organisation est vérifié : la lecture passe par le client
+  // d'administration, comme `getQueueSnapshot`.
+  const [raw, staff] = await Promise.all([
+    getProfileQueueSnapshot(selected.id),
+    getStaffRecord(access.user.id, selected.location_id),
+  ]);
+  if (!raw) {
     return (
       <QueueBoard
         orgSlug={org}
         initialSnapshot={null}
         queues={queueRefs}
-        canOperate={common.canOperate}
-        canConfigure={common.canConfigure}
-        actorStaffId={common.actorStaffId}
+        canOperate={canOperate}
+        canConfigure={canConfigure}
+        actorStaffId={staff?.id ?? null}
       />
     );
   }
+  const profileSnapshot = canOperate ? raw : readOnlySnapshot(raw);
+  const common = {
+    orgSlug: org,
+    queues: queueRefs,
+    canOperate,
+    canConfigure,
+    actorStaffId: staff?.id ?? null,
+  };
 
   if (kind === 'workshop') return <WorkshopBoard {...common} initialSnapshot={profileSnapshot} />;
   if (kind === 'table') {

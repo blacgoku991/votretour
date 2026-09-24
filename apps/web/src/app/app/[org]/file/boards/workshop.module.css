@@ -47,46 +47,41 @@
   .addLong { display: none; }
 }
 
-/* ------------------------------------------------ Le pupitre des étapes
-   Sept stations sur un rail, chacune une petite latte qui porte son
-   compte en volet. Au téléphone, il choisit la colonne affichée ; au
-   bureau, il amène la colonne dans la vue. */
-.strip {
-  position: relative;
-  margin-inline: -4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  overscroll-behavior-x: contain;
-}
-.strip::-webkit-scrollbar { display: none; }
+/* ------------------------------------------------ Le pupitre (téléphone)
+   Quatre stations sur un rail, une par colonne, chacune une petite latte
+   qui porte son compte en volet. Elles tiennent toujours dans la largeur
+   (4 × 72 px au moins, 358 px disponibles à 390) : aucune colonne n'est
+   cachée hors de l'écran. Au bureau, les colonnes sont toutes visibles :
+   le pupitre disparaît. */
+.strip { position: relative; margin-inline: -4px; }
 .stripList {
   position: relative;
   list-style: none;
   margin: 0;
   padding: 4px 4px 2px;
   display: grid;
-  grid-template-columns: repeat(7, minmax(74px, 1fr));
-  min-width: max-content;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 /* Le rail qui relie les stations, à hauteur du centre des lattes. */
 .stripList::before {
   content: '';
   position: absolute;
-  left: calc(4px + 100% / 14);
-  right: calc(4px + 100% / 14);
+  left: calc(4px + 100% / 8);
+  right: calc(4px + 100% / 8);
   top: 24px;
   height: 2px;
   border-radius: 2px;
   background: var(--rail);
 }
-.station { position: relative; display: flex; justify-content: center; }
+.station { position: relative; display: flex; justify-content: center; min-width: 0; }
 .stationBtn {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  min-width: 70px;
-  padding: 0 4px 8px;
+  min-width: 0;
+  width: 100%;
+  padding: 0 2px 8px;
   border-radius: 12px;
   color: var(--text-muted);
   -webkit-tap-highlight-color: transparent;
@@ -95,7 +90,7 @@
   position: relative;
   display: grid;
   place-items: center;
-  min-width: 48px;
+  min-width: 52px;
   height: 40px;
   padding: 0 10px;
   border-radius: var(--r-slat);
@@ -137,6 +132,7 @@
 
 /* ------------------------------------------------ Les colonnes */
 .lanes {
+  --lane-bg: var(--surface);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -151,31 +147,74 @@
 }
 .lane[data-active='1'] { display: flex; }
 
-.laneHead {
+.laneHead { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.laneTitle {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 10px;
+  align-items: flex-start;
+  gap: 10px;
   min-height: 24px;
+  min-width: 0;
 }
 .laneDot {
   width: 10px;
   height: 10px;
+  margin-top: 3px;
   border-radius: 3px;
   flex: none;
   background: var(--tone);
 }
+.lane[data-tone='neutral'] .laneDot { background: var(--text-muted); }
 .laneName {
+  min-width: 0;
   font-variation-settings: 'wdth' 92, 'wght' 760;
   font-size: 0.75rem;
-  letter-spacing: 0.14em;
+  line-height: 1.3;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  text-wrap: balance;
 }
-.laneStaff {
-  flex-basis: 100%;
-  padding-left: 20px;
-  font-size: 0.8125rem;
+/* Filtre par étape, en tête de colonne : une puce par étape, avec son
+   compte. Appuyée, elle ne garde que les fiches de cette étape. */
+.laneFilters { display: flex; flex-wrap: wrap; gap: 6px; }
+.laneFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 6px 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-raised);
   color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variation-settings: 'wght' 660;
+}
+@media (pointer: coarse) { .laneFilter { min-height: 40px; } }
+.laneFilter::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--tone);
+}
+.laneFilter:hover { color: var(--text); }
+.laneFilter[aria-pressed='true'] {
+  color: var(--text);
+  border-color: var(--tone);
+  box-shadow: inset 0 0 0 1px var(--tone);
+}
+.laneFilter:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.laneFilterCount {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem;
+  color: var(--text);
 }
 .laneEmpty {
   padding: 22px 18px;
@@ -194,82 +233,63 @@
   gap: 14px;
 }
 
-/* BUREAU : le planning côte à côte, défilé dans son propre cadre. */
-@container workshop (min-width: 900px) {
-  .strip { overflow: visible; }
-  .stripList { min-width: 0; }
-
+/* TABLETTE (conteneur ≥ 700 px) : les quatre colonnes, sur deux rangs. */
+@container workshop (min-width: 700px) {
+  .strip { display: none; }
   .lanes {
-    flex-direction: row;
-    align-items: stretch;
-    gap: 10px;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scroll-snap-type: x proximity;
-    padding: 2px 2px 14px;
-    margin-inline: -2px;
-    scrollbar-width: thin;
-    scrollbar-color: var(--line-strong) transparent;
+    --lane-bg: var(--surface-sunken);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 12px;
   }
   .lane {
     display: flex;
-    flex: 0 0 320px;
-    scroll-snap-align: start;
-    padding: 14px 12px 16px;
+    padding: 14px 8px 10px;
     border-radius: 18px;
-    background: var(--surface-sunken);
+    background: var(--lane-bg);
     border: 1px solid var(--line);
     /* Rainure : la colonne est creusée, les fiches posées dessus. */
     box-shadow: inset 0 2px 0 color-mix(in oklab, var(--ink-1000) 18%, transparent);
   }
-  .lane[data-active='1'] { border-color: color-mix(in oklab, var(--tone) 55%, var(--line)); }
-  .laneHead { padding: 0 4px 2px; }
-
-  /* Colonne vide : repliée en latte fine, son nom écrit en travers. */
-  .lane[data-empty='1'] {
-    flex: 0 0 60px;
-    padding: 14px 0;
-    align-items: center;
-  }
-  .lane[data-empty='1'] .laneHead {
-    flex-direction: column;
-    flex-wrap: nowrap;
-    gap: 12px;
-    padding: 0;
-  }
-  .lane[data-empty='1'] .laneName {
-    writing-mode: vertical-rl;
-    rotate: 180deg;
-    color: var(--text-muted);
-  }
-  .lane[data-empty='1'] :is(.laneStaff, .laneEmpty, .done) { display: none; }
-  .lane[data-empty='1'] .laneDot { opacity: 0.45; }
+  .laneHead { padding: 0 4px; }
+  .cards { gap: 10px; }
+  .laneEmpty { padding: 16px 14px; }
+  /* « Prêts à récupérer » : la seule colonne cerclée de vermillon. */
+  .lane[data-lane='ready'] { border-color: color-mix(in oklab, var(--signal-500) 38%, var(--line)); }
 }
-/* Grand bureau : les colonnes pleines s'élargissent si la place le permet. */
-@container workshop (min-width: 1500px) {
-  .lane:not([data-empty='1']) { flex: 1 0 320px; max-width: 380px; }
+/* BUREAU (conteneur ≥ 960 px, soit un écran de 1280 px avec le menu) :
+   les quatre colonnes côte à côte, toujours dans la largeur. */
+@container workshop (min-width: 960px) {
+  .lanes { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: stretch; }
 }
 
 /* ------------------------------------------------ La fiche d'atelier
-   Une latte dont l'encoche est devenue l'œillet d'une étiquette de clé. */
+   Au garage : une latte dont l'encoche est devenue l'œillet d'une
+   étiquette de clé. La fiche est son propre conteneur : dans une colonne
+   étroite, elle se resserre sans rien couper. */
 .card {
+  container: fiche / inline-size;
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 18px 16px 16px 42px;
+  padding: 16px 14px 14px 40px;
   border-radius: var(--r-card);
   background: var(--surface-raised);
   border: 1px solid var(--line);
   box-shadow: var(--edge-light), 0 2px 0 var(--slat-edge), 0 18px 34px -30px rgba(0, 0, 0, 0.9);
   min-width: 0;
 }
+@container workshop (min-width: 700px) {
+  .card { gap: 10px; padding: 14px 10px 12px 32px; }
+}
 /* Liseré d'étape, le long de la latte. */
 .card::before {
   content: '';
   position: absolute;
   left: -1px;
-  top: 58px;
+  top: 54px;
   bottom: 18px;
   width: 3px;
   border-radius: 0 3px 3px 0;
@@ -281,13 +301,16 @@
 
 .eyelet {
   position: absolute;
-  left: 14px;
+  left: 13px;
   top: 24px;
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--surface-sunken);
+  background: var(--lane-bg);
   box-shadow: inset 0 1.5px 2px rgb(0 0 0 / 0.4), 0 0 0 2px var(--line-strong);
+}
+@container workshop (min-width: 700px) {
+  .eyelet { left: 10px; top: 22px; width: 12px; height: 12px; }
 }
 /* Le cordon qui part de l'œillet, vers le haut de la latte. */
 .eyelet::after {
@@ -312,16 +335,100 @@
 }
 .card[data-lane='ready'] .eyelet { box-shadow: inset 0 1.5px 2px rgb(0 0 0 / 0.4), 0 0 0 2px var(--signal-500); }
 
+/* APPAREIL : « le ticket de dépôt » (conception, § 4.3). Pas d'œillet :
+   le bord droit est dentelé, comme la souche détachable d'un ticket, par
+   un masque en dents de 6 px ; un pointillé marque la ligne de coupe. Le
+   masque rognerait l'ombre portée : elle passe sur la ligne de la liste
+   (`drop-shadow`), qui suit la découpe, dents comprises. */
+.board[data-profile='device'] .card {
+  padding-left: 18px;
+  padding-right: 22px;
+  border-right: 0;
+  border-radius: var(--r-card) 0 0 var(--r-card);
+  box-shadow: var(--edge-light);
+  -webkit-mask:
+    radial-gradient(circle 3px at 100% 50%, transparent 2.6px, #000 3.2px) right top / 6px 12px repeat-y,
+    linear-gradient(#000 0 0) left top / calc(100% - 6px) 100% no-repeat;
+  mask:
+    radial-gradient(circle 3px at 100% 50%, transparent 2.6px, #000 3.2px) right top / 6px 12px repeat-y,
+    linear-gradient(#000 0 0) left top / calc(100% - 6px) 100% no-repeat;
+}
+@container workshop (min-width: 700px) {
+  .board[data-profile='device'] .card { padding-left: 14px; padding-right: 20px; }
+}
+/* La souche : une bande à peine teintée, séparée par la ligne de coupe. */
+.board[data-profile='device'] .card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 12px;
+  border-left: 1.5px dashed var(--line-strong);
+  background: color-mix(in oklab, var(--text) 6%, transparent);
+  pointer-events: none;
+}
+.board[data-profile='device'] .cards > li {
+  filter: drop-shadow(0 2px 0 var(--slat-edge)) drop-shadow(0 14px 12px rgb(0 0 0 / 0.22));
+}
+.board[data-profile='device'] .cards > li[data-lane='ready'] {
+  filter: drop-shadow(0 2px 0 var(--signal-600)) drop-shadow(0 14px 14px color-mix(in oklab, var(--signal-500) 40%, transparent));
+}
+.board[data-profile='device'] .card[data-lane='ready']::after { border-left-color: color-mix(in oklab, var(--signal-500) 60%, transparent); }
+
 .cardTop {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
   min-width: 0;
 }
-.plate { flex: none; }
-.flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: -2px; }
+/* La plaque se resserre (elle est mesurée en unités de conteneur) pour
+   laisser sa place au menu « … », en coin. */
+.cardTop > .plate { flex: 0 1 auto; min-width: 0; }
+.more {
+  flex: none;
+  margin: -4px -4px -4px auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+.flags { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; margin-top: -2px; }
+/* La puce d'étape, dans une colonne qui en réunit deux. */
+.stageChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 9px 0 8px;
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--tone) 16%, transparent);
+  color: var(--text);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-variation-settings: 'wdth' 92, 'wght' 760;
+}
+.stageChip::before { content: ''; width: 7px; height: 7px; border-radius: 2px; background: var(--tone); }
+/* Le devis qui attend le client : le montant, puis depuis quand. */
+.quote {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 10px 7px;
+  border-radius: 9px;
+  background: color-mix(in oklab, var(--copper-500) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--copper-500) 40%, transparent);
+  color: var(--copper-500);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  font-variation-settings: 'wght' 620;
+}
+.quote strong {
+  color: var(--text);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  font-variation-settings: 'wdth' 104, 'wght' 760;
+}
 .noPlate {
   font-variation-settings: 'wdth' 100, 'wght' 700;
   font-size: 0.9375rem;
@@ -366,10 +473,9 @@
 .eta[data-late='1'] { color: var(--danger-text); }
 
 .actions { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding-top: 2px; }
-/* La touche principale et, à sa droite, le menu « … ». */
-.keyRow { display: flex; align-items: stretch; gap: 8px; min-width: 0; }
+/* La touche principale, sur toute la largeur de la fiche. */
+.keyRow { display: flex; align-items: stretch; min-width: 0; }
 .keyRow > :first-child { flex: 1 1 auto; min-width: 0; }
-.more { align-self: stretch; height: auto; min-height: 44px; width: 48px; border-radius: var(--r-field); }
 .secondary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: -4px; }
 .secondary > :global(.btn) { padding-inline: 8px; }
 
@@ -386,17 +492,19 @@
 .primary:hover:not(:disabled) { --btn-bg: color-mix(in oklab, var(--tone) 12%, transparent); }
 .handover { min-height: 56px; padding-inline: 12px; font-variation-settings: 'wdth' 104, 'wght' 740; }
 /* La touche vermillon, taillée pour une fiche : le mot du métier en
-   entier, sur une ligne (« Prêt · prévenir » ne se coupe jamais). */
+   entier, sur une ligne (« Prêt · prévenir » ne se coupe jamais). Dans une
+   colonne étroite du bureau, le corps suit la largeur de la fiche (≈ 8,6
+   cadratins de texte), sans descendre sous 15 px. */
 .key {
-  min-height: 64px;
+  min-height: 60px;
   padding-inline: 12px;
-  font-size: 1.125rem;
+  font-size: clamp(0.9375rem, calc((100cqi - 24px) / 8.6), 1.125rem);
   font-variation-settings: 'wdth' 104, 'wght' 780;
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
 /* Au téléphone, la fiche a la place d'une vraie touche. */
-@container workshop (max-width: 899px) {
+@container workshop (max-width: 699px) {
   .key { font-size: 1.375rem; min-height: 72px; }
 }
 
@@ -416,11 +524,11 @@
 
 /* ------------------------------------------------ Panneaux de la fiche */
 .quoteFields { display: grid; grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr); gap: 8px; }
-@container workshop (max-width: 899px) {
+@container workshop (max-width: 699px) {
   .quoteFields { grid-template-columns: minmax(0, 9rem) minmax(0, 1fr); }
 }
-@container workshop (min-width: 900px) {
-  /* Dans une colonne de 296 px : un champ par ligne. */
+@container fiche (max-width: 280px) {
+  /* Dans une fiche étroite : un champ par ligne. */
   .quoteFields { grid-template-columns: minmax(0, 1fr); }
 }
 .amount { position: relative; display: block; }
@@ -472,20 +580,54 @@
   font-variation-settings: 'wght' 640;
 }
 
-/* ------------------------------------------------ « Rendu » */
-.done { display: flex; flex-direction: column; gap: 14px; padding: 4px 4px 0; }
-.doneCount { display: flex; align-items: flex-end; gap: 12px; color: var(--jade-500); }
-.doneLabel {
-  padding-bottom: 6px;
-  font-size: 0.8125rem;
-  color: var(--text-muted);
+/* ------------------------------------------------ « Rendus aujourd'hui »
+   Une bande repliable sous les colonnes : le compte en volet (jade), la
+   liste des fiches rendues pendant la session à la demande. */
+.handed {
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--surface-raised);
+  box-shadow: var(--edge-light), 0 2px 0 var(--slat-edge);
 }
+.handedTitle { margin: 0; }
+.handedToggle {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 16px;
+  border-radius: 16px;
+  text-align: left;
+  color: var(--text);
+}
+.handedToggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.handedCount { color: var(--jade-500); display: inline-flex; }
+.handedLabel {
+  font-variation-settings: 'wdth' 92, 'wght' 760;
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.chevron {
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  color: var(--text-muted);
+  transition: transform var(--dur-2) var(--ease-slat);
+}
+.handed[data-open='1'] .chevron { transform: rotate(180deg); }
+.handedBody { padding: 0 16px 12px; }
+.handedNote { font-size: 0.875rem; color: var(--text-muted); padding: 4px 0 6px; }
 .doneList {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  column-gap: 24px;
 }
 .doneList > li {
   display: flex;
@@ -495,6 +637,7 @@
   border-top: 1px solid var(--line);
   font-size: 0.875rem;
   color: var(--text-muted);
+  min-width: 0;
 }
 .doneAt { font-variant-numeric: tabular-nums; flex: none; }
 

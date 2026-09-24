@@ -45,6 +45,15 @@ interface Props {
   graceMinutes: number;
 }
 
+/**
+ * Espace insécable avant « : », « ? » et « ! » (typographie française) :
+ * au téléphone, le deux-points ne doit jamais commencer une ligne
+ * (« … à une table de 4 / : 4 couverts »).
+ */
+function frenchSpacing(text: string): string {
+  return text.replace(/ ([:?!;])/g, '\u00a0$1');
+}
+
 const SEATING_LABEL: Record<TableSeating, string> = { any: 'Peu importe', indoor: 'Salle', terrace: 'Terrasse' };
 const NEED_LABEL: Record<TableNeed, string> = { highchair: 'Chaise haute', accessible: 'Accès PMR' };
 
@@ -118,7 +127,7 @@ export function TableBoard({ orgSlug, initialSnapshot, queues, canOperate, grace
       <StatusNotice
         status={snapshot.queue.status}
         pauseReason={snapshot.queue.pauseReason}
-        closedText="Liste fermée : personne ne peut s’inscrire. Les groupes déjà en attente restent affichés."
+        closedText="Liste fermée : personne ne peut s’inscrire. Les groupes déjà en attente restent affichés."
       />
 
       {adding && canOperate && (
@@ -159,7 +168,7 @@ export function TableBoard({ orgSlug, initialSnapshot, queues, canOperate, grace
                 )}
                 {suggestion && (
                   <div className={styles.suggest}>
-                    <p className={styles.reason}>{suggestion.reason}</p>
+                    <p className={styles.reason}>{frenchSpacing(suggestion.reason)}</p>
                     <div className={styles.suggestRow}>
                       <button
                         type="button"
@@ -290,7 +299,9 @@ function CalledRow({
       <PartySize count={partyOf(entry)} state="called" size="md" name={entry.name ?? undefined} />
       <div className={styles.calledWho}>
         <p className={styles.calledName}>{name}</p>
-        <p className={styles.countdown} aria-label={left == null ? undefined : late ? `Délai dépassé de ${mmss}` : `Encore ${mmss} pour se présenter`}>
+        {/* Un minuteur (role="timer") n'est pas annoncé à chaque seconde ;
+            le texte visible se lit tel quel au lecteur d'écran. */}
+        <p className={styles.countdown} role="timer">
           {left == null ? ' ' : late ? <>dépassé de <span className="t-num">{mmss}</span></> : <>se présente dans <span className="t-num">{mmss}</span></>}
         </p>
         <NoticeBadge notice={api.notices[entry.id]} timeZone={api.timeZone} />
@@ -428,7 +439,7 @@ function AddGroup({
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!name.trim()) { setError('Indiquez un prénom : l’accueil appelle les noms.'); return; }
+    if (!name.trim()) { setError('Indiquez un prénom : l’accueil appelle les noms.'); return; }
     setError(null);
     startTransition(async () => {
       const result = await api.run('add', () => addProfileEntryAction(orgSlug, {
@@ -484,7 +495,7 @@ function AddGroup({
               ))}
             </div>
           </div>
-          <p className="hint">Les allergies se disent au serveur, de vive voix : elles ne sont jamais enregistrées.</p>
+          <p className="hint">Les allergies se disent au serveur, de vive voix : elles ne sont jamais enregistrées.</p>
         </div>
       </div>
       {error && <p className={common.formError} role="alert">{error}</p>}

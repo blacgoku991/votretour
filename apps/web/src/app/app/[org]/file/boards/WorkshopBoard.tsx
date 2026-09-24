@@ -21,6 +21,7 @@ import type {
   QueueProfile,
   RegistrationCountry,
   StayChoice,
+  WorkshopColumn,
 } from '@/lib/profiles/types';
 import {
   addProfileEntryAction,
@@ -39,14 +40,19 @@ import {
 } from './BoardChrome';
 import {
   activeEntries,
+  agreeCount,
   clock,
   formatEta,
+  fromZonedInput,
+  labelKind,
   laneOf,
   parseAmountToCents,
   quoteStateOf,
   shortRef,
-  WORKSHOP_LANES,
-  workshopLanes,
+  storedColumn,
+  toZonedInput,
+  WORKSHOP_COLUMNS,
+  workshopColumns,
   workshopPrimary,
   type WorkshopLaneKey,
   type WorkshopSort,
@@ -59,11 +65,18 @@ import styles from './workshop.module.css';
  * LE POSTE D'ATELIER — véhicules (garages, centres auto) et appareils
  * (réparation, SAV).
  *
- * Un planning d'atelier : sept colonnes, une par étape du registre
- * (Reçu, Diagnostic, Devis, Pièce, Réparation, Prêt) et « Rendu ». Chaque
- * fiche est une latte dont l'encoche est devenue l'œillet d'une étiquette
- * de clé, et porte SES actions : un atelier rend ses véhicules dans le
- * désordre, il n'y a jamais de « suivant » automatique.
+ * Un planning d'atelier en quatre colonnes (conception, § 4.2), qui
+ * tiennent toujours dans la largeur : à prendre en charge | en atelier
+ * (diagnostic, réparation) | en attente client ou pièce (devis, pièce) |
+ * prêts à récupérer. Les six étapes restent lisibles sur chaque fiche
+ * (puce et rampe d'étapes) et filtrables en tête de colonne ; les fiches
+ * rendues aujourd'hui sont dans une bande repliable, sous les colonnes.
+ *
+ * Au garage, chaque fiche est une latte dont l'encoche est devenue
+ * l'œillet d'une étiquette de clé ; à l'atelier d'appareils, un ticket de
+ * dépôt au bord droit dentelé (sa souche). Chacune porte SES actions : un
+ * atelier rend ses véhicules dans le désordre, il n'y a jamais de
+ * « suivant » automatique.
  *
  * La touche vermillon « Prêt · prévenir » est la seule couleur forte : le
  * garagiste prévient le client LUI-MÊME, au moment qu'il choisit, et le
@@ -71,8 +84,8 @@ import styles from './workshop.module.css';
  * joignable », « Envoi indisponible »).
  *
  * Téléphone d'atelier d'abord (390 px) : une colonne à la fois, choisie
- * sur le pupitre des étapes. Bureau : toutes les colonnes côte à côte, les
- * colonnes vides repliées en fines lattes.
+ * sur le pupitre à quatre stations. Tablette : deux colonnes sur deux
+ * rangs. Bureau : les quatre côte à côte, sans défilement horizontal.
  */
 
 interface QueueRef { id: string; name: string; locationName: string; status: string }
@@ -116,17 +129,20 @@ export function WorkshopBoard({ orgSlug, initialSnapshot, queues, canOperate }: 
   const [sort, setSort] = useState<WorkshopSort>('arrival');
   const [adding, setAdding] = useState(false);
   const [handedOver, setHandedOver] = useState<HandedOver[]>([]);
-  const laneKey = `rangvia:atelier:colonne:${snapshot.queue.id}`;
-  const [active, setActive] = useState<WorkshopLaneKey>('received');
+  const [handedOpen, setHandedOpen] = useState(false);
+  const columnKey = `rangvia:atelier:colonne:${snapshot.queue.id}`;
+  const [active, setActive] = useState<WorkshopColumn>('intake');
+  // Filtre par étape, colonne par colonne (« Diagnostic » dans « En atelier »).
+  const [stageFilter, setStageFilter] = useState<Partial<Record<WorkshopColumn, ProfileStage>>>({});
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const lanesRef = useRef<HTMLDivElement | null>(null);
 
   // Dernière colonne choisie au téléphone : relue après le montage
-  // (jamais au rendu serveur), confort seulement.
+  // (jamais au rendu serveur), confort seulement. Une étape mémorisée par
+  // une version précédente est ramenée à sa colonne.
   useEffect(() => {
-    const stored = readStored(laneKey);
-    if (stored && WORKSHOP_LANES.some((l) => l.key === stored)) setActive(stored as WorkshopLaneKey);
-  }, [laneKey]);
+    const stored = storedColumn(readStored(columnKey));
+    if (stored) setActive(stored);
+  }, [columnKey]);
 
   // « / » place le curseur dans la recherche, sauf pendant une saisie.
   useEffect(() => {
@@ -143,46 +159,39 @@ export function WorkshopBoard({ orgSlug, initialSnapshot, queues, canOperate }: 
 
   const entries = useMemo(() => activeEntries(snapshot), [snapshot]);
   // Les fiches déjà là à l'ouverture ne se « posent » pas : l'arrivée
-  // animée est réservée à un dépôt nouveau ou à une fiche qui change de
-  // colonne pendant qu'on regarde. Colonnes figées au montage.
+  // animée est réservée à un dépôt nouveau ou à une fiche qui change
+  // d'étape pendant qu'on regarde. Étapes figées au montage.
   const initialLanes = useRef<Map<string, WorkshopLaneKey> | null>(null);
   if (initialLanes.current === null) {
     initialLanes.current = new Map(activeEntries(initialSnapshot).map((e) => [e.id, laneOf(profile, e)]));
   }
   const isFresh = (entry: ProfileStaffEntry) => initialLanes.current!.get(entry.id) !== laneOf(profile, entry);
-  const lanes = useMemo(() => workshopLanes(profile, entries, { query, sort }), [profile, entries, query, sort]);
-  const matches = query.trim() ? [...lanes.values()].reduce((n, l) => n + l.length, 0) : null;
+  const columns = useMemo(() => workshopColumns(profile, entries, { query, sort }), [profile, entries, query, sort]);
+  const matches = query.trim() ? [...columns.values()].reduce((n, l) => n + l.length, 0) : null;
   const serviceName = useCallback(
     (id: string | null) => snapshot.services.find((s) => s.id === id)?.name ?? null,
     [snapshot.services],
   );
 
-  const select = (key: WorkshopLaneKey) => {
+  const select = (key: WorkshopColumn) => {
     setActive(key);
-    writeStored(laneKey, key);
-    // Bureau : amène la colonne dans la vue, sans faire défiler la page.
-    const track = lanesRef.current;
-    const lane = track?.querySelector<HTMLElement>(`[data-lane="${key}"]`);
-    if (track && lane && track.scrollWidth > track.clientWidth) {
-      track.scrollTo({ left: lane.offsetLeft - track.offsetLeft - 4, behavior: 'smooth' });
-    }
+    writeStored(columnKey, key);
   };
 
   // Une recherche qui ne trouve rien dans la colonne ouverte au téléphone
   // bascule sur la première colonne qui a un résultat.
   useEffect(() => {
     if (!query.trim()) return;
-    if ((lanes.get(active)?.length ?? 0) > 0) return;
-    const first = WORKSHOP_LANES.find((l) => (lanes.get(l.key)?.length ?? 0) > 0);
+    if ((columns.get(active)?.length ?? 0) > 0) return;
+    const first = WORKSHOP_COLUMNS.find((c) => (columns.get(c.key)?.length ?? 0) > 0);
     if (first) setActive(first.key);
-  }, [query, lanes, active]);
+  }, [query, columns, active]);
 
   const onHandedOver = useCallback((entry: ProfileStaffEntry) => {
     setHandedOver((list) => [{ id: entry.id, title: entryTitle(profile, entry), at: Date.now() }, ...list].slice(0, 12));
   }, [profile]);
 
   const handedCount = Math.max(snapshot.counts.completedToday, handedOver.length);
-  const laneCount = (key: WorkshopLaneKey) => (key === 'handed_over' ? handedCount : lanes.get(key)?.length ?? 0);
 
   return (
     <div className={`shell ${styles.board}`} data-profile={profile}>
@@ -248,7 +257,7 @@ export function WorkshopBoard({ orgSlug, initialSnapshot, queues, canOperate }: 
       <StatusNotice
         status={snapshot.queue.status}
         pauseReason={snapshot.queue.pauseReason}
-        closedText="Dépôts fermés : les clients ne peuvent plus s’inscrire. Les fiches en cours restent suivies."
+        closedText="Dépôts fermés : les clients ne peuvent plus s’inscrire. Les fiches en cours restent suivies."
       />
 
       {adding && canOperate && (
@@ -262,26 +271,27 @@ export function WorkshopBoard({ orgSlug, initialSnapshot, queues, canOperate }: 
         </div>
       )}
 
-      {/* ------------------------------------------------ Le pupitre */}
-      <nav className={styles.strip} aria-label="Étapes de l’atelier">
+      {/* ------------------------------------------------ Le pupitre (téléphone)
+          Quatre stations, une par colonne : il choisit la colonne affichée.
+          Au bureau, les quatre colonnes sont côte à côte et il disparaît. */}
+      <nav className={styles.strip} aria-label="Colonnes de l’atelier">
         <ol className={styles.stripList}>
-          {WORKSHOP_LANES.map((lane) => {
-            const n = laneCount(lane.key);
+          {WORKSHOP_COLUMNS.map((column) => {
+            const n = columns.get(column.key)?.length ?? 0;
             return (
-              <li key={lane.key} className={styles.station} data-tone={lane.tone} data-filled={n > 0 ? '1' : undefined}>
+              <li key={column.key} className={styles.station} data-tone={column.tone} data-filled={n > 0 ? '1' : undefined}>
                 <button
                   type="button"
-                  aria-pressed={active === lane.key}
-                  onClick={() => select(lane.key)}
+                  aria-pressed={active === column.key}
+                  aria-controls={`colonne-${column.key}`}
+                  onClick={() => select(column.key)}
                   className={styles.stationBtn}
                 >
                   <span className={styles.stationPip} aria-hidden="true">
                     <FlapNumber static value={n} size="1.125rem" label={`${n}`} />
                   </span>
-                  <span className={styles.stationLabel}>{lane.label}</span>
-                  <span className="sr-only">
-                    {lane.key === 'handed_over' ? ` : ${n} ${vocab.todayCounter}` : ` : ${n} fiche${n > 1 ? 's' : ''}`}
-                  </span>
+                  <span className={styles.stationLabel} aria-hidden="true">{column.short}</span>
+                  <span className="sr-only">{`${column.label} : ${n} fiche${n > 1 ? 's' : ''}`}</span>
                 </button>
               </li>
             );
@@ -290,39 +300,59 @@ export function WorkshopBoard({ orgSlug, initialSnapshot, queues, canOperate }: 
       </nav>
 
       {/* ------------------------------------------------ Les colonnes */}
-      <div ref={lanesRef} className={styles.lanes}>
-        {WORKSHOP_LANES.map((lane) => {
-          const list = lane.key === 'handed_over' ? [] : lanes.get(lane.key) ?? [];
-          const n = laneCount(lane.key);
-          const headingId = `lane-${lane.key}`;
-          const empty = lane.key === 'handed_over' ? n === 0 && handedOver.length === 0 : list.length === 0;
+      <div className={styles.lanes}>
+        {WORKSHOP_COLUMNS.map((column) => {
+          const all = columns.get(column.key) ?? [];
+          const filter = stageFilter[column.key] ?? null;
+          const list = filter ? all.filter((e) => laneOf(profile, e) === filter) : all;
+          const headingId = `colonne-${column.key}-titre`;
           return (
             <section
-              key={lane.key}
+              key={column.key}
+              id={`colonne-${column.key}`}
               className={styles.lane}
-              data-lane={lane.key}
-              data-tone={lane.tone}
-              data-active={active === lane.key ? '1' : undefined}
-              data-empty={empty ? '1' : undefined}
+              data-lane={column.key}
+              data-tone={column.tone}
+              data-active={active === column.key ? '1' : undefined}
               aria-labelledby={headingId}
             >
-              <h2 id={headingId} className={styles.laneHead}>
-                <span className={styles.laneDot} aria-hidden="true" />
-                <span className={styles.laneName}>{lane.label}</span>
-                <span className={common.count}>{n}</span>
-                <span className={styles.laneStaff}>{lane.staff}</span>
-              </h2>
+              <div className={styles.laneHead}>
+                <h2 id={headingId} className={styles.laneTitle}>
+                  <span className={styles.laneDot} aria-hidden="true" />
+                  <span className={styles.laneName}>{column.label}</span>
+                  <span className={common.count}>{all.length}</span>
+                </h2>
+                {column.stages.length > 1 && (
+                  <div className={styles.laneFilters} role="group" aria-label={`Filtrer « ${column.label} » par étape`}>
+                    {column.stages.map((stage) => {
+                      const def = stageDef(profile, stage);
+                      const n = all.filter((e) => laneOf(profile, e) === stage).length;
+                      return (
+                        <button
+                          key={stage}
+                          type="button"
+                          className={styles.laneFilter}
+                          data-tone={def?.tone ?? 'neutral'}
+                          aria-pressed={filter === stage}
+                          onClick={() => setStageFilter((f) => ({ ...f, [column.key]: f[column.key] === stage ? undefined : stage }))}
+                        >
+                          {def?.short ?? stage}
+                          <span className={styles.laneFilterCount}>{n}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
-              {lane.key === 'handed_over' ? (
-                <HandedOverLane count={snapshot.counts.completedToday} list={handedOver} now={now} timeZone={api.timeZone} label={vocab.todayCounter} />
-              ) : list.length === 0 ? (
+              {list.length === 0 ? (
                 <p className={styles.laneEmpty}>
-                  {query.trim() ? 'Aucune fiche ne correspond.' : emptyText(lane.key)}
+                  {query.trim() || filter ? 'Aucune fiche ne correspond.' : emptyText(column.key)}
                 </p>
               ) : (
                 <ol className={styles.cards}>
                   {list.map((entry) => (
-                    <li key={entry.id}>
+                    <li key={entry.id} data-lane={laneOf(profile, entry)}>
                       <WorkshopCard
                         entry={entry}
                         snapshot={snapshot}
@@ -333,6 +363,7 @@ export function WorkshopBoard({ orgSlug, initialSnapshot, queues, canOperate }: 
                         serviceName={serviceName(entry.serviceId)}
                         onHandedOver={onHandedOver}
                         fresh={isFresh(entry)}
+                        stageChip={column.stages.length > 1}
                       />
                     </li>
                   ))}
@@ -342,24 +373,63 @@ export function WorkshopBoard({ orgSlug, initialSnapshot, queues, canOperate }: 
           );
         })}
       </div>
+
+      {/* ------------------------------------------------ Rendus aujourd'hui */}
+      <section className={styles.handed} data-open={handedOpen ? '1' : undefined} aria-labelledby="rendus-titre">
+        <h2 id="rendus-titre" className={styles.handedTitle}>
+          <button
+            type="button"
+            className={styles.handedToggle}
+            aria-expanded={handedOpen}
+            aria-controls="rendus-liste"
+            onClick={() => setHandedOpen((v) => !v)}
+          >
+            <span className={styles.handedCount}>
+              <FlapNumber static value={handedCount} size="1.375rem" label={`${handedCount}`} />
+            </span>
+            <span className={styles.handedLabel}>{agreeCount(handedCount, vocab.todayCounter)}</span>
+            <svg className={styles.chevron} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m6 8 4 4 4-4" />
+            </svg>
+          </button>
+        </h2>
+        {handedOpen && (
+          <div id="rendus-liste" className={styles.handedBody}>
+            {handedOver.length === 0 ? (
+              <p className={styles.handedNote}>
+                {handedCount > 0
+                  ? `Rendus avant l’ouverture de cet écran : ils sont comptés, pas listés.`
+                  : `Rien de rendu pour l’instant aujourd’hui.`}
+              </p>
+            ) : (
+              <ol className={styles.doneList}>
+                {handedOver.map((h) => (
+                  <li key={`${h.id}:${h.at}`}>
+                    <span className="truncate">{h.title}</span>
+                    <span className={styles.doneAt}>{clock(h.at, api.timeZone)}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
-function emptyText(key: WorkshopLaneKey): string {
+function emptyText(key: WorkshopColumn): string {
   switch (key) {
-    case 'received': return 'Aucun dépôt en attente.';
-    case 'diagnosis': return 'Rien en diagnostic.';
-    case 'quote_pending': return 'Aucun devis en attente.';
-    case 'waiting_parts': return 'Aucune pièce attendue.';
-    case 'in_repair': return 'Rien en réparation.';
+    case 'intake': return 'Aucun dépôt en attente.';
+    case 'workshop': return 'Rien en diagnostic ni en réparation.';
+    case 'waiting': return 'Aucun devis ni aucune pièce en attente.';
     case 'ready': return 'Rien à rendre pour l’instant.';
     default: return '';
   }
 }
 
 /**
- * Titre d'une fiche rendue, pour la colonne « Rendu » du poste : « AB-123-CD
+ * Titre d'une fiche rendue, pour la bande « Rendus aujourd'hui » : « AB-123-CD
  * · Peugeot 208 », « Dossier 0042 · iPhone 13 ». L'immatriculation complète
  * reste sur le poste (réservé à `queue.operate`) ; l'écran de salle et
  * l'étiquette n'en reçoivent que la forme masquée.
@@ -368,33 +438,6 @@ function entryTitle(profile: QueueProfile, entry: ProfileStaffEntry): string {
   const model = entry.details?.model?.trim();
   if (profile === 'device') return [entry.ticketNo ? `Dossier ${entry.ticketNo}` : null, model].filter(Boolean).join(' · ') || 'Appareil';
   return [entry.details?.registration, model].filter(Boolean).join(' · ') || 'Véhicule';
-}
-
-/* ==================================================================
-   La colonne « Rendu »
-   ================================================================== */
-
-function HandedOverLane({
-  count, list, now, timeZone, label,
-}: { count: number; list: HandedOver[]; now: number | null; timeZone: string; label: string }) {
-  return (
-    <div className={styles.done}>
-      <p className={styles.doneCount}>
-        <FlapNumber static value={Math.max(count, list.length)} size="2.5rem" label={`${Math.max(count, list.length)} ${label}`} />
-        <span className={styles.doneLabel}>{label}</span>
-      </p>
-      {list.length > 0 && (
-        <ol className={styles.doneList}>
-          {list.map((h) => (
-            <li key={`${h.id}:${h.at}`}>
-              <span className="truncate">{h.title}</span>
-              <span className={styles.doneAt}>{now == null ? '' : new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone }).format(h.at)}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
-  );
 }
 
 /* ==================================================================
@@ -412,10 +455,12 @@ type Panel =
   | { kind: 'remove' };
 
 function WorkshopCard({
-  entry, snapshot, api, orgSlug, canOperate, now, serviceName, onHandedOver, fresh = false,
+  entry, snapshot, api, orgSlug, canOperate, now, serviceName, onHandedOver, fresh = false, stageChip = false,
 }: {
   /** Arrivée dans la colonne après l'ouverture de l'écran : la fiche se pose. */
   fresh?: boolean;
+  /** Colonne à plusieurs étapes (atelier, attente) : la puce dit laquelle. */
+  stageChip?: boolean;
   entry: ProfileStaffEntry;
   snapshot: ProfileQueueSnapshot;
   api: ProfileBoardApi;
@@ -432,7 +477,9 @@ function WorkshopCard({
   const menu = useDisclosure();
   const busy = api.busy === entry.id || api.busy === `qr:${entry.id}` || api.busy === `msg:${entry.id}`;
   const lane = laneOf(profile, entry);
-  const tone = stageDef(profile, entry.stage)?.tone ?? 'neutral';
+  const def = stageDef(profile, entry.stage);
+  const tone = def?.tone ?? 'neutral';
+  const kind = labelKind(profile === 'device' ? 'device' : 'vehicle');
   const primary = workshopPrimary(profile, entry, options);
   const quote = quoteStateOf(entry);
   const details = entry.details ?? {};
@@ -493,7 +540,7 @@ function WorkshopCard({
       data-fresh={fresh ? '1' : undefined}
       aria-label={label}
     >
-      <span className={styles.eyelet} aria-hidden="true" />
+      {profile === 'vehicle' && <span className={styles.eyelet} aria-hidden="true" />}
 
       <div className={styles.cardTop}>
         {profile === 'vehicle' ? (
@@ -512,10 +559,26 @@ function WorkshopCard({
             )}
           </span>
         )}
+        {canOperate && (
+          // Le menu « … » en coin : la touche principale garde toute la
+          // largeur de la fiche, même dans une colonne étroite.
+          <button
+            ref={menu.buttonRef}
+            type="button"
+            className={`${common.moreBtn} ${styles.more}`}
+            aria-expanded={menu.open}
+            aria-controls={`menu-${entry.id}`}
+            aria-label={`Plus d’actions pour ${subject}`}
+            onClick={() => menu.setOpen((v) => !v)}
+          >
+            <Icon name="more" />
+          </button>
+        )}
       </div>
 
-      {(quote || details.keys || entry.claimPending) && (
+      {((stageChip && def) || quote || details.keys || entry.claimPending) && (
         <p className={styles.flags}>
+          {stageChip && def && <span className={styles.stageChip} data-tone={def.tone}>{def.short}</span>}
           {quote && <QuoteChip quote={quote} now={now} timeZone={api.timeZone} />}
           {details.keys && <span className="chip">Clés reçues</span>}
           {entry.claimPending && <span className="chip chip--copper" title="Un QR de suivi attend d’être scanné">QR en attente</span>}
@@ -529,7 +592,7 @@ function WorkshopCard({
       </p>
       {details.reasonText && <p className={styles.reason}>« {details.reasonText} »</p>}
       {profile === 'device' && details.accessories && details.accessories.length > 0 && (
-        <p className={styles.reason}>Déposé avec : {details.accessories.map((a) => ACCESSORY_LABEL[a]).join(', ')}</p>
+        <p className={styles.reason}>Déposé avec : {details.accessories.map((a) => ACCESSORY_LABEL[a]).join(', ')}</p>
       )}
 
       <p className={styles.times}>
@@ -553,7 +616,7 @@ function WorkshopCard({
               <p className={styles.waitNote} data-declined={quote?.status === 'declined' ? '1' : undefined}>
                 {quote?.status === 'declined'
                   ? 'Devis refusé par le client. Proposez-en un autre, ou rendez-le en l’état.'
-                  : 'Devis envoyé : la réponse du client s’affichera ici.'}
+                  : 'Devis envoyé : la réponse du client s’affichera ici.'}
               </p>
             ) : (
               <button
@@ -572,17 +635,6 @@ function WorkshopCard({
                 {busy ? 'Un instant…' : primary.label}
               </button>
             )}
-            <button
-              ref={menu.buttonRef}
-              type="button"
-              className={`${common.moreBtn} ${styles.more}`}
-              aria-expanded={menu.open}
-              aria-controls={`menu-${entry.id}`}
-              aria-label={`Plus d’actions pour ${subject}`}
-              onClick={() => menu.setOpen((v) => !v)}
-            >
-              <Icon name="more" />
-            </button>
           </div>
           {(primary.kind === 'diagnosed' || primary.kind === 'quote_wait' || primary.kind === 'handover') && (
             <div className={styles.secondary}>
@@ -621,7 +673,8 @@ function WorkshopCard({
               )}
               <button type="button" onClick={issueQr}>QR de suivi</button>
               <a href={`/app/${orgSlug}/file/etiquette/${entry.id}`} target="_blank" rel="noopener">
-                Étiquette de clé <span aria-hidden="true">↗</span>
+                {kind.title} <span aria-hidden="true">↗</span>
+                <span className="sr-only"> (nouvel onglet)</span>
               </a>
               <button type="button" onClick={() => openPanel({ kind: 'edit' })}>Modifier la fiche</button>
               <button type="button" className={common.danger} onClick={() => openPanel({ kind: 'remove' })}>Retirer</button>
@@ -654,6 +707,7 @@ function WorkshopCard({
           {panel?.kind === 'eta' && (
             <EtaPanel
               current={details.readyEta ?? null}
+              timeZone={api.timeZone}
               who={profile === 'vehicle' ? 'le garage' : 'l’atelier'}
               busy={busy}
               onCancel={() => setPanel(null)}
@@ -692,7 +746,7 @@ function WorkshopCard({
           )}
           {panel?.kind === 'qr' && (
             <div className={common.inline} style={{ ['--tone' as string]: 'var(--copper-500)' }}>
-              <QrBlock link={panel.link} orgSlug={orgSlug} entryId={entry.id} onClose={() => setPanel(null)} compact />
+              <QrBlock link={panel.link} orgSlug={orgSlug} entryId={entry.id} printLabel={kind.print} timeZone={api.timeZone} onClose={() => setPanel(null)} compact />
             </div>
           )}
           {panel?.kind === 'remove' && (
@@ -731,11 +785,17 @@ function QuoteChip({
   const at = quote.at && now != null ? clock(quote.at, timeZone) : null;
   if (quote.status === 'accepted') return <span className="chip chip--jade">Accordé{at ? ` ${at}` : ''}</span>;
   if (quote.status === 'declined') return <span className="chip chip--brique">Refusé{at ? ` ${at}` : ''}</span>;
+  // « Devis 184,00 € · en attente depuis 42 min » (conception, § 4.2).
   const since = quote.at && now != null ? Math.max(0, Math.round((now - Date.parse(quote.at)) / 60_000)) : null;
+  const wait = since == null
+    ? null
+    : since < 1
+      ? 'envoyé à l’instant'
+      : `en attente depuis ${since < 60 ? `${since} min` : `${Math.floor(since / 60)} h${since % 60 ? ` ${String(since % 60).padStart(2, '0')}` : ''}`}`;
   return (
-    <span className="chip chip--copper" title={quote.label}>
-      Devis {quote.amount}
-      {since != null ? ` · ${since < 1 ? 'à l’instant' : since < 60 ? `${since} min` : `${Math.floor(since / 60)} h`}` : ''}
+    <span className={styles.quote} title={quote.label || undefined}>
+      <strong>Devis {quote.amount}</strong>
+      {wait && <span>{wait}</span>}
     </span>
   );
 }
@@ -884,30 +944,19 @@ function QuotePanel({
 
 /* ------------------------------------------------ Promesse de délai */
 
-function toLocalInput(iso: string | null): string {
-  const d = iso ? new Date(iso) : null;
-  const base = d && !Number.isNaN(d.getTime()) ? d : nextRoundHour();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}T${pad(base.getHours())}:${pad(base.getMinutes())}`;
-}
-function nextRoundHour(): Date {
-  const d = new Date();
-  d.setMinutes(0, 0, 0);
-  d.setHours(d.getHours() + 2);
-  return d;
-}
-
 function EtaPanel({
-  current, who, busy, onCancel, onSave,
+  current, timeZone, who, busy, onCancel, onSave,
 }: {
   current: string | null;
+  /** Fuseau de l'établissement : le champ se remplit et se lit à son heure. */
+  timeZone: string;
   /** « le garage », « l'atelier » : qui s'engage, tel que le client le lira. */
   who: string;
   busy: boolean;
   onCancel: () => void;
   onSave: (iso: string | null) => void;
 }) {
-  const [value, setValue] = useState(() => toLocalInput(current));
+  const [value, setValue] = useState(() => toZonedInput(current, timeZone));
   const id = useId();
   return (
     <form
@@ -916,8 +965,8 @@ function EtaPanel({
       onKeyDown={(e) => { if (e.key === 'Escape') onCancel(); }}
       onSubmit={(e) => {
         e.preventDefault();
-        const d = new Date(value);
-        if (!Number.isNaN(d.getTime())) onSave(d.toISOString());
+        const iso = fromZonedInput(value, timeZone);
+        if (iso) onSave(iso);
       }}
     >
       <label className={common.inlineTitle} htmlFor={`${id}-eta`}>Prêt quand ? Le client lira « annoncé par {who} ».</label>
@@ -1023,9 +1072,19 @@ function EditPanel({
    ================================================================== */
 
 export function QrBlock({
-  link, orgSlug, entryId, onClose, compact = false,
-}: { link: TrackingLink; orgSlug: string; entryId: string; onClose?: () => void; compact?: boolean }) {
-  const expires = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(link.expiresAt));
+  link, orgSlug, entryId, printLabel, timeZone, onClose, compact = false,
+}: {
+  link: TrackingLink;
+  orgSlug: string;
+  entryId: string;
+  /** « Imprimer l'étiquette de clé » (garage), « … de dépôt » (appareil). */
+  printLabel: string;
+  /** Fuseau de l'établissement : l'échéance se lit à son heure. */
+  timeZone: string;
+  onClose?: () => void;
+  compact?: boolean;
+}) {
+  const expires = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone }).format(new Date(link.expiresAt));
   return (
     <div className={common.qr} data-compact={compact ? '1' : undefined}>
       {/* SVG produit par notre serveur (bibliothèque qrcode), jamais par une saisie. */}
@@ -1037,7 +1096,8 @@ export function QrBlock({
         </p>
         <div className={common.qrActions}>
           <a className="btn btn--ghost btn--sm" href={`/app/${orgSlug}/file/etiquette/${entryId}`} target="_blank" rel="noopener">
-            Imprimer l’étiquette de clé
+            {printLabel}
+            <span className="sr-only"> (nouvel onglet)</span>
           </a>
           {onClose && <button type="button" className="btn btn--quiet btn--sm" onClick={onClose}>Fermer</button>}
         </div>
@@ -1127,10 +1187,16 @@ function AddDropoff({
     return (
       <section className={common.addPanel} aria-labelledby={`${id}-done`}>
         <div className={common.addHead}>
-          <h2 id={`${id}-done`} className={common.addTitle}>{title} : fiche créée</h2>
+          <h2 id={`${id}-done`} className={common.addTitle}>{title} : fiche créée</h2>
         </div>
         {created.link ? (
-          <QrBlock link={created.link} orgSlug={orgSlug} entryId={created.entry.id} />
+          <QrBlock
+            link={created.link}
+            orgSlug={orgSlug}
+            entryId={created.entry.id}
+            printLabel={labelKind(vehicle ? 'vehicle' : 'device').print}
+            timeZone={api.timeZone}
+          />
         ) : (
           <p className="t-small t-muted">La fiche est dans « Reçu ». Vous pourrez générer un QR de suivi depuis son menu.</p>
         )}
@@ -1253,7 +1319,7 @@ function AddDropoff({
                 </button>
               ))}
             </div>
-            <p className={styles.warnCode}>Ne notez jamais le code de déverrouillage : Rangvia ne le demande pas.</p>
+            <p className={styles.warnCode}>Ne notez jamais le code de déverrouillage : Rangvia ne le demande pas.</p>
           </div>
         )}
       </div>

@@ -157,15 +157,57 @@
   max-width: 520px;
 }
 
-/* ------------------------------------------------ Impression */
-@page { size: 62mm 100mm; margin: 0; }
+/* ------------------------------------------------ Impression
+   UNE étiquette, UNE page de 62 × 100 mm, rien d'autre.
+   - Page NOMMÉE : `@page etiquette` ne s'applique qu'aux boîtes qui
+     portent `page: etiquette`, donc à cette étiquette seulement. Si ce
+     module reste chargé après une navigation dans l'application, il ne
+     change pas la mise en page d'une autre impression (l'affiche QR).
+   - Tout ce qui n'est ni l'étiquette ni l'un de ses ancêtres sort du flux
+     (`display: none`, pas `visibility: hidden` : une mise en page masquée
+     garde sa hauteur et ajoutait une seconde page blanche). Les ancêtres
+     perdent marges, bordures et fonds : l'étiquette est au coin de la page.
+   - `html` et `body` prennent exactement la taille de l'étiquette, sur
+     fond blanc : même avec « graphiques d'arrière-plan », le fond sombre
+     du thème ne s'imprime pas. La même règle est aussi posée par la
+     feuille elle-même (`PRINT_PAGE_CSS`, LabelSheet.tsx) : Chromium ne
+     réévalue pas toujours `html:has(.label)` au passage en média print
+     (mesuré : fond sombre au premier chargement).
+   Vérifié par la recette `profiles-vehicle.mjs` : PDF d'une seule page,
+   étiquette visible en média print. */
+@page etiquette { size: 62mm 100mm; margin: 0; }
 @media print {
-  :global(html):has(.label) :global(body *) { visibility: hidden; }
-  .label, .label * { visibility: visible; }
-  .label {
-    position: fixed;
-    left: 0;
-    top: 0;
+  :global(html):has(.label),
+  :global(html):has(.label) :global(body) {
+    width: 62mm !important;
+    height: 100mm !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: #FFFFFF !important;
+  }
+  :global(html):has(.label) :global(body) :not(:has(.label)):not(.label):not(.label *) {
+    display: none !important;
+  }
+  :global(html):has(.label) :global(body) :has(.label) {
+    display: block !important;
+    position: static !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+    filter: none !important;
+  }
+  :global(html):has(.label) .label {
+    page: etiquette;
+    break-inside: avoid;
     margin: 0;
     border-radius: 0;
     box-shadow: none;
@@ -174,5 +216,6 @@
   }
   .label::before { display: none; }
   .hole { box-shadow: 0 0 0 0.3mm var(--bone-500); background: #FFFFFF; }
-  .qrPlaceholder { visibility: hidden !important; }
+  /* Sans QR émis : ni carré vide, ni « Scannez pour suivre ». */
+  .label:not([data-qr='1']) .qrZone { display: none; }
 }

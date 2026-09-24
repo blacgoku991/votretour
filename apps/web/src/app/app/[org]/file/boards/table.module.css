@@ -92,8 +92,12 @@
   min-height: 72px;
   font-size: 1.375rem;
   font-variation-settings: 'wdth' 108, 'wght' 780;
+  /* Une seule casse pour toute la touche, comme « APPELER CLARA » en
+     boutique : « APPELER KARIM · 4 ». */
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
-.callVerb { text-transform: uppercase; letter-spacing: 0.06em; }
+.callVerb { letter-spacing: 0.06em; }
 .altKey {
   flex: 1 1 200px;
   flex-direction: column;
@@ -174,7 +178,6 @@
   padding: 12px 10px 12px 6px;
   border-top: 1px solid var(--line);
   border-radius: 12px;
-  transition: background var(--dur-1) var(--ease-out);
 }
 .row:last-child { border-bottom: 1px solid var(--line); }
 .row[data-highlight='primary'] {

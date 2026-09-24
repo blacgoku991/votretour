@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  agreeCount,
   boardKindFor,
   currentCallAt,
   deskDisplayName,
@@ -9,6 +10,7 @@ import {
   isRetailPickup,
   noticeLabel,
   profileCounters,
+  readOnlySnapshot,
   resolveDesk,
   statusTitle,
   tableCountdown,
@@ -58,6 +60,16 @@ describe('aiguillage du poste', () => {
     const src = readFileSync(fileURLToPath(new URL('../src/app/app/[org]/file/page.tsx', import.meta.url)), 'utf8');
     expect(src).toContain('getQueueSnapshot(selected.id)');
     expect(src).toMatch(/<QueueBoard\s+orgSlug=\{org\}\s+initialSnapshot=\{snapshot\}/);
+  });
+
+  it('la page aiguille sur le profil AVANT de lire un instantané (une seule lecture lourde)', () => {
+    const src = readFileSync(fileURLToPath(new URL('../src/app/app/[org]/file/page.tsx', import.meta.url)), 'utf8');
+    const route = src.indexOf('boardKindFor(selected.profile');
+    expect(route).toBeGreaterThan(0);
+    expect(src.indexOf('getQueueSnapshot(selected.id)')).toBeGreaterThan(route);
+    expect(src.indexOf('getProfileQueueSnapshot(selected.id)')).toBeGreaterThan(route);
+    // Sans `queue.operate`, le poste métier reçoit l'instantané expurgé.
+    expect(src).toContain('canOperate ? raw : readOnlySnapshot(raw)');
   });
 });
 
@@ -119,14 +131,27 @@ describe('en-tête dans le vocabulaire du métier', () => {
   it('atelier : à prendre en charge, en atelier, prêts, rendus aujourd’hui', () => {
     const c = profileCounters(snap('vehicle', { completedToday: 3, byStage: { received: 2, diagnosis: 1, quote_pending: 1, waiting_parts: 1, in_repair: 2, ready: 1 } }));
     expect(c.map((x) => [x.label, x.value])).toEqual([
-      ['à prendre en charge', 2], ['en atelier', 5], ['prêts', 1], ['rendus aujourd’hui', 3],
+      ['à prendre en charge', 2], ['en atelier', 5], ['prêt', 1], ['rendus aujourd’hui', 3],
     ]);
   });
 
-  it('salle : groupes et couverts', () => {
+  it('accorde chaque compteur au nombre : « 1 prêt », « 2 prêts », « 1 commande prête », « 0 rendu »', () => {
+    expect(agreeCount(1, 'prêts')).toBe('prêt');
+    expect(agreeCount(0, 'rendus aujourd’hui')).toBe('rendu aujourd’hui');
+    expect(agreeCount(2, 'prêts')).toBe('prêts');
+    expect(agreeCount(1, 'commandes prêtes')).toBe('commande prête');
+    expect(agreeCount(1, 'couverts installés')).toBe('couvert installé');
+    expect(agreeCount(1, 'aux guichets', 'au guichet')).toBe('au guichet');
+    expect(agreeCount(1, 'en attente')).toBe('en attente');
+    expect(agreeCount(1, 'à prendre en charge')).toBe('à prendre en charge');
+    const retail = profileCounters(snap('retail', { waiting: 1, completedToday: 1, byStage: { ready: 1 } }));
+    expect(retail.map((x) => x.label)).toEqual(['en attente', 'commande prête', 'servi aujourd’hui']);
+  });
+
+  it('salle : groupes et couverts « à placer », appelés compris, comme `coversWaiting`', () => {
     const c = profileCounters(snap('table', { waiting: 5, coversWaiting: 21, coversSeatedToday: 40 }, 1));
     expect(c.map((x) => [x.label, x.value])).toEqual([
-      ['groupes en attente', 6], ['couverts en attente', 21], ['couverts installés', 40],
+      ['groupes à placer', 6], ['couverts à placer', 21], ['couverts installés', 40],
     ]);
   });
 });
@@ -177,5 +202,88 @@ describe('guichet et boutique', () => {
     expect(tableCountdown(called, 5, Date.parse('2026-09-24T12:02:00Z'))).toBe(180);
     expect(tableCountdown(called, 5, Date.parse('2026-09-24T12:06:00Z'))).toBe(-60);
     expect(tableCountdown(null, 5, Date.now())).toBeNull();
+  });
+});
+
+describe('lecture seule (membre sans « queue.operate »)', () => {
+  const entry = (p: Partial<ProfileStaffEntry>) => ({
+    id: 'E1', name: 'Albert', note: 'rappeler', registrationKey: 'AB123CD', claimPending: true,
+    details: {
+      registration: 'AB-123-CD', country: 'FR', model: 'Peugeot 208', reasonText: 'Bruit', keys: true,
+      quote: { amountCents: 18400, label: 'Freins', sentAt: '2026-09-24T08:00:00Z', decision: null, decidedAt: null },
+      orderRef: 'ML-1', accessories: ['charger'], partySize: 4, seating: 'terrace', readyEta: '2026-09-24T15:00:00Z',
+    },
+    ...p,
+  }) as unknown as ProfileStaffEntry;
+  const base = (sensitive: boolean) => ({
+    queue: { profile: 'vehicle', profileOptions: { sensitive } },
+    serving: [entry({})], called: [entry({ id: 'E2' })], waiting: [entry({ id: 'E3' })], parked: [entry({ id: 'E4' })],
+  }) as unknown as ProfileQueueSnapshot;
+
+  it('ni plaque, ni devis, ni motif écrit, ni numéro de commande, ni note', () => {
+    const out = readOnlySnapshot(base(false));
+    for (const e of [...out.serving, ...out.called, ...out.waiting, ...out.parked]) {
+      expect(e.details).toEqual({ model: 'Peugeot 208', readyEta: '2026-09-24T15:00:00Z', partySize: 4, seating: 'terrace' });
+      expect(e.registrationKey).toBeNull();
+      expect(e.note).toBeNull();
+      expect(e.claimPending).toBe(false);
+      expect(e.name).toBe('Albert');
+    }
+  });
+
+  it('en santé, aucun prénom ne part vers le navigateur', () => {
+    const out = readOnlySnapshot(base(true));
+    expect([...out.serving, ...out.called, ...out.waiting, ...out.parked].map((e) => e.name)).toEqual([null, null, null, null]);
+  });
+});
+
+/* L'action du guichet n'appelle ni la base ni les fournisseurs ici : on
+   remplace l'action contrôlée et la lecture de l'envoi. */
+const deskMocks = vi.hoisted(() => ({
+  callNextAtDesk: vi.fn(),
+  turnNotice: vi.fn(),
+}));
+vi.mock('@/server/actions/profile-queue', () => ({ callNextAtDesk: deskMocks.callNextAtDesk }));
+vi.mock('@/server/profiles/queue', () => ({ turnNotice: deskMocks.turnNotice }));
+
+describe('« Appeler le suivant » au guichet dit si la personne a été prévenue', () => {
+  it('lit l’envoi de la fiche appelée, depuis une heure notée AVANT l’appel', async () => {
+    const { callNextWithNotice } = await import('@/app/app/[org]/file/boards/desk-call');
+    let calledAt = 0;
+    deskMocks.callNextAtDesk.mockImplementation(async () => {
+      calledAt = Date.now();
+      return { ok: true, data: { snapshot: null, calledId: 'Tick3tA003' } };
+    });
+    deskMocks.turnNotice.mockResolvedValue({ kind: 'your_turn', key: null, reach: 'unreachable' });
+    const r = await callNextWithNotice('p3', { queueId: '00000000-0000-4000-8000-000000000001', deskStaffId: null });
+    expect(r).toEqual({ ok: true, data: { snapshot: null, calledId: 'Tick3tA003', notice: { kind: 'your_turn', reach: 'unreachable' } } });
+    const [id, since] = deskMocks.turnNotice.mock.calls[0]!;
+    expect(id).toBe('Tick3tA003');
+    expect((since as Date).getTime()).toBeLessThanOrEqual(calledAt);
+  });
+
+  it('aucun envoi retrouvé : « Aucun envoi », jamais un succès', async () => {
+    const { callNextWithNotice } = await import('@/app/app/[org]/file/boards/desk-call');
+    deskMocks.callNextAtDesk.mockResolvedValue({ ok: true, data: { snapshot: null, calledId: 'Tick3tA004' } });
+    deskMocks.turnNotice.mockResolvedValue(null);
+    const r = await callNextWithNotice('p3', { queueId: '00000000-0000-4000-8000-000000000001' });
+    expect(r.ok && r.data.notice).toEqual({ kind: 'your_turn', reach: 'none' });
+  });
+
+  it('refus (permission, guichet disparu) ou personne à appeler : rien n’est lu', async () => {
+    const { callNextWithNotice } = await import('@/app/app/[org]/file/boards/desk-call');
+    deskMocks.turnNotice.mockClear();
+    deskMocks.callNextAtDesk.mockResolvedValue({ ok: false, error: 'Ce guichet n’existe plus.', code: 'invalid_desk' });
+    expect(await callNextWithNotice('p3', { queueId: '00000000-0000-4000-8000-000000000001' })).toEqual({ ok: false, error: 'Ce guichet n’existe plus.', code: 'invalid_desk' });
+    deskMocks.callNextAtDesk.mockResolvedValue({ ok: true, data: { snapshot: null, calledId: null } });
+    const r = await callNextWithNotice('p3', { queueId: '00000000-0000-4000-8000-000000000001' });
+    expect(r.ok && r.data.notice).toBeNull();
+    expect(deskMocks.turnNotice).not.toHaveBeenCalled();
+  });
+
+  it('le poste du guichet passe par cette action et affiche l’envoi', () => {
+    const src = readFileSync(fileURLToPath(new URL('../src/app/app/[org]/file/boards/DeskBoard.tsx', import.meta.url)), 'utf8');
+    expect(src).toContain('callNextWithNotice(orgSlug');
+    expect(src).toMatch(/api\.recordNotice\(calledId, notice/);
   });
 });
