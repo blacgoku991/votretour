@@ -10,6 +10,12 @@ import {
 import { enforceRateLimit, LIMITS } from '@/server/ratelimit';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import type { EntrySource } from '@/lib/types';
+import { detailsSchemaFor } from '@/lib/profiles/details';
+import { resolveProfileOptions } from '@/lib/profiles/options';
+import type { EntryDetails, ProfileEntryPoint } from '@/lib/profiles/types';
+import {
+  frenchIssues, getQueueProfileInfo, joinProfileQueue, loadOrganizationFeatures, PROFILES_HEADER, resolveJoinPath,
+} from '@/server/profiles/queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,6 +27,10 @@ const bodySchema = z.object({
   serviceId: uuidSchema.nullish(),
   source: z.enum(['qr', 'nfc', 'appclip', 'link']).default('qr'),
   eventId: uuidSchema.nullish(),
+  // Informations métier (immatriculation, couverts…) : validées plus bas
+  // par le schéma STRICT du profil de la file, une fois celle-ci connue.
+  // Ignorées sur une file walkin ou event.
+  details: z.record(z.string(), z.unknown()).nullish(),
 });
 
 /**
@@ -103,24 +113,66 @@ export async function POST(request: Request) {
       throw new AppError('validation', 'Cet établissement demande votre prénom.', 422);
     }
 
+    const profiled = (entryPoint as ProfileEntryPoint).queue;
+    const path = await resolveJoinPath({
+      profile: body.eventId ? null : profiled?.profile,
+      eventId: body.eventId,
+      source: body.source,
+      profilesHeader: request.headers.get(PROFILES_HEADER),
+      loadFeatures: () => loadOrganizationFeatures(entryPoint.organization.id),
+    });
+
+    // Validées AVANT de créer la session : une saisie refusée ne laisse
+    // aucune trace. Le client ne peut poser que ses propres clés
+    // (jamais `keys`, `readyEta`, ni un devis) ; la base revérifie.
+    let details: EntryDetails | null = null;
+    // Santé (`sensitive`) : jamais de prénom, pas même sur la session.
+    let clientName = body.name ?? null;
+    if (path.kind === 'profile') {
+      // Les réglages COMPLETS de la file (`publicOptions` n'en montre au
+      // client qu'une partie : `registrationRequired` n'y figure pas).
+      const info = await getQueueProfileInfo(targetQueue.id);
+      const options = info?.options ?? resolveProfileOptions(path.profile, profiled?.publicOptions ?? {});
+      if (options.sensitive === true) clientName = null;
+      const parsed = detailsSchemaFor(path.profile, { actor: 'client', options })
+        .safeParse(body.details ?? {}, { error: frenchIssues });
+      if (!parsed.success) {
+        const first = parsed.error.issues[0];
+        throw new AppError('invalid_details', first?.message ?? 'Informations invalides.', 422, parsed.error.issues);
+      }
+      details = parsed.data;
+    }
+
     const platform = await detectPlatform();
     const session = await getOrCreateClientSession(entryPoint.organization.id, {
-      displayName: body.name ?? null,
+      displayName: clientName,
       platform: body.source === 'appclip' ? 'ios_appclip' : platform,
     });
 
     // Une plaque dédiée à un professionnel impose son choix.
     const staffId = entryPoint.plate?.staffId ?? body.staffId ?? null;
 
-    const result = await joinQueue({
-      queueId: targetQueue.id,
-      clientSessionId: session.id,
-      clientName: body.name ?? null,
-      staffId,
-      serviceId: body.serviceId ?? null,
-      source: body.source as EntrySource,
-      plateId: entryPoint.plate?.id ?? null,
-    });
+    // Walkin et event : EXACTEMENT l'appel d'aujourd'hui.
+    const result = path.kind === 'profile' && details
+      ? await joinProfileQueue({
+          queueId: targetQueue.id,
+          clientSessionId: session.id,
+          clientName,
+          staffId,
+          serviceId: body.serviceId ?? null,
+          source: body.source as EntrySource,
+          plateId: entryPoint.plate?.id ?? null,
+          details,
+        })
+      : await joinQueue({
+          queueId: targetQueue.id,
+          clientSessionId: session.id,
+          clientName: body.name ?? null,
+          staffId,
+          serviceId: body.serviceId ?? null,
+          source: body.source as EntrySource,
+          plateId: entryPoint.plate?.id ?? null,
+        });
 
     // Journal de scan : alimente les statistiques de plaque.
     if (entryPoint.plate) {

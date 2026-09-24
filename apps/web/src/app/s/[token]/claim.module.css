@@ -1,0 +1,360 @@
+/* =====================================================================
+   /s/[jeton] — rattacher une fiche à son téléphone.
+
+   Même colonne, même sol et même en-tête que l'écran client /e/[slug]
+   (client.module.css) : le client qui scanne l'étiquette arrive déjà
+   « chez » le commerce. L'objet central est l'ÉTIQUETTE DE CLÉ : une
+   latte du Rang percée d'un œillet et accrochée à son anneau, qui porte
+   l'immatriculation masquée. Elle se balance une fois en arrivant, puis
+   se tient immobile. On n'anime que transform et opacity ; en mouvement
+   réduit, l'étiquette est simplement là, à sa place.
+   ===================================================================== */
+
+.page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.pageEmpty { gap: 32px; }
+
+/* ---------------------------------------------------------------------
+   La marque (état « lien expiré ») : même en-tête que la 404.
+   --------------------------------------------------------------------- */
+.bar {
+  display: flex;
+  align-items: center;
+  margin-top: -8px;
+}
+.home {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  border-radius: 8px;
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------------
+   L'étiquette de clé et son anneau
+   --------------------------------------------------------------------- */
+.hang {
+  --tag-w: min(100%, 340px);
+  /* L'anneau passe dans l'œillet : son point bas (51/64 de sa hauteur)
+     tombe au centre de l'œillet (23 px sous le haut de l'étiquette). */
+  --ring: 64px;
+  --eyelet-y: 23px;
+  position: relative;
+  display: grid;
+  justify-items: center;
+  margin: 4px 0 0;
+  padding-top: calc(var(--ring) * 51 / 64 - var(--eyelet-y));
+}
+
+.ring {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 2;
+  width: var(--ring);
+  height: var(--ring);
+  margin-left: calc(var(--ring) / -2);
+  fill: none;
+  stroke: var(--bone-400);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.55));
+}
+/* Le reflet du métal, sur le haut de l'anneau. */
+.ring path {
+  stroke: var(--bone-100);
+  stroke-width: 1.4;
+  opacity: 0.55;
+}
+
+.tag {
+  position: relative;
+  width: var(--tag-w);
+  padding: 46px 22px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  /* Un objet : reste en os en thème sombre, comme la plaque. */
+  background: var(--bone-200);
+  color: var(--ink-900);
+  /* Le haut arrondi d'une étiquette de clé, le bas d'une latte. */
+  border-radius: 30px 30px var(--r-card) var(--r-card);
+  /* La tranche (en relief, comme les lattes), puis l'ombre portée. */
+  box-shadow:
+    0 3px 0 var(--bone-500),
+    0 28px 50px -24px rgb(0 0 0 / 0.85),
+    inset 0 1px 0 rgb(255 255 255 / 0.7);
+  /* Suspendue par l'œillet, un rien de travers. */
+  transform-origin: 50% var(--eyelet-y);
+  transform: rotate(-2deg);
+}
+
+/* L'œillet : un trou dans la latte (on voit le fond de la page), cerclé
+   d'un renfort métallique. */
+.eyelet {
+  position: absolute;
+  top: calc(var(--eyelet-y) - 9px);
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 3px var(--bone-400),
+    0 0 0 4px var(--bone-500),
+    inset 0 2px 3px rgb(0 0 0 / 0.65);
+}
+
+.tagKicker {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+  white-space: nowrap;
+}
+
+.plate { display: block; }
+
+.model {
+  font-variation-settings: 'wdth' 100, 'wght' 720;
+  font-size: 1.125rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--ink-900);
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* Appareil : le pictogramme dans un carré creusé, le type et le modèle. */
+.device {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 100%;
+}
+.deviceIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--bone-000);
+  color: var(--ink-900);
+  box-shadow: 0 2px 0 var(--bone-500), inset 0 0 0 1px rgb(11 14 19 / 0.1);
+}
+.deviceText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.deviceKind {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.deviceModel {
+  font-variation-settings: 'wdth' 100, 'wght' 740;
+  font-size: 1.25rem;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.ticket {
+  display: flex;
+  justify-content: center;
+  max-width: 100%;
+}
+
+/* État « lien expiré » : l'étiquette vide, en pointillé, décrochée de
+   son anneau (elle a glissé : le lien ne mène plus nulle part). */
+.tagGhost {
+  min-height: 150px;
+  padding-top: 52px;
+  background: transparent;
+  border: 2px dashed var(--line-strong);
+  box-shadow: none;
+  color: var(--text-faint);
+  gap: 12px;
+  transform: translateY(10px) rotate(4deg);
+}
+.tagGhost .eyelet {
+  top: calc(var(--eyelet-y) - 11px);
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--line-strong);
+}
+/* Plus étroite, et un peu d'air dessous : penchée, elle ne doit ni
+   déborder de la colonne ni toucher le titre. */
+.hang[data-state='empty'] { --tag-w: min(88%, 300px); margin-bottom: 12px; }
+.hang[data-state='empty'] .ring { stroke: var(--ink-400); filter: none; }
+.ghostLine {
+  width: 72%;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--slat);
+  opacity: 0.55;
+}
+.ghostLineShort { width: 44%; }
+
+/* Une seule fois, en arrivant : l'étiquette se balance autour de son
+   œillet et s'arrête. Rotation et opacité seulement. */
+@media (prefers-reduced-motion: no-preference) {
+  .tag:not(.tagGhost) { animation: tag-swing 1500ms var(--ease-out) both; }
+  .tagGhost { animation: tag-slip 900ms var(--ease-out) both; }
+  .copy, .now, .facts, .dock { animation: claim-rise var(--dur-4) var(--ease-out) both; }
+  .copy { animation-delay: 120ms; }
+  .now { animation-delay: 200ms; }
+  .facts { animation-delay: 260ms; }
+  .dock { animation-delay: 320ms; }
+}
+
+@keyframes tag-swing {
+  0%   { opacity: 0; transform: translateY(-10px) rotate(11deg); }
+  18%  { opacity: 1; }
+  38%  { transform: rotate(-6deg); }
+  58%  { transform: rotate(2.6deg); }
+  78%  { transform: rotate(-3deg); }
+  100% { opacity: 1; transform: rotate(-2deg); }
+}
+@keyframes tag-slip {
+  from { opacity: 0; transform: translateY(0) rotate(0deg); }
+  to   { opacity: 1; transform: translateY(10px) rotate(4deg); }
+}
+@keyframes claim-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ---------------------------------------------------------------------
+   Texte
+   --------------------------------------------------------------------- */
+.copy {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.title {
+  font-variation-settings: 'wdth' 112, 'wght' 780;
+  font-size: clamp(1.75rem, 1.25rem + 2.4vw, 2.375rem);
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.lead {
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/* L'étape en cours, dans le Rang vertical du suivi. */
+.now {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.facts {
+  list-style: none;
+  margin: 0;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.facts > li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: start;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+.factIcon {
+  width: 20px;
+  height: 20px;
+  margin-top: 0.5px;
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.9;
+}
+.factFill { fill: var(--text); stroke: none; }
+
+/* ---------------------------------------------------------------------
+   Le geste : en bas, à portée de pouce
+   --------------------------------------------------------------------- */
+.dock {
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.claimForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.claimButton { gap: 10px; }
+/* Pendant l'envoi, le bouton reste la touche vermillon (le geste est pris
+   en compte), simplement inactive : pas l'aspect « indisponible ». */
+.claimButton:disabled {
+  --btn-bg: var(--accent);
+  --btn-fg: var(--accent-ink);
+  --btn-bd: transparent;
+  cursor: progress;
+}
+.claimButton[data-state='done'] {
+  --btn-bg: var(--jade-500);
+  --btn-fg: var(--ink-1000);
+  opacity: 1;
+}
+.claimCheck {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.claimNote {
+  min-height: 1.4em;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-faint);
+  text-align: center;
+}
+.claimError {
+  color: var(--danger-text);
+  font-variation-settings: 'wght' 600;
+}
+
+@media (min-width: 600px) {
+  .hang { --ring: 72px; }
+  .tag { padding-inline: 28px; }
+}

@@ -71,11 +71,22 @@ export async function broadcastQueueState(state: PublicQueueState): Promise<bool
   ]);
 }
 
-/** Événement ponctuel adressé à un ticket précis (fin de visite, retrait). */
+/**
+ * Événements ponctuels adressés à un ticket précis.
+ *
+ * `updated` (profils métier) : l'étape, le devis ou les informations du
+ * ticket ont changé SANS que sa position bouge. public_queue_state ne
+ * porte aucune donnée métier (et ne doit jamais en porter : il part à
+ * tous les appareils de la file) ; seul l'appareil qui reconnaît son
+ * public_id relit donc son propre ticket_state, sous sa session.
+ */
+export type TicketEvent = 'completed' | 'removed' | 'cancelled' | 'called' | 'updated';
+
+/** Événement ponctuel adressé à un ticket précis (fin de visite, retrait, mise à jour). */
 export async function broadcastTicketEvent(
   queueId: string,
   entryPublicId: string,
-  event: 'completed' | 'removed' | 'cancelled' | 'called',
+  event: TicketEvent,
   payload: Record<string, unknown> = {},
 ): Promise<boolean> {
   return postBroadcast([
