@@ -117,6 +117,13 @@ const nextConfig: NextConfig = {
           { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
         ],
       })),
+      /* Passes Wallet (.pkpass, redirection vers Google, service web Apple) :
+         jamais de Referer. Le cache reste fixé par chaque route (les images
+         des lattes sont immuables, un pass ne l'est pas). */
+      ...['/api/client/wallet/:path*', '/api/wallet/:path*'].map((source) => ({
+        source,
+        headers: [{ key: 'Referrer-Policy', value: 'no-referrer' }],
+      })),
     ];
   },
 };
