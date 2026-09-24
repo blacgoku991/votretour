@@ -294,12 +294,6 @@ export function mainPlan<T extends Pick<PublicPlanOffer, 'code'>>(plans: readonl
   return plans && plans.length > 0 ? plans[0]! : null;
 }
 
-/** « 149 € HT d’installation, une fois » ; `null` si l'offre n'a pas de frais. */
-export function setupFeeLabel(plan: Pick<PublicPlanOffer, 'setup_fee_cents' | 'currency'>): string | null {
-  if (!(plan.setup_fee_cents > 0)) return null;
-  return `${formatPlanPrice(plan.setup_fee_cents, plan.currency)}\u00a0HT d’installation, une fois`;
-}
-
 /** L'offre la moins chère au mois, pour un « dès … HT/mois » ; `null` sans offre. */
 export function cheapestPlan(plans: readonly PublicPlanOffer[]): PublicPlanOffer | null {
   let best: PublicPlanOffer | null = null;
@@ -351,14 +345,26 @@ function joinFr(words: readonly string[]): string {
   return `${words.slice(0, -1).join(', ')} et ${words[words.length - 1]}`;
 }
 
+/**
+ * « 2 ans », « 30 jours », « sans limite » : la durée de conservation de
+ * l'historique, seule. Une seule façon de la dire, partout : « 2 ans
+ * d’historique » dans l'offre, « Historique conservé 2 ans » dans la
+ * consommation de l'espace Abonnement (plus jamais « 730 jours » d'un
+ * côté et « 2 ans » de l'autre).
+ */
+export function historyDuration(days: number): string {
+  if (days < 0) return 'sans limite';
+  if (days >= 365 && days % 365 === 0) {
+    const years = days / 365;
+    return `${years}\u00a0an${years > 1 ? 's' : ''}`;
+  }
+  return `${days}\u00a0jour${days > 1 ? 's' : ''}`;
+}
+
 /** « 2 ans d’historique », « 30 jours d’historique », « Historique sans limite ». */
 export function historyLabel(days: number): string {
   if (days < 0) return 'Historique sans limite';
-  if (days >= 365 && days % 365 === 0) {
-    const years = days / 365;
-    return `${years} an${years > 1 ? 's' : ''} d’historique`;
-  }
-  return `${days} jour${days > 1 ? 's' : ''} d’historique`;
+  return `${historyDuration(days)} d’historique`;
 }
 
 /**

@@ -32,8 +32,7 @@
 .clip,
 .counter,
 .metiers,
-.drops,
-.offers {
+.drops {
   padding-block: clamp(72px, 9vw, 136px);
   border-top: 1px solid var(--line);
 }
@@ -125,44 +124,9 @@
   .dropsInner { row-gap: 24px; }
 }
 
-/* ------------------------------------------------------------ Offres */
-.plans { margin-top: 48px; }
-.plans > li { align-items: center; }
-.plans > li:last-child { border-bottom: 1px solid var(--line); }
-.plans > li:global(.is-self) { padding-block: 30px; }
-.planHead { min-width: 0; }
-.planName {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-}
-.planChip { flex: none; }
-.planPrice {
-  margin-top: 12px;
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.planAmount {
-  font-variation-settings: 'wdth' 112, 'wght' 800;
-  font-size: 2rem;
-  line-height: 1;
-  letter-spacing: -0.02em;
-}
-.planVolumes { color: var(--text-muted); }
-.planBtn { min-width: 132px; }
-@media (max-width: 719px) {
-  .planBtn { width: 100%; margin-top: 8px; }
-}
-.plansFoot {
-  margin-top: 28px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px 32px;
-}
+/* ------------------------------------------ Lien « Tous les métiers » */
+/* L'offre elle-même est le bandeau des pages métier (PlansStrip) : ses
+   styles vivent dans components/metiers/metiers.module.css. */
 .more {
   display: inline-flex;
   align-items: center;

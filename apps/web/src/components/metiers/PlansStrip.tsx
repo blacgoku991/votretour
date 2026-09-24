@@ -15,6 +15,9 @@ import styles from './metiers.module.css';
 /**
  * 8. L'OFFRE — lue en base (clé anon, cache « plans »), jamais inventée.
  *
+ * Partagé par les pages métier ET l'accueil : partout où le site montre
+ * un prix hors de /tarifs, c'est ce bandeau, avec ses frais d'installation.
+ *
  * Depuis 0043, Rangvia se vend en UNE offre : un abonnement mensuel et des
  * frais d'installation payés une fois. Le bandeau montre donc deux lignes
  * au tableau des départs — l'abonnement (en tête, l'encoche vermillon),
@@ -78,7 +81,8 @@ export function PlansStrip({
     <Section
       id="offres"
       anchorId={anchorId}
-      kicker={`Tarifs · ${monthlyPriceLabel(plan)}`}
+      // « Tarifs » seul : le prix est juste dessous, en grand.
+      kicker="Tarifs"
       title="Une offre, tout compris."
       lead={setup
         ? 'Une installation faite pour vous, une fois, puis un seul abonnement pour toute votre équipe.'
@@ -108,7 +112,7 @@ export function PlansStrip({
               </p>
             </div>
             <p className={`t-body t-muted ${styles.planVolumes}`}>
-              {SETUP_TITLE}. Réglée une seule fois, avec le premier mois.
+              {SETUP_TITLE}. Réglée une seule fois, à l’activation de l’abonnement.
             </p>
           </li>
         )}
@@ -120,7 +124,10 @@ export function PlansStrip({
           </Link>
           <MoreLink href="/tarifs">Le détail de l’offre</MoreLink>
         </div>
-        <p className="t-micro t-muted">Essai sans carte bancaire. Sans engagement, résiliable à tout moment.</p>
+        <p className="t-micro t-muted">
+          {/* L'essai n'est promis que s'il existe (trial_days > 0), comme sur /tarifs. */}
+          {plan.trial_days > 0 ? 'Essai sans carte bancaire. ' : ''}Sans engagement, résiliable à tout moment.
+        </p>
       </div>
     </Section>
   );

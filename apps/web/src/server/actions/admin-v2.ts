@@ -219,7 +219,10 @@ const createOrganizationV2Schema = z.object({
   activity: activitySchema.default('other'),
   locationName: z.string().trim().min(1).max(120),
   queueMode: z.enum(['shared','per_staff']).default('shared'),
-  planCode: z.enum(['starter','pro','business']).default('starter'),
+  // Code libre mais bien formé, comme dans admin.ts : depuis 0043, seule
+  // l'offre « rangvia » est en vente, et provision_organization se replie
+  // sur elle si le code demandé n'est plus actif.
+  planCode: z.string().trim().regex(/^[a-z][a-z0-9_]{1,30}$/).default('rangvia'),
   logoUrl: optionalUrl,
   locationLogoUrl: optionalUrl,
   coverUrl: optionalUrl,

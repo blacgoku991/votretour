@@ -28,6 +28,36 @@ const checkoutSchema = z.object({
 const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due', 'paused']);
 
 /**
+ * Stripe refuse un `trial_end` de session de paiement à moins de 48 h.
+ * Une heure de marge couvre le temps entre ce calcul et l'appel.
+ *
+ * (Ni cette constante ni les deux aides suivantes ne sont exportées : un
+ * module 'use server' n'exporte que des actions asynchrones. Les tests
+ * les exercent à travers startCheckout.)
+ */
+const MIN_TRIAL_END_MS = 49 * 3600 * 1000;
+
+/**
+ * FIN D'ESSAI transmise à Stripe, en secondes Unix ; `null` sans essai en
+ * cours. Activer pendant l'essai ne doit pas le raccourcir : Stripe
+ * encaisse alors l'installation (ligne ponctuelle) tout de suite, et le
+ * premier mois seulement à la fin de l'essai. À moins de 49 h de la fin,
+ * on reporte la fin à 49 h (le minimum que Stripe accepte) plutôt que de
+ * faire payer le mois plus tôt : un cadeau d'au plus deux jours, jamais
+ * une surprise. Essai déjà terminé (ou date illisible) : pas d'essai, le
+ * premier mois est dû à l'activation.
+ */
+function stripeTrialEnd(trialEndsAt: string | null | undefined, now: number = Date.now()): number | null {
+  if (!trialEndsAt) return null;
+  const end = Date.parse(trialEndsAt);
+  if (!Number.isFinite(end) || end <= now) return null;
+  if (end >= now + MIN_TRIAL_END_MS) return Math.ceil(end / 1000);
+  // Report au minimum, arrondi à l'heure pleine suivante : deux clics dans
+  // la même heure donnent la même fin, donc la même clé d'idempotence.
+  return Math.ceil((now + MIN_TRIAL_END_MS) / 3_600_000) * 3600;
+}
+
+/**
  * Ouvre la session de paiement Stripe de l'abonnement.
  *
  * FRAIS D'INSTALLATION (0043) : la session porte, en plus du prix
@@ -36,6 +66,17 @@ const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due', 'paused']);
  * l'organisation ne les a pas réglés (`subscriptions.setup_fee_paid_at`
  * vide, posé par le webhook quand Stripe confirme le paiement) : un
  * commerce qui résilie puis revient ne repaie pas son installation.
+ *
+ * ESSAI EN COURS : il n'est pas perdu. La session porte `trial_end` (voir
+ * stripeTrialEnd) : l'installation est réglée à l'activation, le premier
+ * mois à la fin de l'essai, comme l'annonce l'espace Abonnement.
+ *
+ * DOUBLE CLIC, DEUX ONGLETS : les appels Stripe portent une clé
+ * d'idempotence (organisation, jour, prix, fin d'essai). Deux clics le
+ * même jour, avec les mêmes prix, rendent LA MÊME session de paiement :
+ * jamais deux abonnements, ni deux fois l'installation. La vérification en
+ * base ci-dessous ne suffit pas seule, car le webhook peut arriver après
+ * le second clic.
  *
  * Deux refus plutôt qu'une facture fausse :
  *  - frais dus mais sans prix Stripe d'installation : on n'ouvre PAS le
@@ -65,7 +106,7 @@ export async function startCheckout(
         .eq('code', parsed.planCode).eq('is_active', true).maybeSingle(),
       db.from('organizations').select('name').eq('id', parsed.organizationId).maybeSingle(),
       db.from('subscriptions')
-        .select('status, stripe_customer_id, stripe_subscription_id, setup_fee_paid_at')
+        .select('status, trial_ends_at, stripe_customer_id, stripe_subscription_id, setup_fee_paid_at')
         .eq('organization_id', parsed.organizationId).maybeSingle(),
     ]);
 
@@ -106,11 +147,13 @@ export async function startCheckout(
     // à l'autre.
     let customerId = subscription?.stripe_customer_id ?? null;
     if (!customerId) {
+      // Clé d'idempotence : deux premiers clics simultanés reçoivent le
+      // même client Stripe, donc la même session plus bas.
       const customer = await client.customers.create({
         name: organization?.name ?? undefined,
         email: user.email ?? undefined,
         metadata: { organization_id: parsed.organizationId },
-      });
+      }, { idempotencyKey: `rangvia-customer-${parsed.organizationId}` });
       customerId = customer.id;
       await db.from('subscriptions')
         .update({ stripe_customer_id: customerId })
@@ -134,18 +177,30 @@ export async function startCheckout(
       setup_fee: setupFeeDue ? '1' : '0',
     };
 
+    // Essai en cours (jamais pour un abonnement déjà payé une fois : le
+    // statut local d'un ancien abonné n'est plus « trialing »).
+    const trialEnd = subscription?.status === 'trialing' ? stripeTrialEnd(subscription.trial_ends_at) : null;
+
     const session = await client.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
       line_items: lineItems,
       subscription_data: {
         metadata: { organization_id: parsed.organizationId, plan_code: plan.code },
+        ...(trialEnd ? { trial_end: trialEnd } : {}),
       },
       metadata,
       success_url: `${env.siteUrl}/app/${parsed.organizationId}/abonnement?paiement=ok`,
       cancel_url: `${env.siteUrl}/app/${parsed.organizationId}/abonnement?paiement=annule`,
       allow_promotion_codes: true,
       locale: 'fr',
+    }, {
+      idempotencyKey: checkoutIdempotencyKey({
+        organizationId: parsed.organizationId,
+        customerId,
+        priceIds: lineItems.map((item) => item.price),
+        trialEnd,
+      }),
     });
 
     if (!session.url) throw new AppError('internal', 'Stripe n’a pas renvoyé d’URL de paiement.', 502);
@@ -153,13 +208,39 @@ export async function startCheckout(
     await audit({
       organizationId: parsed.organizationId, actorUserId: user.id,
       action: 'billing.checkout_started', targetType: 'plan', targetId: plan.code,
-      metadata: { interval: parsed.interval, setupFee: setupFeeDue },
+      metadata: { interval: parsed.interval, setupFee: setupFeeDue, trialKept: trialEnd !== null },
     });
 
     return { ok: true, data: { url: session.url } };
   } catch (error) {
     return fail(error);
   }
+}
+
+/**
+ * Clé d'idempotence de la session de paiement : même organisation, même
+ * jour (UTC), mêmes prix, même client et même fin d'essai → même clé, donc
+ * la même session rendue par Stripe (qui garde une clé 24 h). Tout ce qui
+ * change la session (prix modifié par le super-admin, installation réglée
+ * entre-temps) change la clé : Stripe ne refuse jamais une clé réutilisée
+ * avec d'autres paramètres, puisque ce cas n'arrive pas.
+ */
+function checkoutIdempotencyKey(input: {
+  organizationId: string;
+  customerId: string;
+  priceIds: readonly string[];
+  trialEnd: number | null;
+  now?: Date;
+}): string {
+  const day = (input.now ?? new Date()).toISOString().slice(0, 10);
+  return [
+    'rangvia-checkout',
+    input.organizationId,
+    day,
+    input.customerId,
+    input.priceIds.join('+'),
+    input.trialEnd ?? 'sans-essai',
+  ].join(':').slice(0, 255);
 }
 
 /** Ouvre le portail client Stripe (moyens de paiement, factures, résiliation). */

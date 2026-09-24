@@ -75,7 +75,8 @@ function Tiles({ digits, first }: { digits: string; first: boolean }) {
 /**
  * Le prix en volets, comme sur un tableau des départs : les euros en
  * grandes tuiles (un groupe par tranche de milliers), les centimes en
- * petites tuiles hissées en exposant, l'unité dessous. Un seul texte lu.
+ * petites tuiles hissées en exposant suivies du symbole, l'unité dessous.
+ * Un seul texte lu.
  */
 function PriceTiles({ cents, currency, spoken, unit }: {
   cents: number; currency: string; spoken: string; unit: string;
@@ -88,16 +89,19 @@ function PriceTiles({ cents, currency, spoken, unit }: {
         {groups.map((group, i) => <Tiles key={`g${groups.length - 1 - i}`} digits={group} first={i === 0} />)}
       </span>
       <span className={styles.priceSide} aria-hidden="true">
-        {decimals && (
-          <span className={styles.priceCents}>
-            <span className={styles.priceComma}>,</span>
-            <FlapText static fixed tile text={decimals} label="" size="1em" />
-          </span>
-        )}
-        <span className={styles.priceUnit}>
+        {/* En haut, le montant se termine : « ,90 € » (ou « € » seul pour
+            un montant rond), le symbole collé aux centimes. En bas, l'unité
+            « /mois HT », qui se rapporte au prix entier. */}
+        <span className={styles.priceTop}>
+          {decimals && (
+            <span className={styles.priceCents}>
+              <span className={styles.priceComma}>,</span>
+              <FlapText static fixed tile text={decimals} label="" size="1em" />
+            </span>
+          )}
           <span className={styles.priceSymbol}>{symbol}</span>
-          <span className={styles.pricePer}>{unit}</span>
         </span>
+        <span className={styles.pricePer}>{unit}</span>
       </span>
     </p>
   );
@@ -157,7 +161,7 @@ export function PricingBoard({ plan, appClip }: { plan: PublicPlanOffer | null; 
             </span>
             <span className={styles.setupText} aria-hidden="true">
               <span className={styles.setupAmount}>{setup.symbol}&nbsp;HT d’installation</span>
-              <span className={styles.setupOnce}>une fois, avec le premier mois</span>
+              <span className={styles.setupOnce}>une fois, à l’activation</span>
             </span>
           </p>
         )}

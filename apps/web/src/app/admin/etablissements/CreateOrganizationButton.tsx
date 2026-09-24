@@ -12,7 +12,6 @@ export function CreateOrganizationButton() {
   const [locationName, setLocationName] = useState('');
   const [activity, setActivity] = useState('barber');
   const [queueMode, setQueueMode] = useState<'shared' | 'per_staff'>('shared');
-  const [planCode, setPlanCode] = useState<'starter' | 'pro' | 'business'>('starter');
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -87,19 +86,6 @@ export function CreateOrganizationButton() {
               <option value="per_staff">Par professionnel</option>
             </select>
           </label>
-
-          <label className="field" style={{ flex: '1 1 160px' }}>
-            <span>Offre</span>
-            <select
-              className="select"
-              value={planCode}
-              onChange={(e) => setPlanCode(e.target.value as 'starter' | 'pro' | 'business')}
-            >
-              <option value="starter">Starter</option>
-              <option value="pro">Pro</option>
-              <option value="business">Business</option>
-            </select>
-          </label>
         </div>
 
         {error && <p className="error-text">{error}</p>}
@@ -116,7 +102,8 @@ export function CreateOrganizationButton() {
                 locationName: locationName.trim(),
                 activity: activity as never,
                 queueMode,
-                planCode,
+                // Une seule offre depuis 0043 : aucun choix à proposer ici.
+                planCode: 'rangvia',
               });
 
               if (!result.ok) {

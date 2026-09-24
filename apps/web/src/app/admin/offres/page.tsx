@@ -5,6 +5,7 @@ import { stripeConfigured } from '@/server/stripe';
 import { Section } from '@/components/Page';
 import { formatNumber, formatPrice, formatDate } from '@/lib/format';
 import { PlanEditor, type EditablePlan } from './PlanEditor';
+import { SetupTodo, type SetupTodoRow } from './SetupTodo';
 import { AdminHero, AdminStat, AdminStats } from '../AdminKit';
 import { ScrollTable } from '../ScrollTable';
 import { SUBSCRIPTION_STATUS_LABEL, labelOf } from '../labels';
@@ -21,12 +22,29 @@ export default async function AdminPlansPage() {
   await requirePlatformAdmin();
   const db = supabaseAdmin();
 
-  const [{ data: plans }, { data: subscriptions }] = await Promise.all([
+  const [{ data: plans }, { data: subscriptions }, { data: todo }] = await Promise.all([
     db.from('plans').select('*').order('sort_order'),
     db.from('subscriptions')
-      .select('organization_id, status, billing_interval, current_period_end, trial_ends_at, setup_fee_paid_at, organizations(name), plans(name, code)')
+      .select('organization_id, status, billing_interval, current_period_end, trial_ends_at, setup_fee_paid_at, setup_done_at, organizations(name), plans(name, code)')
       .order('created_at', { ascending: false }).limit(200),
+    // Installations à faire : frais payés, installation pas encore faite.
+    // Lues à part, sans la limite du tableau : aucune ne doit passer à la
+    // trappe. Le plus ancien paiement d'abord.
+    db.from('subscriptions')
+      .select('organization_id, setup_fee_paid_at, organizations(name)')
+      .not('setup_fee_paid_at', 'is', null)
+      .is('setup_done_at', null)
+      .order('setup_fee_paid_at', { ascending: true }),
   ]);
+
+  const todoRows: SetupTodoRow[] = (todo ?? []).map((row) => {
+    const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations;
+    return {
+      organizationId: row.organization_id,
+      name: org?.name ?? 'Organisation sans nom',
+      paidOn: formatDate(row.setup_fee_paid_at),
+    };
+  });
 
   const rows = subscriptions ?? [];
   const byStatus = rows.reduce<Record<string, number>>((acc, s) => {
@@ -62,13 +80,13 @@ export default async function AdminPlansPage() {
       <AdminHero
         kicker="FACTURATION"
         title="Offres & abonnements"
-        description="Le prix, l’installation et les quotas de l’offre se modifient ici : aucun redéploiement n’est nécessaire."
+        description="Le prix, l’installation et les quotas de l’offre se modifient ici : aucun redéploiement n’est nécessaire."
       />
 
       {!stripeConfigured() && (
         <div className="banner banner--warn">
           <span>
-            Stripe n’est pas configuré : les identifiants de tarif ci-dessous ne serviront
+            Stripe n’est pas configuré : les identifiants de tarif ci-dessous ne serviront
             qu’une fois STRIPE_SECRET_KEY renseignée.
           </span>
         </div>
@@ -95,14 +113,22 @@ export default async function AdminPlansPage() {
       </AdminStats>
 
       <Section
+        id="installations"
+        title={`Installations à faire${todoRows.length > 0 ? ` · ${todoRows.length}` : ''}`}
+        description="Frais d’installation payés, installation pas encore faite par l’équipe. Marquez-la faite une fois le métier activé et les réglages posés avec le commerçant."
+      >
+        <SetupTodo rows={todoRows} />
+      </Section>
+
+      <Section
         title="L’offre"
-        description="Une seule offre en vente : l’abonnement mensuel et l’installation, payée une fois au premier abonnement. Prix hors taxes."
+        description="Une seule offre en vente : l’abonnement mensuel et l’installation, payée une fois au premier abonnement. Prix hors taxes."
       >
         {onSale.map((plan) => (
           <PlanEditor key={plan.id} plan={plan} subscribers={subscribersOf(plan.code)} />
         ))}
         {onSale.length === 0 && (
-          <p className={`t-small t-muted ${plansStyles.none}`}>Aucune offre en vente : le site n’affiche aucun prix.</p>
+          <p className={`t-small t-muted ${plansStyles.none}`}>Aucune offre en vente : le site n’affiche aucun prix.</p>
         )}
         {retired.length > 0 && (
           <details className={plansStyles.retiredList}>
@@ -154,9 +180,11 @@ export default async function AdminPlansPage() {
                       {formatDate(subscription.current_period_end ?? subscription.trial_ends_at)}
                     </td>
                     <td>
-                      {subscription.setup_fee_paid_at
-                        ? <>Réglée le {formatDate(subscription.setup_fee_paid_at)}</>
-                        : <span className="t-muted">À régler</span>}
+                      {subscription.setup_done_at
+                        ? <>Faite le {formatDate(subscription.setup_done_at)}</>
+                        : subscription.setup_fee_paid_at
+                          ? <>Réglée le {formatDate(subscription.setup_fee_paid_at)} · <strong>à faire</strong></>
+                          : <span className="t-muted">À régler</span>}
                     </td>
                   </tr>
                 );

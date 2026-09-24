@@ -106,7 +106,8 @@ export async function completeOnboarding(
       p_activity: choice.provisionActivity,
       p_location_name: parsed.locationName,
       p_queue_mode: parsed.queueMode,
-      p_plan_code: 'pro',
+      // L'offre unique (0043) : un essai de l'offre Rangvia.
+      p_plan_code: 'rangvia',
     });
     if (error) throw error;
 

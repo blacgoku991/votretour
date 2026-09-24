@@ -73,11 +73,30 @@ const SECTIONS: LegalSection[] = [
     id: 'abonnement',
     title: 'Abonnement',
     body: (
-      <p>
-        L’abonnement est mensuel ou annuel, résiliable à tout moment depuis votre
-        espace. La résiliation prend effet à la fin de la période en cours. Vos données
-        restent accessibles jusqu’à cette date.
-      </p>
+      <>
+        {/* Offre unique (0043) : un abonnement mensuel et des frais
+            d'installation payés une fois. Texte à faire relire par le
+            propriétaire avant la mise en service. */}
+        <p>
+          L’abonnement est mensuel, sans engagement, résiliable à tout moment depuis
+          votre espace. La résiliation prend effet à la fin de la période en cours. Vos
+          données restent accessibles jusqu’à cette date.
+        </p>
+        <p>
+          Des frais d’installation s’y ajoutent, facturés une seule fois, à l’activation
+          du premier abonnement&#8239;: ils rémunèrent l’installation et la configuration de
+          votre métier par l’équipe Rangvia. Ils ne sont pas remboursables et ne sont pas
+          facturés à nouveau si le même commerce se réabonne.
+        </p>
+        <p>
+          L’essai gratuit ne demande aucun moyen de paiement. Si vous activez votre
+          abonnement pendant l’essai, les frais d’installation sont réglés à l’activation
+          et le premier mois n’est prélevé qu’à la fin de l’essai.
+        </p>
+        <p>
+          Les prix sont indiqués hors taxes, TVA en sus.
+        </p>
+      </>
     ),
   },
   {

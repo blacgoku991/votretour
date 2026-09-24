@@ -185,6 +185,51 @@ export async function setQuotaOverride(
   }
 }
 
+const setupDoneSchema = z.object({
+  organizationId: z.string().uuid(),
+  done: z.boolean(),
+});
+
+/**
+ * INSTALLATION FAITE (0043, `subscriptions.setup_done_at`).
+ *
+ * Les frais d'installation payés (webhook Stripe), l'équipe Rangvia active
+ * le métier et pose les réglages avec le commerçant. Le super-admin marque
+ * ensuite l'installation faite : elle quitte « Installations à faire » de
+ * /admin/offres. Réversible (`done: false`) en cas de clic de travers. On
+ * ne marque faite qu'une installation PAYÉE : le filtre sur
+ * `setup_fee_paid_at` l'impose côté base, pas seulement dans l'écran.
+ */
+export async function markSetupDone(
+  input: z.input<typeof setupDoneSchema>,
+): Promise<Result<{ organizationId: string }>> {
+  try {
+    const parsed = setupDoneSchema.parse(input);
+    const admin = await assertPlatformAdmin();
+
+    const { data, error } = await supabaseAdmin()
+      .from('subscriptions')
+      .update({ setup_done_at: parsed.done ? new Date().toISOString() : null })
+      .eq('organization_id', parsed.organizationId)
+      .not('setup_fee_paid_at', 'is', null)
+      .select('organization_id');
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      throw new AppError('not_found', 'Aucune installation payée pour cette organisation.', 404);
+    }
+
+    await audit({
+      organizationId: parsed.organizationId, actor: 'platform_admin', actorUserId: admin.id,
+      action: parsed.done ? 'billing.setup_done' : 'billing.setup_reopened',
+      targetType: 'organization', targetId: parsed.organizationId,
+    });
+    revalidatePath('/admin/offres');
+    return { ok: true, data: { organizationId: parsed.organizationId } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
 export async function resolveSystemError(errorId: number): Promise<Result<{ id: number }>> {
   try {
     const admin = await assertPlatformAdmin();

@@ -1338,13 +1338,26 @@ le webhook horodate son paiement (colonne `subscriptions.setup_fee_paid_at`,
 visible dans la colonne **Installation** du tableau des abonnements), et un
 commerce qui résilie puis revient ne la repaie pas.
 
+**Activer pendant l'essai ne le raccourcit pas** : la session de paiement
+transmet la fin de l'essai à Stripe. L'installation est prélevée à
+l'activation, le premier mois à la fin de l'essai (au plus tôt 48 h après
+l'activation, le minimum que Stripe accepte). La page **Abonnement** le dit
+ligne à ligne.
+
+**Installations à faire** : chaque installation payée apparaît en tête de
+**Offres & abonnements** (et une entrée `billing.setup_fee_paid` s'écrit
+dans le journal d'audit). Une fois le métier activé et les réglages posés
+avec le commerçant, cliquez **Marquer faite** : la ligne quitte la liste.
+
 ### 16.5 Tester
 
 En mode test, utilisez la carte `4242 4242 4242 4242`, une date future et
 n'importe quel CVC. Depuis **Abonnement** → **Activer mon abonnement**, la
 page de paiement Stripe doit montrer **deux lignes** (59,90 € par mois et
-149 € une fois). Après paiement, **Abonnement** affiche *Actif* et
-*Installation réglée le …*. Résiliez puis réactivez : la seconde page de
+149 € une fois ; pendant l'essai, Stripe annonce aussi la date du premier
+mois). Après paiement, **Abonnement** affiche l'essai ou *Actif*, et
+*Installation réglée le …* ; l'installation apparaît dans **Installations à
+faire**. Résiliez puis réactivez : la seconde page de
 paiement ne montre plus que l'abonnement.
 
 ---

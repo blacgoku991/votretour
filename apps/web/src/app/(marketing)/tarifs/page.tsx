@@ -28,7 +28,7 @@ export const dynamic = 'force-dynamic';
 const FAQ = [
   {
     q: 'À quoi servent les frais d’installation ?',
-    a: 'À ce que votre file soit prête le premier jour. L’équipe Rangvia active votre métier, règle avec vous horaires, équipe et prestations, et prépare vos QR codes. Ils sont facturés une seule fois, avec votre premier mois d’abonnement.',
+    a: 'À installer Rangvia pour votre métier. Quand vous activez l’abonnement, l’équipe Rangvia active votre métier, règle avec vous horaires, équipe et prestations, et prépare vos QR codes et vos affiches. Ils sont facturés une seule fois, à l’activation. Si vous activez pendant l’essai, celui-ci continue : le premier mois n’est prélevé qu’à sa fin.',
   },
   {
     q: 'Les paie-t-on à nouveau si l’on revient ?',
@@ -70,7 +70,7 @@ export default async function PricingPage() {
     <main id="contenu" className={styles.pricing}>
       <header className={`shell ${styles.intro} ${own.intro}`}>
         <p className="t-label">Tarifs</p>
-        <h1 className={`t-hero ${styles.introTitle}`}>Une offre. Tout compris.</h1>
+        <h1 className={`t-hero ${styles.introTitle}`}>Une offre, tout compris.</h1>
         <p className={`t-lead ${styles.introLead}`}>
           L’équipe Rangvia installe votre file et la règle pour votre métier. Ensuite, un seul
           abonnement&nbsp;: {APP_CLIP ? 'l’App Clip iPhone, ' : ''}le QR code, l’URL NFC, les notifications
@@ -111,12 +111,12 @@ export default async function PricingPage() {
           <div className={styles.finalText}>
             <h2 id="final" className="t-hero">Posez une plaque. C’est tout.</h2>
             <p className="t-lead">
-              Créez votre file en quelques minutes : votre QR code et votre URL NFC
-              sont générés immédiatement.
+              Essayez votre file dès aujourd’hui, sans carte bancaire. Quand vous activez
+              l’abonnement, l’équipe Rangvia l’installe pour votre métier.
             </p>
             <div className={styles.finalActions}>
               <Link href="/inscription" className="btn btn--signal btn--lg">Ouvrir ma file</Link>
-              <p className="t-small t-muted">Essai gratuit, sans carte bancaire.</p>
+              <p className="t-small t-muted">Sans engagement, résiliable à tout moment.</p>
             </div>
           </div>
           <div className={styles.finalObject} aria-hidden="true">

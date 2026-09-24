@@ -9,14 +9,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  *    n'a pas de prix Stripe d'installation : jamais un abonnement encaissé
  *    sans ses frais par erreur ;
  *  - il refuse un second abonnement par-dessus un abonnement vivant ;
+ *  - pendant l'essai, il transmet sa fin à Stripe : l'installation est
+ *    réglée tout de suite, le premier mois à la fin de l'essai, jamais
+ *    plus tôt ;
+ *  - double clic, deux onglets : la même clé d'idempotence, donc la même
+ *    session Stripe ;
  *  - le webhook horodate le paiement des frais, une fois, et seulement
- *    quand Stripe dit la session payée.
+ *    quand Stripe dit la session payée, et prévient l'équipe (audit) ;
+ *  - le super-admin marque l'installation faite (payée seulement).
  *
  * Supabase et Stripe sont simulés au niveau de leurs clients : on vérifie
  * ce qui part vers Stripe et ce qui s'écrit en base.
  */
 
 type Row = Record<string, unknown> | null;
+
+const ORG_ID = '5d0c6f0e-0000-4000-8000-00000000000a';
 interface Op { table: string; kind: 'update' | 'insert'; values: unknown; filters: Array<[string, string, unknown]> }
 
 const state = vi.hoisted(() => ({
@@ -24,6 +32,8 @@ const state = vi.hoisted(() => ({
   subscription: null as Record<string, unknown> | null,
   ops: [] as Array<{ table: string; kind: 'update' | 'insert'; values: unknown; filters: Array<[string, string, unknown]> }>,
   sessions: [] as Array<Record<string, unknown>>,
+  sessionOptions: [] as Array<Record<string, unknown> | undefined>,
+  customerOptions: [] as Array<Record<string, unknown> | undefined>,
   audits: [] as Array<Record<string, unknown>>,
   event: null as unknown,
   retrievedSubscription: null as unknown,
@@ -34,8 +44,19 @@ const state = vi.hoisted(() => ({
 function query(table: string) {
   const filters: Array<[string, string, unknown]> = [];
   let pending: Op | null = null;
-  const result = (): { data: Row; error: null } => {
-    if (pending) return { data: null, error: null };
+  let returning = false;
+  const result = (): { data: Row | Row[]; error: null } => {
+    if (pending) {
+      if (!returning) return { data: null, error: null };
+      // `update … select()` : les lignes réellement modifiées. Le filtre
+      // `is(col, null)` / `not(col, is, null)` est appliqué à la ligne simulée.
+      const row = state.subscription ?? {};
+      const ok = filters.every(([op, col, value]) =>
+        op === 'is' ? row[col] === value || (value === null && row[col] == null)
+        : op === 'not' ? row[col] != null
+        : true);
+      return { data: ok ? [{ organization_id: ORG_ID }] : [], error: null };
+    }
     if (table === 'plans') {
       const code = filters.find(([, col]) => col === 'code')?.[2];
       const plan = state.plan && (code === undefined || state.plan.code === code) ? state.plan : null;
@@ -46,7 +67,8 @@ function query(table: string) {
     return { data: null, error: null };
   };
   const builder = {
-    select: () => builder,
+    select: () => { if (pending) returning = true; return builder; },
+    not: (col: string) => { filters.push(['not', col, null]); return builder; },
     order: () => builder,
     limit: () => builder,
     or: (expr: string) => { filters.push(['or', expr, null]); return builder; },
@@ -62,7 +84,7 @@ function query(table: string) {
       return { error: null };
     },
     maybeSingle: async () => result(),
-    then: (resolve: (value: { data: Row; error: null }) => unknown) => resolve(result()),
+    then: (resolve: (value: { data: Row | Row[]; error: null }) => unknown) => resolve(result()),
   };
   return builder;
 }
@@ -93,11 +115,17 @@ vi.mock('@/lib/env', async (importOriginal) => {
 vi.mock('@/server/stripe', () => ({
   stripeConfigured: () => true,
   stripe: () => ({
-    customers: { create: async () => ({ id: 'cus_new' }) },
+    customers: {
+      create: async (_params: Record<string, unknown>, options?: Record<string, unknown>) => {
+        state.customerOptions.push(options);
+        return { id: 'cus_new' };
+      },
+    },
     checkout: {
       sessions: {
-        create: async (params: Record<string, unknown>) => {
+        create: async (params: Record<string, unknown>, options?: Record<string, unknown>) => {
           state.sessions.push(params);
+          state.sessionOptions.push(options);
           return { url: 'https://checkout.stripe.test/s/1' };
         },
       },
@@ -109,9 +137,9 @@ vi.mock('@/server/stripe', () => ({
 
 const { startCheckout } = await import('@/server/actions/billing');
 const { POST } = await import('@/app/api/stripe/webhook/route');
-const { updatePlan } = await import('@/server/actions/admin');
+const { updatePlan, markSetupDone } = await import('@/server/actions/admin');
 
-const ORG = '5d0c6f0e-0000-4000-8000-00000000000a';
+const ORG = ORG_ID;
 const OFFER = {
   code: 'rangvia',
   name: 'Rangvia',
@@ -128,10 +156,13 @@ const TRIAL = {
 };
 
 beforeEach(() => {
+  vi.useRealTimers();
   state.plan = { ...OFFER };
   state.subscription = { ...TRIAL };
   state.ops = [];
   state.sessions = [];
+  state.sessionOptions = [];
+  state.customerOptions = [];
   state.audits = [];
   state.event = null;
   state.retrievedSubscription = null;
@@ -205,6 +236,68 @@ describe('startCheckout : frais d’installation au premier abonnement seulement
   });
 });
 
+describe('startCheckout : activer pendant l’essai ne le raccourcit pas', () => {
+  const NOW = Date.parse('2026-10-01T10:00:00Z');
+  const trialing = (endsAt: string | null) => ({ ...TRIAL, trial_ends_at: endsAt });
+  const subscriptionData = () => state.sessions[0]!.subscription_data as Record<string, unknown>;
+
+  it('essai de 12 jours encore : fin d’essai transmise, installation tout de suite', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
+    state.subscription = trialing('2026-10-13T10:00:00Z');
+    const result = await startCheckout({ organizationId: ORG, planCode: 'rangvia' });
+    expect(result.ok).toBe(true);
+    expect(subscriptionData().trial_end).toBe(Date.parse('2026-10-13T10:00:00Z') / 1000);
+    // La ligne ponctuelle reste : Stripe l'encaisse dès l'activation.
+    expect(state.sessions[0]!.line_items).toContainEqual({ price: 'price_installation', quantity: 1 });
+    expect(state.audits[0]?.metadata).toMatchObject({ setupFee: true, trialKept: true });
+  });
+
+  it('moins de 49 h d’essai : fin reportée au minimum Stripe, jamais un mois payé plus tôt', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
+    state.subscription = trialing('2026-10-02T10:00:00Z'); // 24 h
+    await startCheckout({ organizationId: ORG, planCode: 'rangvia' });
+    const end = subscriptionData().trial_end as number;
+    expect(end * 1000).toBeGreaterThanOrEqual(NOW + 48 * 3600 * 1000);
+    expect(end * 1000).toBeLessThanOrEqual(NOW + 50 * 3600 * 1000);
+    expect(end % 3600).toBe(0);
+  });
+
+  it('essai terminé, ou pas d’essai : pas de trial_end, le premier mois est dû', async () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
+    state.subscription = trialing('2026-09-20T10:00:00Z');
+    await startCheckout({ organizationId: ORG, planCode: 'rangvia' });
+    expect(subscriptionData()).not.toHaveProperty('trial_end');
+
+    state.sessions = [];
+    state.subscription = { ...TRIAL, status: 'canceled', trial_ends_at: '2026-12-01T00:00:00Z', stripe_subscription_id: 'sub_ancien' };
+    await startCheckout({ organizationId: ORG, planCode: 'rangvia' });
+    expect(subscriptionData()).not.toHaveProperty('trial_end');
+  });
+});
+
+describe('startCheckout : deux clics, une seule session', () => {
+  it('même organisation, même jour, mêmes prix : la même clé d’idempotence', async () => {
+    await startCheckout({ organizationId: ORG, planCode: 'rangvia' });
+    await startCheckout({ organizationId: ORG, planCode: 'rangvia' });
+    const [first, second] = state.sessionOptions;
+    expect(first?.idempotencyKey).toEqual(expect.stringContaining(ORG));
+    expect(second?.idempotencyKey).toBe(first?.idempotencyKey);
+  });
+
+  it('une session différente (installation réglée entre-temps) change la clé', async () => {
+    await startCheckout({ organizationId: ORG, planCode: 'rangvia' });
+    state.subscription = { ...TRIAL, status: 'canceled', stripe_subscription_id: 'sub_ancien', setup_fee_paid_at: '2026-10-01T09:00:00Z' };
+    await startCheckout({ organizationId: ORG, planCode: 'rangvia' });
+    expect(state.sessionOptions[1]?.idempotencyKey).not.toBe(state.sessionOptions[0]?.idempotencyKey);
+  });
+
+  it('premier client Stripe : créé avec une clé d’idempotence par organisation', async () => {
+    state.subscription = { ...TRIAL, stripe_customer_id: null };
+    await startCheckout({ organizationId: ORG, planCode: 'rangvia' });
+    expect(state.customerOptions[0]?.idempotencyKey).toBe(`rangvia-customer-${ORG}`);
+  });
+});
+
 describe('webhook : l’installation réglée est horodatée une fois', () => {
   const request = () => new Request('https://rangvia.test/api/stripe/webhook', {
     method: 'POST',
@@ -230,6 +323,20 @@ describe('webhook : l’installation réglée est horodatée une fois', () => {
     // Rejeu, ou deux événements pour la même session : la première heure reste.
     expect(stamps[0]!.filters).toContainEqual(['is', 'setup_fee_paid_at', null]);
     expect(Date.parse(String((stamps[0]!.values as { setup_fee_paid_at: string }).setup_fee_paid_at))).not.toBeNaN();
+  });
+
+  it('l’équipe est prévenue une fois : audit billing.setup_fee_paid, pas au rejeu', async () => {
+    state.event = completed({ id: 'cs_1', payment_status: 'paid' });
+    await POST(request());
+    const paid = () => state.audits.filter((a) => a.action === 'billing.setup_fee_paid');
+    expect(paid()).toHaveLength(1);
+    expect(paid()[0]).toMatchObject({ organizationId: ORG, actor: 'system', metadata: { checkoutSession: 'cs_1' } });
+
+    // Déjà horodatée : l'update ne touche aucune ligne, aucun second audit.
+    state.subscription = { ...TRIAL, setup_fee_paid_at: '2026-10-01T09:00:00Z' };
+    state.event = completed({ id: 'cs_1', payment_status: 'paid' }, 'checkout.session.async_payment_succeeded');
+    await POST(request());
+    expect(paid()).toHaveLength(1);
   });
 
   it('code promotionnel couvrant tout : installation réglée à 0 €', async () => {
@@ -300,5 +407,34 @@ describe('super-admin : les frais d’installation se règlent dans /admin/offre
     const result = await updatePlan({ planId: PLAN_ID, stripePriceIdSetup: null });
     expect(result.ok).toBe(true);
     expect(state.ops.find((op) => op.table === 'plans')?.values).toEqual({ stripe_price_id_setup: null });
+  });
+});
+
+describe('super-admin : l’installation faite sort de « Installations à faire »', () => {
+  it('installation payée : marquée faite, auditée', async () => {
+    state.subscription = { ...TRIAL, setup_fee_paid_at: '2026-10-01T09:00:00Z' };
+    const result = await markSetupDone({ organizationId: ORG, done: true });
+    expect(result.ok).toBe(true);
+    const update = state.ops.find((op) => op.table === 'subscriptions' && op.kind === 'update');
+    expect(Date.parse(String((update?.values as { setup_done_at: string }).setup_done_at))).not.toBeNaN();
+    expect(update?.filters).toContainEqual(['eq', 'organization_id', ORG]);
+    expect(update?.filters).toContainEqual(['not', 'setup_fee_paid_at', null]);
+    expect(state.audits.at(-1)).toMatchObject({ action: 'billing.setup_done', actor: 'platform_admin' });
+  });
+
+  it('installation pas encore payée : refus, rien d’audité', async () => {
+    state.subscription = { ...TRIAL, setup_fee_paid_at: null };
+    const result = await markSetupDone({ organizationId: ORG, done: true });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('not_found');
+    expect(state.audits).toHaveLength(0);
+  });
+
+  it('réversible, en cas de clic de travers', async () => {
+    state.subscription = { ...TRIAL, setup_fee_paid_at: '2026-10-01T09:00:00Z' };
+    await markSetupDone({ organizationId: ORG, done: false });
+    const update = state.ops.find((op) => op.table === 'subscriptions' && op.kind === 'update');
+    expect(update?.values).toEqual({ setup_done_at: null });
+    expect(state.audits.at(-1)).toMatchObject({ action: 'billing.setup_reopened' });
   });
 });

@@ -30,6 +30,15 @@
 --      il n'a jamais eu de frais à payer, et un changement d'offre ne doit
 --      pas les lui réclamer après coup.
 --
+--   2 bis. L'INSTALLATION FAITE. `subscriptions.setup_done_at` : l'heure
+--      à laquelle l'équipe Rangvia a terminé l'installation (métier
+--      activé, réglages posés avec le commerçant). L'installation est un
+--      service humain : une fois les frais payés, quelqu'un doit s'en
+--      charger. Le super-admin voit dans /admin/offres les « installations
+--      à faire » (frais payés, installation pas encore faite) et pose
+--      cette heure quand c'est fait ; elle ne s'écrit que côté serveur,
+--      comme `setup_fee_paid_at`.
+--
 --   3. L'OFFRE UNIQUE. Code `rangvia`, publique et active, 5 990 centimes
 --      par mois, 14 900 de frais d'installation, SANS prix annuel (0 : la
 --      bascule mensuel/annuel disparaît du site). Ses quotas et ses
@@ -86,12 +95,26 @@ alter table public.subscriptions
 comment on column public.subscriptions.setup_fee_paid_at is
   'Heure à laquelle Stripe a confirmé le paiement des frais d''installation (webhook, une seule fois). null = frais encore dus au premier abonnement. Abonnements payants antérieurs à 0043 : réputés réglés.';
 
+alter table public.subscriptions
+  add column if not exists setup_done_at timestamptz;
+
+comment on column public.subscriptions.setup_done_at is
+  'Heure à laquelle l''équipe Rangvia a terminé l''installation (posée par le super-admin, /admin/offres). Frais payés et colonne vide = installation à faire.';
+
 -- Les abonnements déjà payés avant l'offre unique n'ont jamais eu de frais
--- d'installation : réputés réglés, à la date de début de l'abonnement.
+-- d'installation : réputés réglés, à la date de début de l'abonnement, et
+-- sans installation à faire (ils fonctionnent déjà).
 update public.subscriptions
-   set setup_fee_paid_at = coalesce(current_period_start, created_at)
+   set setup_fee_paid_at = coalesce(current_period_start, created_at),
+       setup_done_at     = coalesce(setup_done_at, current_period_start, created_at)
  where stripe_subscription_id is not null
    and setup_fee_paid_at is null;
+
+-- La liste « Installations à faire » du super-admin : frais payés,
+-- installation pas encore faite. Index partiel, minuscule par nature.
+create index if not exists subscriptions_setup_todo_idx
+  on public.subscriptions (setup_fee_paid_at)
+  where setup_fee_paid_at is not null and setup_done_at is null;
 
 -- ---------------------------------------------------------------------
 -- 3. L'offre unique, avec les quotas de l'ancienne offre la plus complète

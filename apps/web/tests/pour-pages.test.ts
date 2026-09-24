@@ -311,7 +311,8 @@ describe('offres', () => {
     const body = text(html);
     expect(body).toContain('Gratuit');
     expect(body).not.toMatch(/dès\s+Gratuit|Gratuit\s*\/\s*mois|Gratuit\s+HT|0\s?€/);
-    expect(body).toMatch(/Tarifs\s·\sGratuit/);
+    // « Tarifs » seul en étiquette (lot T1) : le prix est dit juste dessous.
+    expect(body).not.toMatch(/Tarifs\s·/);
   });
 
   it('« dès … HT/mois » sinon', () => {

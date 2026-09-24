@@ -2,7 +2,7 @@ import type Stripe from 'stripe';
 import { stripe, stripeConfigured } from '@/server/stripe';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { env } from '@/lib/env';
-import { reportError } from '@/server/audit';
+import { audit, reportError } from '@/server/audit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -149,19 +149,38 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
  * rejeu d'un événement (ou l'arrivée des deux événements) sans effet, et
  * garde la première heure. C'est cette colonne qui empêche de facturer
  * l'installation une seconde fois.
+ *
+ * L'installation est un service HUMAIN : le paiement doit prévenir
+ * l'équipe. Une entrée d'audit `billing.setup_fee_paid` (une seule, quand
+ * la ligne vient vraiment d'être horodatée) le trace, et la commande
+ * apparaît dans « Installations à faire » de /admin/offres jusqu'à ce que
+ * le super-admin la marque faite (`setup_done_at`).
  */
 async function markSetupFeePaid(organizationId: string, session: Stripe.Checkout.Session): Promise<void> {
   if (session.mode !== 'subscription' || session.metadata?.setup_fee !== '1') return;
   if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') return;
 
-  const { error } = await supabaseAdmin()
+  const { data, error } = await supabaseAdmin()
     .from('subscriptions')
     .update({ setup_fee_paid_at: new Date().toISOString() })
     .eq('organization_id', organizationId)
-    .is('setup_fee_paid_at', null);
+    .is('setup_fee_paid_at', null)
+    .select('organization_id');
   // Levée : l'erreur est tracée par POST (billing_events.error et
   // system_errors) au lieu de passer en silence.
-  if (error) throw new Error(`Frais d’installation non horodatés : ${error.message}`);
+  if (error) throw new Error(`Frais d’installation non horodatés : ${error.message}`);
+  // Rien d'horodaté (rejeu, second événement) : l'équipe est déjà prévenue.
+  if (!data || data.length === 0) return;
+
+  await audit({
+    organizationId,
+    actor: 'system',
+    actorLabel: 'Stripe',
+    action: 'billing.setup_fee_paid',
+    targetType: 'organization',
+    targetId: organizationId,
+    metadata: { checkoutSession: session.id },
+  });
 }
 
 async function organizationFromCustomer(customerId: string | null): Promise<string | null> {

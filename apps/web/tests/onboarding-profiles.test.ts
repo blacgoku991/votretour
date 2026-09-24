@@ -298,7 +298,7 @@ describe('completeOnboarding', () => {
       p_activity: 'barber',
       p_location_name: 'Garage Martin — Lyon 7',
       p_queue_mode: 'per_staff',
-      p_plan_code: 'pro',
+      p_plan_code: 'rangvia',
     });
     expect(orgActivityUpdate()).toBeUndefined();
     expect(locationUpdate().google_review_url).toBe('https://g.page/r/exemple');

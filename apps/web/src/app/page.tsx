@@ -10,14 +10,14 @@ import { AppClipPhone } from '@/components/home/AppClipPhone';
 import { DropsWaves } from '@/components/home/DropsWaves';
 import { DropPass } from '@/components/home/DropPass';
 import { MetierRows } from '@/components/metiers/MetierRows';
+import { PlansStrip } from '@/components/metiers/PlansStrip';
 import { DemoVideo } from '@/components/video/DemoVideo';
 import { videoForMetier, type DemoVideoEntry } from '@/components/video/manifest';
 import { selectPublishedMetiers } from '@/lib/metiers/select';
 import { appClipPublished } from '@/lib/seo/site';
-import { supabaseAdmin } from '@/lib/supabase/admin';
+import { getPublicPlans } from '@/lib/public-plans';
 import { siteFooterData } from '@/server/founders';
 import { env } from '@/lib/env';
-import { formatPrice } from '@/lib/format';
 import styles from './home.module.css';
 
 export const metadata: Metadata = {
@@ -26,9 +26,11 @@ export const metadata: Metadata = {
     "Vos clients approchent leur téléphone d’une plaque Rangvia, rejoignent la file et sortent. Ils voient leur position et reçoivent une notification quand leur tour approche. Sans compte ni application à installer.",
 };
 
-// Cette page lit les offres via service_role. Elle doit donc être rendue
-// au runtime, jamais pendant le build Docker : on évite ainsi d'injecter
-// SUPABASE_SERVICE_ROLE_KEY dans les couches de l'image.
+// Le pied de page (vitrine des premiers commerces) lit la base via
+// service_role : la page est rendue au runtime, jamais pendant le build
+// Docker, pour ne pas injecter SUPABASE_SERVICE_ROLE_KEY dans l'image.
+// L'offre, elle, se lit avec la clé anon et le cache « plans »
+// (getPublicPlans), comme les pages métier.
 export const dynamic = 'force-dynamic';
 
 /** Tableau des départs « Côté comptoir » (§5.11). */
@@ -70,11 +72,6 @@ const APP_CLIP_POINTS = [
   'Fonctionne aussi en QR code, et sur Android via le navigateur',
 ];
 
-function volume(n: number, singular: string, plural: string, unlimited: string): string {
-  if (n < 0) return unlimited;
-  return `${n}\u00a0${n > 1 ? plural : singular}`;
-}
-
 /** La vidéo de l'accueil : celle des barbiers, la même scène « Barber House » que l'histoire. */
 const HOME_VIDEO_METIER = 'barbiers';
 
@@ -101,13 +98,10 @@ export default async function HomePage() {
   const skipTarget = (section: typeof afterStory) =>
     afterStory === section ? { id: AFTER_STORY_ID, tabIndex: -1 } : {};
 
-  const [{ data: plans }, qrSvg, footer] = await Promise.all([
-    supabaseAdmin()
-      .from('plans')
-      .select('code, name, tagline, price_month_cents, currency, trial_days, max_locations, max_staff, max_plates')
-      .eq('is_active', true)
-      .eq('is_public', true)
-      .order('sort_order'),
+  const [plans, qrSvg, footer] = await Promise.all([
+    // L'offre unique (0043), lue comme sur les pages métier : mêmes
+    // colonnes, frais d'installation compris, jamais un prix inventé.
+    getPublicPlans(),
     // Le QR de l'appel final : un vrai lien vers l'inscription, en SVG.
     QRCode.toString(`${env.siteUrl}/inscription`, {
       type: 'svg',
@@ -241,62 +235,11 @@ export default async function HomePage() {
           </div>
         </section>
 
-        {/* ============ 7. Offres ============ */}
-        <section id="offres" className={styles.offers} aria-labelledby="offres-titre">
-          <div className="shell">
-            <header className={styles.sectionHead}>
-              <h2 id="offres-titre" className="t-display">
-                Des offres simples
-              </h2>
-              <p className={`t-lead ${styles.leadAfter}`}>Tout est inclus. Seuls les volumes changent.</p>
-            </header>
-            <ol className={`rail-list board ${styles.plans}`}>
-              {(plans ?? []).map((plan, index) => {
-                const featured = index === 1;
-                return (
-                  <li key={plan.code} className={featured ? 'is-self' : undefined}>
-                    <div className={styles.planHead}>
-                      <p className={styles.planName}>
-                        <span className="t-board">{plan.name}</span>
-                        {featured && <span className={`chip chip--signal ${styles.planChip}`}>Le plus choisi</span>}
-                      </p>
-                      <p className={styles.planPrice}>
-                        <span className={`t-num ${styles.planAmount}`}>
-                          {formatPrice(plan.price_month_cents, plan.currency)}
-                        </span>
-                        <span className="t-micro t-muted">/mois HT</span>
-                      </p>
-                    </div>
-                    <p className={`t-body t-muted ${styles.planVolumes}`}>
-                      {/* « · » collé au volume qui le précède : jamais en tête de ligne. */}
-                      {volume(plan.max_locations, 'établissement', 'établissements', 'Établissements illimités')}
-                      {'\u00a0· '}
-                      {volume(plan.max_staff, 'professionnel', 'professionnels', 'Professionnels illimités')}
-                      {'\u00a0· '}
-                      {volume(plan.max_plates, 'plaque', 'plaques', 'Plaques illimitées')}
-                    </p>
-                    <Link
-                      href="/inscription"
-                      className={`btn ${featured ? 'btn--signal' : 'btn--ghost'} ${styles.planBtn}`}
-                    >
-                      {plan.trial_days ? `Essayer ${plan.trial_days}\u00a0jours` : 'Essayer'}
-                      {/* Nom accessible unique par offre, qui commence par le texte
-                          visible (comme sur /tarifs). */}
-                      <span className="sr-only">, offre {plan.name}</span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ol>
-            <div className={styles.plansFoot}>
-              <Link href="/tarifs" className={styles.more}>
-                Comparer les offres en détail
-                <span aria-hidden="true" className={styles.moreSlat} />
-              </Link>
-              <p className="t-micro t-muted">Période d’essai sans carte bancaire. Résiliable à tout moment.</p>
-            </div>
-          </div>
-        </section>
+        {/* ============ 7. L'offre : le même bandeau que les pages métier ============ */}
+        {/* Une seule offre depuis 0043 : l'abonnement ET l'installation, un
+            appel à l'essai, « Le détail de l'offre » vers /tarifs. Jamais un
+            prix sans ses frais d'installation. */}
+        <PlansStrip plans={plans} ctaHref="/inscription" />
 
         {/* ============ 8. Appel final ============ */}
         <section className={styles.cta} aria-labelledby="cta-titre">

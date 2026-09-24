@@ -70,11 +70,11 @@ export function PlanEditor({ plan, subscribers }: { plan: EditablePlan; subscrib
     const quotas = [form.maxLocations, form.maxStaff, form.maxPlates, form.maxQueues].map(quota);
     const historyDays = Number(form.historyDays);
     if (priceMonthCents === null || setupFeeCents === null) {
-      setError('Montant invalide : écrivez par exemple 59,90.');
+      setError('Montant invalide : écrivez par exemple 59,90.');
       return;
     }
     if (quotas.some((q) => q === null) || !Number.isInteger(historyDays) || historyDays < 1) {
-      setError('Quotas : un nombre entier, ou -1 pour illimité ; historique d’au moins 1 jour.');
+      setError('Quotas : un nombre entier, ou -1 pour illimité ; historique d’au moins 1 jour.');
       return;
     }
     startTransition(async () => {

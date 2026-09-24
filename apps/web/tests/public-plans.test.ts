@@ -11,11 +11,11 @@ import {
   cheapestPlan,
   formatPlanPrice,
   getPublicPlans,
+  historyDuration,
   historyLabel,
   mainPlan,
   monthlyPriceLabel,
   planAllowances,
-  setupFeeLabel,
   parsePublicPlan,
   parsePublicPlans,
   publicPlansUrl,
@@ -238,11 +238,9 @@ describe('l’offre unique (0043)', () => {
     expect(mainPlan(null)).toBeNull();
   });
 
-  it('écrit le prix et les frais en HT, frais « une fois »', () => {
+  it('écrit le prix mensuel en HT, « Gratuit » pour une offre à 0 €', () => {
     const plan = parsePublicPlan(RANGVIA)!;
     expect(monthlyPriceLabel(plan)).toBe('59,90\u00a0€\u00a0HT/mois');
-    expect(setupFeeLabel(plan)).toBe('149\u00a0€\u00a0HT d’installation, une fois');
-    expect(setupFeeLabel({ setup_fee_cents: 0, currency: 'EUR' })).toBeNull();
     expect(monthlyPriceLabel({ price_month_cents: 0, currency: 'EUR' })).toBe('Gratuit');
   });
 
@@ -262,6 +260,10 @@ describe('l’offre unique (0043)', () => {
     expect(historyLabel(365)).toBe('1\u00a0an d’historique');
     expect(historyLabel(-1)).toBe('Historique sans limite');
     expect(historyLabel(1)).toBe('1\u00a0jour d’historique');
+    // La même durée, seule, pour « Historique conservé » de l'espace Abonnement.
+    expect(historyDuration(730)).toBe('2\u00a0ans');
+    expect(historyDuration(180)).toBe('180\u00a0jours');
+    expect(historyDuration(-1)).toBe('sans limite');
   });
 
   it('présente l’installation telle que le propriétaire la vend, sans promesse de profil', () => {

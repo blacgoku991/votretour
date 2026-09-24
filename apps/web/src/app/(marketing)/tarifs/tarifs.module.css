@@ -107,15 +107,16 @@
   margin-right: 0.08em;
   color: var(--text);
 }
-.priceUnit {
+/* « ,90 € » : le symbole suit les centimes, à leur pied. */
+.priceTop {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: flex-end;
+  gap: 0.3rem;
 }
 .priceSymbol {
   font-variation-settings: 'wdth' 112, 'wght' 800;
   font-size: clamp(1.375rem, 1rem + 1.2vw, 2.125rem);
-  line-height: 1;
+  line-height: 0.9;
   color: var(--text);
 }
 .pricePer {
@@ -197,16 +198,25 @@
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 0;
+  gap: 6px 18px;
   font-size: 0.8125rem;
   color: var(--text-muted);
 }
-.terms > li { white-space: nowrap; }
-/* Le séparateur suit l'élément : une ligne renvoyée commence proprement. */
-.terms > li:not(:last-child)::after {
-  content: '·';
-  padding-inline: 8px;
-  color: var(--text-faint);
+/* Chaque condition porte sa petite latte de rail, DEVANT elle : au
+   téléphone, une ligne renvoyée n'a jamais de séparateur qui pend. */
+.terms > li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.terms > li::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
 }
 
 /* ---------------------------------------------------------------------

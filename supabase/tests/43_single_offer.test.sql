@@ -111,15 +111,24 @@ begin
   end;
 
   perform internal.assert(
+    has_column_privilege('service_role', 'public.subscriptions', 'setup_done_at', 'update'),
+    'le super-admin (service_role) peut marquer l’installation faite');
+  perform internal.assert(
     has_column_privilege('service_role', 'public.subscriptions', 'setup_fee_paid_at', 'update'),
     'le webhook (service_role) peut horodater le paiement des frais');
   foreach v_role in array array['anon', 'authenticated'] loop
     perform internal.assert(
       not has_column_privilege(v_role, 'public.subscriptions', 'setup_fee_paid_at', 'update')
+        and not has_column_privilege(v_role, 'public.subscriptions', 'setup_done_at', 'update')
         and not has_column_privilege(v_role, 'public.plans', 'setup_fee_cents', 'update')
         and not has_column_privilege(v_role, 'public.plans', 'stripe_price_id_setup', 'update'),
-      format('%s ne peut écrire ni les frais ni leur paiement', v_role));
+      format('%s ne peut écrire ni les frais, ni leur paiement, ni l’installation faite', v_role));
   end loop;
+
+  perform internal.assert(
+    exists (select 1 from pg_indexes
+             where schemaname = 'public' and indexname = 'subscriptions_setup_todo_idx'),
+    'index partiel des installations à faire');
 
   raise notice '';
   raise notice '── Un nouveau compte : l’offre unique, frais à payer ──';
@@ -135,12 +144,25 @@ begin
     (select p.code from public.subscriptions s join public.plans p on p.id = s.plan_id where s.organization_id = v_org),
     'rangvia', 'abonnement d’essai rattaché à rangvia');
   perform internal.assert(
-    (select setup_fee_paid_at is null and stripe_subscription_id is null
+    (select setup_fee_paid_at is null and setup_done_at is null and stripe_subscription_id is null
        from public.subscriptions where organization_id = v_org),
-    'frais d’installation pas encore payés (premier abonnement à venir)');
+    'frais d’installation pas encore payés (premier abonnement à venir), installation pas faite');
 
   v_prov := public.provision_organization(v_owner, 'Garage Ancien Code', 'garage', null, 'shared', 'pro');
   perform internal.assert_eq(v_prov -> 'plan' ->> 'code', 'rangvia', 'ancien code « pro » : offre unique aussi');
+
+  -- Frais payés (webhook), installation pas encore faite : la ligne
+  -- apparaît dans « Installations à faire », puis en sort une fois faite.
+  update public.subscriptions set setup_fee_paid_at = now() where organization_id = v_org;
+  perform internal.assert(
+    exists (select 1 from public.subscriptions
+             where organization_id = v_org and setup_fee_paid_at is not null and setup_done_at is null),
+    'frais payés : installation à faire');
+  update public.subscriptions set setup_done_at = now() where organization_id = v_org;
+  perform internal.assert(
+    not exists (select 1 from public.subscriptions
+                 where organization_id = v_org and setup_fee_paid_at is not null and setup_done_at is null),
+    'installation faite : elle sort de la liste');
 
   v_quota := public.check_org_quota(v_org, 'staff');
   perform internal.assert_eq(v_quota ->> 'planCode', 'rangvia', 'quotas lus sur l’offre unique');

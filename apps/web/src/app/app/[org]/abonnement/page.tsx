@@ -10,6 +10,7 @@ import {
   PUBLIC_PLAN_COLUMNS,
   SETUP_STEPS,
   SETUP_TITLE,
+  historyDuration,
   mainPlan,
   parsePublicPlans,
   planAllowances,
@@ -53,8 +54,15 @@ interface PlanRow {
  *    paiement. Les montants viennent de l'offre en base : jamais écrits ici ;
  *  - les factures (portail Stripe).
  *
- * Aucune valeur relative à l'heure n'est calculée ici : les jours d'essai
- * restants le sont dans le navigateur, après montage (TrialFlap).
+ * ESSAI EN COURS : activer ne le raccourcit pas. startCheckout transmet
+ * la fin d'essai à Stripe : l'installation est réglée à l'activation, le
+ * premier mois à la fin de l'essai. La page le dit ligne à ligne
+ * (« Aujourd'hui », puis la date du premier mois), jamais un total qui
+ * laisserait croire que le mois part tout de suite.
+ *
+ * Les jours d'essai restants sont comptés dans le navigateur, après
+ * montage (TrialFlap). Ici, on sait seulement si l'essai court encore
+ * (page dynamique, rendue à chaque requête).
  */
 export default async function BillingPage({
   params, searchParams,
@@ -112,6 +120,12 @@ export default async function BillingPage({
   const setupDue = Boolean(offer && offer.setup_fee_cents > 0 && !setupPaidAt);
   // Ancienne offre retirée du catalogue, gardée par un abonnement payé.
   const legacy = Boolean(plan && offer && plan.code !== offer.code && liveStripe);
+  // Même règle que startCheckout : un essai qui court encore est conservé.
+  const trialEndsAt: string | null = subscription?.trial_ends_at ?? null;
+  const trialOngoing = status === 'trialing' && trialEndsAt !== null && Date.parse(trialEndsAt) > Date.now();
+  const dueToday = offer
+    ? (setupDue ? offer.setup_fee_cents : 0) + (trialOngoing ? 0 : offer.price_month_cents)
+    : 0;
   const included = appClipPublished()
     ? 'App Clip iPhone, QR, NFC et notifications inclus'
     : 'QR, NFC et notifications inclus';
@@ -164,8 +178,10 @@ export default async function BillingPage({
             <li>
               <span className={`t-board ${styles.keyMuted}`}>Essai</span>
               <p className={styles.text}>
-                Jusqu’au <strong className="t-num">{formatDate(subscription.trial_ends_at)}</strong>.
-                Aucun moyen de paiement n’est requis avant cette date.
+                Jusqu’au <strong className="t-num">{formatDate(subscription.trial_ends_at)}</strong>.{' '}
+                {liveStripe
+                  ? 'Votre abonnement est activé : le premier mois sera prélevé à la fin de l’essai.'
+                  : 'Aucun moyen de paiement n’est requis avant cette date.'}
               </p>
               <TrialFlap endsAt={subscription.trial_ends_at} />
             </li>
@@ -204,8 +220,8 @@ export default async function BillingPage({
         <div className="banner banner--warn">
           <span>
             {access.user.isPlatformAdmin
-              ? 'Stripe n’est pas configuré sur cette installation : toutes les organisations fonctionnent en période d’essai. Voir SETUP.md, section Stripe, pour activer la facturation.'
-              : 'La facturation en ligne n’est pas encore activée : votre période d’essai continue, sans rien à payer.'}
+              ? 'Stripe n’est pas configuré sur cette installation : toutes les organisations fonctionnent en période d’essai. Voir SETUP.md, section Stripe, pour activer la facturation.'
+              : 'La facturation en ligne n’est pas encore activée : votre période d’essai continue, sans rien à payer.'}
           </span>
         </div>
       )}
@@ -215,7 +231,7 @@ export default async function BillingPage({
         <section className={styles.block} aria-labelledby="consommation">
           <div>
             <h2 id="consommation" className={`t-label ${styles.head}`}>Votre consommation</h2>
-            <p className={styles.desc}>Comptée en direct sur votre organisation ; une jauge cuivre signale une limite atteinte.</p>
+            <p className={styles.desc}>Comptée en direct sur votre organisation ; une jauge cuivre signale une limite atteinte.</p>
           </div>
           <ol className={`rail-list ${styles.usage}`}>
             <UsageRow label="Établissements" used={counts.locations} limit={plan.max_locations} index={0} />
@@ -224,7 +240,7 @@ export default async function BillingPage({
             <UsageRow label="Files" used={counts.queues} limit={plan.max_queues} index={3} />
             <li className={styles.usageRow}>
               <span className={styles.usageLabel}>Historique conservé</span>
-              <span className={`t-num ${styles.usageValue}`}>{plan.history_days} jours</span>
+              <span className={`t-num ${styles.usageValue}`}>{historyDuration(plan.history_days)}</span>
             </li>
           </ol>
         </section>
@@ -245,6 +261,12 @@ export default async function BillingPage({
               <div className={styles.planText}>
                 <p className={styles.limits}>{planAllowances(offer).join(' · ')}</p>
                 <p className={styles.included}>{included}</p>
+                {trialOngoing && trialEndsAt && (
+                  <p className={styles.included}>
+                    Premier mois prélevé à la fin de votre essai, le{' '}
+                    <strong className={`t-num ${styles.date}`}>{formatDate(trialEndsAt)}</strong>.
+                  </p>
+                )}
               </div>
               <p className={styles.price}>
                 <FlapText static text={formatPrice(offer.price_month_cents, offer.currency)} size="2rem" />
@@ -256,6 +278,8 @@ export default async function BillingPage({
                 <span className="t-board">Installation</span>
                 <div className={styles.planText}>
                   <p className={styles.limits}>{SETUP_TITLE}.</p>
+                  {/* En colonne, chaque étape sur sa latte : aucun séparateur
+                      qui pendrait en fin de ligne au téléphone. */}
                   <ul className={styles.steps}>
                     {SETUP_STEPS.map((step) => <li key={step.key}>{step.key}</li>)}
                   </ul>
@@ -267,20 +291,22 @@ export default async function BillingPage({
               </li>
             )}
             <li className={`is-self ${styles.total}`}>
-              <span className="t-board">Premier paiement</span>
+              <span className="t-board">{trialOngoing ? 'Aujourd’hui' : 'Premier paiement'}</span>
               <p className={styles.text}>
-                {setupDue
+                {trialOngoing && trialEndsAt ? (
+                  <>
+                    {setupDue ? 'L’installation seule. ' : 'Rien à régler aujourd’hui. '}
+                    Votre essai continue&#8239;: {formatPrice(offer.price_month_cents, offer.currency)}&nbsp;HT par mois
+                    à partir du <strong className={`t-num ${styles.date}`}>{formatDate(trialEndsAt)}</strong>.
+                  </>
+                ) : setupDue
                   ? 'Le premier mois et l’installation, sur une seule facture. Ensuite, l’abonnement seul, chaque mois.'
                   : 'Le premier mois. Ensuite, le même montant chaque mois.'}
                 {' '}Montants hors taxes, TVA en sus.
               </p>
               <div className={styles.planAside}>
                 <p className={styles.price}>
-                  <FlapText
-                    static
-                    text={formatPrice(offer.price_month_cents + (setupDue ? offer.setup_fee_cents : 0), offer.currency)}
-                    size="2rem"
-                  />
+                  <FlapText static text={formatPrice(dueToday, offer.currency)} size="2rem" />
                   <span className={styles.per}>HT</span>
                 </p>
                 {canManage && billingEnabled && (
@@ -308,7 +334,7 @@ export default async function BillingPage({
               <span className={`t-board ${styles.keyMuted}`}>Factures</span>
               <p className={styles.text}>
                 Vos factures et votre moyen de paiement sont conservés par Stripe, dans un espace
-                sécurisé : téléchargement, historique et changement de carte.
+                sécurisé : téléchargement, historique et changement de carte.
               </p>
               <div className={styles.planAside}>
                 <BillingActions

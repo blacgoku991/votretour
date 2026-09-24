@@ -17,7 +17,6 @@ export function CreateOrganizationV2() {
   const [activity, setActivity] = useState('barber');
   const [locationName, setLocationName] = useState('');
   const [queueMode, setQueueMode] = useState<'shared' | 'per_staff'>('shared');
-  const [planCode, setPlanCode] = useState<'starter' | 'pro' | 'business'>('starter');
   const [logoUrl, setLogoUrl] = useState('');
   const [locationLogoUrl, setLocationLogoUrl] = useState('');
   const [coverUrl, setCoverUrl] = useState('');
@@ -38,7 +37,9 @@ export function CreateOrganizationV2() {
         activity: activity as never,
         locationName,
         queueMode,
-        planCode,
+        // Une seule offre depuis 0043 : l'abonnement de départ est un essai
+        // de l'offre Rangvia, sans choix de pack.
+        planCode: 'rangvia',
         logoUrl,
         locationLogoUrl,
         coverUrl,
@@ -106,16 +107,6 @@ export function CreateOrganizationV2() {
           <span>Nom du premier établissement</span>
           <input className="input" value={locationName} onChange={(e) => setLocationName(e.target.value)}
             placeholder="Ex. Asnières centre" maxLength={120} />
-        </label>
-
-        <label className="field">
-          <span>Offre</span>
-          <select className="select" value={planCode}
-            onChange={(e) => setPlanCode(e.target.value as 'starter' | 'pro' | 'business')}>
-            <option value="starter">Starter</option>
-            <option value="pro">Pro</option>
-            <option value="business">Business</option>
-          </select>
         </label>
 
         <label className="field">
