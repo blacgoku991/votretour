@@ -5,8 +5,9 @@ import { integrationStatus } from '@/lib/env';
 import { notificationCopy } from '@/lib/copy';
 import { getProfile, isLegacyProfile, isQueueProfile } from '@/lib/profiles';
 import { profileNotificationCopy, type ProfileCopyContext } from '@/lib/profiles/copy';
+import { resolveProfileOptions, reviewPolicy } from '@/lib/profiles/options';
 import { formatTicketNo } from '@/lib/profiles/ticket';
-import type { ProfileNotificationKind, QueueProfile } from '@/lib/profiles/types';
+import type { ProfileNotificationKind, ProfileOptions, QueueProfile } from '@/lib/profiles/types';
 import { PageHeader, Section, SettingRow, Stat, EmptyState } from '@/components/Page';
 import { Reveal } from '@/components/motion/Reveal';
 import { formatDateTime, formatNumber, relativeTime } from '@/lib/format';
@@ -41,18 +42,28 @@ interface PreviewItem { key: string; pos: string; posLabel: string; copy: { titl
  * l'ordre où ils partent, avec des valeurs d'exemple. Jamais de prénom ni
  * d'immatriculation complète : c'est la règle de l'écran verrouillé, et
  * l'aperçu la montre telle quelle (« FX-482-KL » devient « ••-••2-KL »).
+ *
+ * L'aperçu suit les RÉGLAGES de la file : sans devis en ligne, pas de
+ * « Devis à valider » ; sans demande d'avis (ou « jamais », la santé),
+ * pas de message de fin ; un avis différé porte son délai.
  */
 function profilePreview(
   profile: QueueProfile,
   locationName: string,
   threshold: number,
   queue: { ticket_prefix?: string | null; absent_grace_minutes?: number | null },
+  options: ProfileOptions,
 ): PreviewItem[] {
   const base: ProfileCopyContext = { profile, locationName };
   const item = (
     key: string, pos: string, posLabel: string, kind: ProfileNotificationKind, ctx: Partial<ProfileCopyContext> = {},
   ): PreviewItem => ({ key, pos, posLabel, copy: profileNotificationCopy(kind, { ...base, ...ctx }) });
   const hours = { status: 'open', closesAt: '19:00' } as const;
+  const review = reviewPolicy(options);
+  const reviewItem = (label: string, ctx: Partial<ProfileCopyContext> = {}): PreviewItem[] =>
+    review.kind === 'never'
+      ? []
+      : [item('visit_completed', '✓', review.kind === 'delayed' ? `+${review.minutes} min` : label, 'visit_completed', ctx)];
   switch (profile) {
     case 'vehicle':
     case 'device': {
@@ -60,15 +71,20 @@ function profilePreview(
         ? { registration: 'FX-482-KL', country: 'FR' as const, model: 'Peugeot 208' }
         : { deviceKind: 'phone' as const, model: 'iPhone 13' };
       const ticketNo = profile === 'device' ? formatTicketNo('device', 42) : null;
-      return [
+      const quotes = options.quotes !== false;
+      const steps: PreviewItem[] = [
         item('stage_update', '1', 'reçu', 'stage_update', { stage: 'received', details, ticketNo }),
-        item('quote_ready', '2', 'devis', 'quote_ready', {
-          details, quote: { amountCents: 18400, label: profile === 'vehicle' ? 'Plaquettes + disques AV' : 'Écran d’origine' },
-        }),
-        item('stage_update:parts', '3', 'pièce', 'stage_update', { stage: 'waiting_parts', details, ticketNo }),
-        item('your_turn', '4', 'prêt', 'your_turn', { details, ticketNo, hours }),
-        item('visit_completed', '✓', 'rendu', 'visit_completed', { details }),
+        ...(quotes
+          ? [item('quote_ready', '2', 'devis', 'quote_ready', {
+              details, quote: { amountCents: 18400, label: profile === 'vehicle' ? 'Plaquettes + disques AV' : 'Écran d’origine' },
+            })]
+          : []),
+        item('stage_update:parts', '', 'pièce', 'stage_update', { stage: 'waiting_parts', details, ticketNo }),
+        item('your_turn', '', 'prêt', 'your_turn', { details, ticketNo, hours }),
       ];
+      // Les étapes se numérotent dans l'ordre où elles partent vraiment.
+      steps.forEach((s, i) => { if (s.pos === '') s.pos = String(i + 1); });
+      return [...steps, ...reviewItem('rendu', { details })];
     }
     case 'table':
       return [
@@ -76,7 +92,7 @@ function profilePreview(
         item('ahead_one', '1', 'avant', 'ahead_one'),
         item('your_turn', '0', 'table', 'your_turn', { graceMinutes: queue.absent_grace_minutes ?? 5 }),
         item('recall', '!', 'rappel', 'recall', { remainingMinutes: 2 }),
-        item('visit_completed', '✓', 'après', 'visit_completed'),
+        ...reviewItem('après'),
       ];
     case 'desk': {
       const ticketNo = formatTicketNo('desk', 42, queue.ticket_prefix ?? 'A');
@@ -85,13 +101,14 @@ function profilePreview(
         item('ahead_one', '1', 'devant', 'ahead_one', { ticketNo }),
         item('your_turn', '0', 'appel', 'your_turn', { ticketNo, deskLabel: 'Guichet 3' }),
         item('recall', '!', 'rappel', 'recall', { ticketNo, deskLabel: 'Guichet 3' }),
+        ...reviewItem('servi'),
       ];
     }
     case 'retail':
       return [
         item('stage_update', '1', 'prépa', 'stage_update', { stage: 'preparing', details: { orderRef: '1234' } }),
         item('your_turn', '0', 'prête', 'your_turn', { stage: 'ready', details: { orderRef: '1234' } }),
-        item('visit_completed', '✓', 'remise', 'visit_completed'),
+        ...reviewItem('remise'),
       ];
     default:
       return [];
@@ -131,8 +148,14 @@ const STATUS_LABEL: Record<string, string> = {
 const typo = (text: string) => text.replace(/'/g, '’');
 const typoCopy = (copy: { title: string; body: string }) => ({ title: typo(copy.title), body: typo(copy.body) });
 
-export default async function NotificationsPage({ params }: { params: Promise<{ org: string }> }) {
+export default async function NotificationsPage({
+  params, searchParams,
+}: {
+  params: Promise<{ org: string }>;
+  searchParams: Promise<{ file?: string }>;
+}) {
   const { org } = await params;
+  const { file } = await searchParams;
   const access = await requireOrgAccess(org);
   const organizationId = access.organization.organization_id;
   const db = supabaseAdmin();
@@ -140,7 +163,7 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
 
   const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
 
-  const [{ data: deliveries }, { data: recent }, { data: firstLocation }] = await Promise.all([
+  const [{ data: deliveries }, { data: recent }, { data: locations }, { data: queues }] = await Promise.all([
     db.from('notification_deliveries')
       .select('status, channel, kind')
       .eq('organization_id', organizationId)
@@ -151,13 +174,31 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
       .order('created_at', { ascending: false })
       .limit(40),
     db.from('locations').select('id, name')
-      .eq('organization_id', organizationId).order('created_at').limit(1).maybeSingle(),
+      .eq('organization_id', organizationId).order('created_at'),
+    // Toutes les files d'un coup : l'aperçu se règle sur celle choisie, et
+    // un établissement à plusieurs métiers (atelier, salle, accueil) voit
+    // les textes de chacun, pas seulement ceux de sa première file.
+    db.from('queues')
+      .select('id, name, location_id, notify_ahead_threshold, profile, profile_options, ticket_prefix, absent_grace_minutes')
+      .eq('organization_id', organizationId).order('created_at'),
   ]);
 
-  const { data: firstQueue } = firstLocation
-    ? await db.from('queues').select('notify_ahead_threshold, profile, ticket_prefix, absent_grace_minutes')
-        .eq('location_id', firstLocation.id).order('created_at').limit(1).maybeSingle()
-    : { data: null };
+  type QueueRow = {
+    id: string; name: string; location_id: string; notify_ahead_threshold: number | null;
+    profile: string | null; profile_options: unknown; ticket_prefix: string | null; absent_grace_minutes: number | null;
+  };
+  const locationList = (locations ?? []) as { id: string; name: string }[];
+  const firstLocation = locationList[0] ?? null;
+  const queueList = ((queues ?? []) as QueueRow[])
+    // Ordre des établissements d'abord (le premier en tête), puis des files.
+    .sort((a, b) => locationList.findIndex((l) => l.id === a.location_id) - locationList.findIndex((l) => l.id === b.location_id));
+  const firstQueue = queueList.find((q) => q.id === file)
+    ?? queueList.find((q) => q.location_id === firstLocation?.id)
+    ?? null;
+  const queueLocation = locationList.find((l) => l.id === firstQueue?.location_id) ?? firstLocation;
+  // Le choix de file n'apparaît que si un métier est en jeu : un barbier
+  // garde la page d'avant, au pixel près.
+  const queueTabs = queueList.length > 1 && queueList.some((q) => !isLegacyProfile(q.profile)) ? queueList : [];
 
   const all = deliveries ?? [];
   const sent = all.filter((d) => d.status === 'sent').length;
@@ -171,12 +212,15 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
   }, {});
 
   // ---- Aperçu : les vrais messages, dans l'ordre où ils partent ----
-  const locationName = firstLocation?.name ?? access.organization.name;
+  const locationName = queueLocation?.name ?? access.organization.name;
   const threshold = Math.max(1, Number(firstQueue?.notify_ahead_threshold ?? 2));
   const queueProfile: QueueProfile = isQueueProfile(firstQueue?.profile) ? firstQueue.profile : 'walkin';
   const profiled = !isLegacyProfile(queueProfile);
   const preview: PreviewItem[] = profiled
-    ? profilePreview(queueProfile, locationName, threshold, firstQueue ?? {}).map((p) => ({ ...p, copy: typoCopy(p.copy) }))
+    ? profilePreview(
+        queueProfile, locationName, threshold, firstQueue ?? {},
+        resolveProfileOptions(queueProfile, firstQueue?.profile_options),
+      ).map((p) => ({ ...p, copy: typoCopy(p.copy) }))
     : [];
   if (!profiled && threshold >= 2) {
     preview.push({
@@ -202,10 +246,25 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
         <section className={styles.preview} aria-labelledby="apercu-titre">
           <div className={styles.previewHead}>
             <h2 id="apercu-titre" className={`t-label ${styles.previewTitle}`}>Ce que reçoivent vos clients</h2>
+            {queueTabs.length > 0 && firstQueue && (
+              <nav className="seg" aria-label="File de l’aperçu" style={{ marginTop: 12, maxWidth: '100%', overflowX: 'auto' }}>
+                {queueTabs.map((q) => (
+                  <a
+                    key={q.id}
+                    href={`/app/${org}/notifications?file=${encodeURIComponent(q.id)}`}
+                    aria-current={q.id === firstQueue.id ? 'page' : undefined}
+                  >
+                    {locationList.length > 1
+                      ? `${locationList.find((l) => l.id === q.location_id)?.name ?? ''} · ${q.name}`
+                      : q.name}
+                  </a>
+                ))}
+              </nav>
+            )}
             {profiled ? (
               <p className={styles.previewDesc}>
-                Les textes exacts du métier « {getProfile(queueProfile).label} », au nom de {locationName},
-                avec des valeurs d’exemple. Jamais de prénom ni d’immatriculation complète sur l’écran verrouillé.
+                Les textes exacts du métier « {getProfile(queueProfile).label} » de « {firstQueue?.name} », au nom de {locationName},
+                avec des valeurs d’exemple et ses réglages. Jamais de prénom ni d’immatriculation complète sur l’écran verrouillé.
               </p>
             ) : (
               <p className={styles.previewDesc}>

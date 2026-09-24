@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useRef, useState } from 'react';
-import { Section, Toggle } from '@/components/Page';
+import { Section } from '@/components/Page';
 import { getProfile } from '@/lib/profiles';
 import { profileNotificationCopy } from '@/lib/profiles/copy';
 import {
@@ -32,7 +32,7 @@ import styles from './metier.module.css';
 type ActionOutcome = { ok: true } | { ok: false; error: string; code?: string };
 type Runner = (fn: () => Promise<ActionOutcome>, after?: () => void) => void;
 
-interface Draft { key: string | null; label: string; body: string; isActive: boolean }
+interface Draft { key: string | null; label: string; body: string }
 
 const VARIABLE_SPLIT = /(\{[^{}]*\})/g;
 /** Le nom lisible d'une variable (« Téléphone »), pas sa clé technique. */
@@ -71,7 +71,7 @@ export function TemplatesSection({
   const save = (d: Draft) =>
     run(
       () => upsertMessageTemplate(orgSlug, {
-        profile, ...(d.key ? { key: d.key } : {}), label: d.label, body: d.body, isActive: d.isActive,
+        profile, ...(d.key ? { key: d.key } : {}), label: d.label, body: d.body,
       }),
       () => setDraft(null),
     );
@@ -81,7 +81,7 @@ export function TemplatesSection({
       title="Messages"
       description={`Envoyés en un geste depuis le poste, au nom de ${locationName}. Modèles du métier « ${def.label} », communs à tous vos établissements.`}
       actions={canConfigure && !draft ? (
-        <button type="button" className="btn btn--ghost btn--sm" onClick={() => setDraft({ key: null, label: '', body: '', isActive: true })}>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={() => setDraft({ key: null, label: '', body: '' })}>
           Ajouter un message
         </button>
       ) : undefined}
@@ -102,7 +102,7 @@ export function TemplatesSection({
         {templates.map((t) => {
           const editing = draft?.key === t.key;
           return (
-            <li key={t.key} className={styles.tpl} data-off={t.isActive ? undefined : '1'} data-editing={editing ? '1' : undefined}>
+            <li key={t.key} className={styles.tpl} data-editing={editing ? '1' : undefined}>
               {editing && draft ? (
                 <TemplateEditor
                   profile={profile}
@@ -122,20 +122,13 @@ export function TemplatesSection({
                       <span className={styles.tplLabel}>{t.label}</span>
                       {t.origin === 'edited' && <span className={`chip ${styles.tplChip}`}>Retouché</span>}
                       {t.origin === 'custom' && <span className={`chip chip--copper ${styles.tplChip}`}>Ajouté</span>}
-                      {!t.isActive && <span className={`chip ${styles.tplChip}`}>Masqué au poste</span>}
                     </p>
                     <p className={styles.tplBody}><BodyTokens text={t.body} /></p>
                   </div>
                   <div className={styles.tplActions}>
-                    <Toggle
-                      checked={t.isActive}
-                      label={`Proposer « ${t.label} » au poste`}
-                      disabled={disabled}
-                      onChange={(v) => save({ key: t.key, label: t.label, body: t.body, isActive: v })}
-                    />
                     {canConfigure && (
                       <button type="button" className="btn btn--quiet btn--sm" disabled={disabled}
-                        onClick={() => setDraft({ key: t.key, label: t.label, body: t.body, isActive: t.isActive })}>
+                        onClick={() => setDraft({ key: t.key, label: t.label, body: t.body })}>
                         Modifier
                       </button>
                     )}

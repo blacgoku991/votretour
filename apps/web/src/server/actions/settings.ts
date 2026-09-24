@@ -105,6 +105,12 @@ const queueSchema = z.object({
   entryTtlMinutes: z.number().int().min(15).max(ENTRY_TTL_MAX_STAGED).optional(),
 });
 
+/** `profile_options.sensitive` stocké à vrai : ce que lit `join_queue`. */
+function isSensitiveQueue(options: unknown): boolean {
+  return !!options && typeof options === 'object' && !Array.isArray(options)
+    && (options as Record<string, unknown>).sensitive === true;
+}
+
 export async function updateQueueSettings(
   input: z.input<typeof queueSchema>,
 ): Promise<Result<{ queueId: string }>> {
@@ -112,12 +118,21 @@ export async function updateQueueSettings(
     const parsed = queueSchema.parse(input);
     const access = await assertQueueAccess(parsed.queueId, 'queue.configure');
 
-    if (parsed.entryTtlMinutes !== undefined && parsed.entryTtlMinutes > ENTRY_TTL_MAX) {
+    const longTtl = parsed.entryTtlMinutes !== undefined && parsed.entryTtlMinutes > ENTRY_TTL_MAX;
+    const asksName = parsed.askClientName === true || parsed.clientNameRequired === true;
+    if (longTtl || asksName) {
       const { data: row } = await supabaseAdmin()
-        .from('queues').select('profile').eq('id', parsed.queueId).maybeSingle();
+        .from('queues').select('profile, profile_options').eq('id', parsed.queueId).maybeSingle();
       const profile = isQueueProfile(row?.profile) ? row.profile : 'walkin';
-      if (!hasStages(profile)) {
+      if (longTtl && !hasStages(profile)) {
         throw new AppError('validation', 'Une file sans étapes garde ses tickets 24 h au plus.', 422);
+      }
+      // Données de santé : `join_queue` efface le prénom de toute
+      // inscription. Le demander, ou pire l'exiger, fermerait la file à
+      // tout patient (« Prénom requis », VT009). La même lecture que la
+      // base : la clé `sensitive` STOCKÉE, quel que soit le profil.
+      if (asksName && isSensitiveQueue(row?.profile_options)) {
+        throw new AppError('validation', 'Données de santé : aucun prénom n’est demandé dans cette file.', 422);
       }
     }
 

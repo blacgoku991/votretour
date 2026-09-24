@@ -50,9 +50,15 @@ export default async function StatsPage({
   const access = await requireOrgAccess(org, 'stats.view');
   const db = supabaseAdmin();
 
-  const { data: locations } = await db
-    .from('locations').select('id, name, timezone')
-    .eq('organization_id', access.organization.organization_id).order('created_at');
+  // Établissements et files en un seul aller : les files disent, AVANT la
+  // salve de requêtes, s'il faut aussi lire `profile_stats` (un barbier
+  // ne déclenche jamais cet appel).
+  const [{ data: locations }, { data: orgQueues }] = await Promise.all([
+    db.from('locations').select('id, name, timezone')
+      .eq('organization_id', access.organization.organization_id).order('created_at'),
+    db.from('queues').select('location_id, name, profile')
+      .eq('organization_id', access.organization.organization_id).order('created_at'),
+  ]);
 
   const list = (locations ?? []) as { id: string; name: string; timezone: string | null }[];
   const current = list.find((l) => l.id === lieu) ?? list[0] ?? null;
@@ -69,11 +75,20 @@ export default async function StatsPage({
   const from = new Date(Date.now() - range.days * 86_400_000).toISOString();
   const to = new Date().toISOString();
 
+  // Statistiques par métier : seulement si l'établissement a une file à
+  // métier. Un barbier ne déclenche ni la requête ni le moindre pixel.
+  const queueNames: Partial<Record<QueueProfile, string[]>> = {};
+  for (const q of (orgQueues ?? []) as { location_id: string; name: string; profile: string }[]) {
+    if (q.location_id !== current.id || !isQueueProfile(q.profile) || isLegacyProfile(q.profile)) continue;
+    (queueNames[q.profile] ??= []).push(q.name);
+  }
+  const profiled = Object.keys(queueNames).length > 0;
+
   const [
-    { data },
+    { data, error: statsError },
     { count: notificationsSent },
     { count: reviewClicks },
-    { data: locationQueues },
+    profileRpc,
   ] = await Promise.all([
     db.rpc('location_stats', {
       p_location_id: current.id,
@@ -91,19 +106,16 @@ export default async function StatsPage({
       .eq('location_id', current.id)
       .gte('created_at', from)
       .lte('created_at', to),
-    db.from('queues').select('name, profile').eq('location_id', current.id).order('created_at'),
+    profiled
+      ? db.rpc('profile_stats', { p_location_id: current.id, p_from: from, p_to: to })
+      : Promise.resolve(null),
   ]);
 
-  // Statistiques par métier : seulement si l'établissement a une file à
-  // métier. Un barbier ne déclenche ni la requête ni le moindre pixel.
-  const queueNames: Partial<Record<QueueProfile, string[]>> = {};
-  for (const q of (locationQueues ?? []) as { name: string; profile: string }[]) {
-    if (!isQueueProfile(q.profile) || isLegacyProfile(q.profile)) continue;
-    (queueNames[q.profile] ??= []).push(q.name);
-  }
-  const profileView = Object.keys(queueNames).length > 0
-    ? parseProfileStats((await db.rpc('profile_stats', { p_location_id: current.id, p_from: from, p_to: to })).data)
-    : null;
+  // Une erreur de lecture ne doit pas passer pour « aucun chiffre » sans
+  // laisser de trace : la page reste lisible (tirets), le journal le dit.
+  if (statsError) console.error('[statistiques] location_stats', statsError.message);
+  if (profileRpc?.error) console.error('[statistiques] profile_stats', profileRpc.error.message);
+  const profileView = profileRpc && !profileRpc.error ? parseProfileStats(profileRpc.data) : null;
 
   const stats = data as Stats | null;
   const joined = stats?.totals.joined ?? 0;
@@ -188,7 +200,42 @@ export default async function StatsPage({
       />
 
       {/* Les chiffres qui comptent, en UNE bande : un tableau d'affichage,
-          pas des cartes. L'attente médiane d'abord : c'est la promesse. */}
+          pas des cartes. L'attente médiane d'abord : c'est la promesse.
+
+          Établissement à métier : `location_stats` additionne toutes les
+          files. Une médiane qui mêle un atelier (des jours), une table
+          (des minutes) et un guichet ne veut plus rien dire : la bande ne
+          garde que ce qui s'additionne (arrivées, taux), et les durées se
+          lisent métier par métier, plus bas. */}
+      {profiled ? (
+        <section aria-label="Chiffres clés, toutes files confondues" className={styles.band}>
+          <div className={`kpi-band ${styles.impact}`}>
+            <Stat
+              accent
+              label="Clients accueillis"
+              value={formatNumber(joined)}
+              hint={plural(completed, 'passage terminé', 'passages terminés')}
+            />
+            <Stat
+              label="Taux de passage"
+              value={formatPercent(stats?.completionRate ?? null)}
+              hint={`${plural(cancelled, 'départ', 'départs')}, ${plural(absent, 'absent', 'absents')}`}
+            />
+            <Stat
+              label="Taux d’absence"
+              value={formatPercent(stats?.noShowRate ?? null)}
+              hint={`${plural(absent, 'absent', 'absents')}, ${plural(expired, 'place expirée', 'places expirées')}`}
+            />
+          </div>
+          <p className={`${styles.impactLine} ${styles.bandNote}`}>
+            <span className={styles.impactNotch} aria-hidden="true" />
+            <span>
+              Toutes files confondues. Les attentes et les durées se lisent{' '}
+              <a href="#stats-metiers">métier par métier</a> : un atelier se compte en jours, une table en minutes.
+            </span>
+          </p>
+        </section>
+      ) : (
       <section aria-label="Chiffres clés" className={styles.band}>
         <div className={`kpi-band ${styles.kpis}`}>
           <Stat
@@ -220,6 +267,7 @@ export default async function StatsPage({
           />
         </div>
       </section>
+      )}
 
       <Section
         bare

@@ -367,11 +367,15 @@ function DeskBlock({ stats, names }: { stats: DeskStats; names?: string[] }) {
             <Stat
               label="Absents"
               value={formatRate(stats.absentRate)}
-              hint={`joignables : ${formatRate(stats.reachableRate)}`}
+              hint="absents à l’appel ou tickets expirés"
             />
           </div>
 
-          <Section bare title="Appels par guichet" description="Personnes servies à chaque guichet, et le temps médian passé au guichet.">
+          <Section
+            bare
+            title="Appels par guichet"
+            description={`Personnes servies à chaque guichet, et le temps médian passé au guichet. Clients joignables par notification : ${formatRate(stats.reachableRate)}.`}
+          >
             <BarList
               rows={stats.byDesk.map((d) => ({
                 label: d.label,

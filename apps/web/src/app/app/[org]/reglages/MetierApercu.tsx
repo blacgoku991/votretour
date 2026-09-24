@@ -39,16 +39,19 @@ export function MetierApercu({
   profile,
   options,
   ticketPrefix,
+  chair = true,
 }: {
   profile: QueueProfile;
   options: ProfileOptions;
   ticketPrefix: string;
+  /** Passage au fauteuil (coiffure, beauté) ; sinon, un passage sans fauteuil. */
+  chair?: boolean;
 }): React.JSX.Element {
   const def = getProfile(profile);
   return (
     <div className={styles.scene} data-profile={profile}>
       <span className="floor-marks" aria-hidden="true" />
-      <div className={styles.sceneObjects}>{objectsFor(profile, options, ticketPrefix)}</div>
+      <div className={styles.sceneObjects}>{objectsFor(profile, options, ticketPrefix, chair)}</div>
       <div className={styles.sceneKeys} aria-hidden="true">
         <span className={`btn btn--signal btn--key ${styles.sceneKey}`}>{def.vocab.call}</span>
         <span className={`btn btn--ghost ${styles.sceneKeyAlt}`}>{def.vocab.complete}</span>
@@ -57,7 +60,7 @@ export function MetierApercu({
   );
 }
 
-function objectsFor(profile: QueueProfile, options: ProfileOptions, prefix: string): React.ReactNode {
+function objectsFor(profile: QueueProfile, options: ProfileOptions, prefix: string, chair: boolean): React.ReactNode {
   switch (profile) {
     case 'vehicle':
       return (
@@ -146,7 +149,7 @@ function objectsFor(profile: QueueProfile, options: ProfileOptions, prefix: stri
       return (
         <div className={styles.objRang}>
           <ol className={styles.miniRang} aria-label="Trois personnes devant le client">
-            {['Au fauteuil', '', '', 'Vous'].map((label, i) => (
+            {[chair ? 'Au fauteuil' : 'En cours', '', '', 'Vous'].map((label, i) => (
               <li key={i} className={styles.miniSlat} data-kind={i === 0 ? 'serving' : i === 3 ? 'self' : undefined}>
                 {label}
               </li>

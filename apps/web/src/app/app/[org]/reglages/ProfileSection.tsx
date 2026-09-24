@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Section, SettingRow, Toggle } from '@/components/Page';
 import { Immatriculation } from '@/components/objects/Immatriculation';
 import { TicketNumber } from '@/components/objects/TicketNumber';
-import { getProfile, profileForActivity } from '@/lib/profiles';
+import { getProfile, isActivityType, profileForActivity } from '@/lib/profiles';
 import { profileAvailable } from '@/lib/profiles/capabilities';
 import { PARTY_MAX_LIMIT, resolveProfileOptions } from '@/lib/profiles/options';
 import { asMaskedRegistration } from '@/lib/profiles/registration';
@@ -27,9 +27,11 @@ import styles from './metier.module.css';
  *   3. les options du métier courant, enregistrées au geste.
  *
  * Un barbier n'est jamais poussé vers un autre métier : sa file reste
- * « Passage au fauteuil », et les autres métiers sont derrière « Voir les
- * autres métiers ». Seule une activité qui a son propre métier (garage,
- * restaurant, guichet…) voit une suggestion, en opt-in.
+ * « Passage au fauteuil », SANS proposition de changement, même le jour
+ * où d'autres métiers seront ouverts à tous (`offersMetierChoice`). Le
+ * choix n'est offert qu'à une activité qui a son propre métier (garage,
+ * restaurant, guichet…), à une organisation qui a les profils activés,
+ * ou qui a déjà une autre file dans un métier.
  */
 
 export interface ProfileQueue {
@@ -53,6 +55,46 @@ type Runner = (fn: () => Promise<ActionOutcome>) => void;
 /** Les métiers qu'une file peut prendre ici. `event` a son propre module. */
 const PICKABLE: readonly QueueProfile[] = ['walkin', 'vehicle', 'device', 'table', 'desk', 'retail'];
 
+/** Activités « au fauteuil » : le mot n'a de sens que pour elles. */
+const CHAIR_ACTIVITIES: ReadonlySet<string> = new Set(['barber', 'hair_salon', 'nail_bar', 'beauty']);
+
+/**
+ * Le nom d'un métier tel que le pro le lit. Le passage au fauteuil garde
+ * son nom chez un coiffeur, et quand l'activité est inconnue (c'est le
+ * produit d'aujourd'hui : captures R0 inchangées). Ailleurs (une file
+ * « Pneus minute » de garage, un commerce « autre »), il devient
+ * « Passage sans rendez-vous » : il n'y a pas de fauteuil.
+ */
+export function metierLabel(profile: QueueProfile, activity: string | null): string {
+  if (profile === 'walkin' && isActivityType(activity) && !CHAIR_ACTIVITIES.has(activity)) {
+    return 'Passage sans rendez-vous';
+  }
+  return getProfile(profile).label;
+}
+
+/**
+ * Proposer de changer de métier ? Toujours pour une file déjà dans un
+ * métier (il faut pouvoir revenir en arrière). Pour une file au passage,
+ * seulement si l'activité a un métier propre, si l'organisation a les
+ * profils activés, ou si elle a déjà une autre file dans un métier. Un
+ * barbier ne se voit donc jamais proposer six métiers, quel que soit le
+ * contenu d'`OPEN_PROFILES`.
+ */
+export function offersMetierChoice({
+  current, activity, features, orgHasProfiledQueue, availableCount,
+}: {
+  current: QueueProfile;
+  activity: string | null;
+  features: Readonly<Record<string, unknown>> | null;
+  orgHasProfiledQueue: boolean;
+  availableCount: number;
+}): boolean {
+  if (availableCount <= 1) return false;
+  if (current !== 'walkin') return true;
+  const own = profileForActivity(activity);
+  return (own !== 'walkin' && PICKABLE.includes(own)) || features?.profiles === true || orgHasProfiledQueue;
+}
+
 const REVIEW_DELAYS: readonly (number | null)[] = [0, 30, 45, 60, 75, 90, 120, 180, 240, null];
 
 function delayLabel(value: number | null): string {
@@ -66,6 +108,7 @@ function delayLabel(value: number | null): string {
 
 export function ProfileSection({
   orgSlug, queue, activity, features, canConfigure, staff, run, pending,
+  orgHasProfiledQueue = false, showQueueName = false, reviewLink = true,
 }: {
   orgSlug: string;
   queue: ProfileQueue;
@@ -75,6 +118,12 @@ export function ProfileSection({
   staff: DeskStaff[];
   run: Runner;
   pending: boolean;
+  /** Une autre file de l'organisation est déjà dans un métier (hors passage). */
+  orgHasProfiledQueue?: boolean;
+  /** Plusieurs files dans l'établissement : le titre nomme celle qu'on règle. */
+  showQueueName?: boolean;
+  /** Le lien « Rédiger un avis » est renseigné (section Avis Google). */
+  reviewLink?: boolean;
 }) {
   const router = useRouter();
   const current = queue.profile;
@@ -86,13 +135,30 @@ export function ProfileSection({
     ? suggestedRaw
     : null;
 
+  const offersChoice = offersMetierChoice({
+    current, activity, features, orgHasProfiledQueue, availableCount: available.length,
+  });
+  const label = (p: QueueProfile) => metierLabel(p, activity);
+
   const [pickerOpen, setPickerOpen] = useState(current === 'walkin' && suggested !== null);
   const [candidate, setCandidate] = useState<QueueProfile | null>(null);
   const [hovered, setHovered] = useState<QueueProfile | null>(null);
   const [switchError, setSwitchError] = useState<{ message: string; busy: boolean } | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Changement enregistré, page pas encore relue : la scène montre déjà
+  // le métier cible (« Enregistrement… ») et le message attend que la
+  // page rafraîchie le confirme. Jamais « est passée en Table » à côté
+  // de « Métier actuel : Passage au fauteuil ».
+  const [landing, setLanding] = useState<{ profile: QueueProfile; note: string } | null>(null);
   const [switching, startSwitch] = useTransition();
   const pickerId = useId();
+
+  useEffect(() => {
+    if (landing && landing.profile === current) {
+      setNote(landing.note);
+      setLanding(null);
+    }
+  }, [landing, current]);
 
   // Une autre file, ou le métier vient de changer : on repart d'un choix vide.
   useEffect(() => {
@@ -101,10 +167,11 @@ export function ProfileSection({
     setSwitchError(null);
   }, [queue.id, current]);
 
-  const shown = hovered ?? candidate ?? current;
+  const saving = landing !== null && landing.profile !== current;
+  const shown = saving ? landing.profile : (hovered ?? candidate ?? current);
   const shownDef = getProfile(shown);
   const shownOptions = shown === current ? options : resolveProfileOptions(shown, null, activity);
-  const isPreview = shown !== current;
+  const isPreview = shown !== current && !saving;
 
   const setOption = (patch: ProfileOptions) =>
     run(() => updateProfileOptions(orgSlug, { queueId: queue.id, options: patch as Record<string, unknown> }));
@@ -118,7 +185,7 @@ export function ProfileSection({
         setSwitchError({ message: result.error, busy: result.code === 'queue_not_empty' });
         return;
       }
-      const parts = [`« ${queue.name} » est passée en ${getProfile(result.data.profile).label}.`];
+      const parts = [`« ${queue.name} » est passée en ${metierLabel(result.data.profile, activity)}.`];
       if (result.data.settingsRestored) parts.push('Vos réglages d’avant ont été rétablis.');
       if (result.data.servicesRetired > 0) {
         const n = result.data.servicesRetired;
@@ -128,31 +195,38 @@ export function ProfileSection({
         const n = result.data.servicesCreated;
         parts.push(`${n} motif${n > 1 ? 's' : ''} proposé${n > 1 ? 's' : ''} par défaut : à retoucher dans Prestations.`);
       }
-      setNote(parts.join(' '));
+      const text = parts.join(' ');
       setCandidate(null);
       setHovered(null);
       setPickerOpen(false);
+      if (result.data.profile === current) setNote(text);
+      else setLanding({ profile: result.data.profile, note: text });
       router.refresh();
     });
   };
 
   return (
     <Section
-      title="Métier de la file"
+      title={showQueueName ? `Métier de « ${queue.name} »` : 'Métier de la file'}
       description="Ce qui avance dans la file, les mots de vos touches, et ce que voient vos clients et votre écran."
     >
       {/* ------------------------------------------------ La scène */}
       <div className={styles.stage}>
         <div className={styles.stageGrid}>
           <div className={styles.stageScene} key={shown} data-preview={isPreview ? '1' : undefined}>
-            <MetierApercu profile={shown} options={shownOptions} ticketPrefix={queue.ticket_prefix} />
+            <MetierApercu
+              profile={shown}
+              options={shownOptions}
+              ticketPrefix={queue.ticket_prefix}
+              chair={label('walkin') === getProfile('walkin').label}
+            />
           </div>
-          <div className={styles.stageText} aria-live="polite">
-            <p className={styles.stageEyebrow}>
+          <div className={styles.stageText} aria-live="polite" aria-busy={saving || undefined}>
+            <p className={styles.stageEyebrow} data-saving={saving ? '1' : undefined}>
               <span className={styles.stageNotch} aria-hidden="true" />
-              {isPreview ? 'Aperçu' : 'Métier actuel'}
+              {saving ? 'Enregistrement…' : isPreview ? 'Aperçu' : 'Métier actuel'}
             </p>
-            <h3 className={styles.stageTitle}>{shownDef.label}</h3>
+            <h3 className={styles.stageTitle}>{label(shown)}</h3>
             <p className={styles.stageTagline}>{shownDef.tagline}</p>
             <dl className={styles.vocab}>
               <div><dt>On suit</dt><dd>des {shownDef.vocab.subjectPlural}</dd></div>
@@ -172,7 +246,9 @@ export function ProfileSection({
       )}
 
       {/* ------------------------------------------------ Le choix */}
-      {available.length > 1 && (
+      {/* Pendant l'enregistrement, ni « Voir les autres métiers » ni la
+          phrase du métier quitté : la scène parle déjà du nouveau. */}
+      {offersChoice && !saving && (
         <div className={styles.picker}>
           {!pickerOpen ? (
             <div className={styles.pickerClosed}>
@@ -186,7 +262,6 @@ export function ProfileSection({
                   type="button"
                   className="btn btn--ghost btn--sm"
                   aria-expanded={false}
-                  aria-controls={pickerId}
                   onClick={() => setPickerOpen(true)}
                 >
                   {current === 'walkin' ? 'Voir les autres métiers' : 'Changer de métier'}
@@ -223,7 +298,7 @@ export function ProfileSection({
                       />
                       <span className={styles.choiceGlyph}><ProfileGlyph profile={p} /></span>
                       <span className={styles.choiceText}>
-                        <span className={styles.choiceLabel}>{def.label}</span>
+                        <span className={styles.choiceLabel}>{label(p)}</span>
                         <span className={styles.choiceTagline}>{def.tagline}</span>
                       </span>
                       {isCurrent ? (
@@ -241,6 +316,7 @@ export function ProfileSection({
                   queueName={queue.name}
                   from={current}
                   to={candidate}
+                  labelOf={label}
                   switching={switching}
                   error={switchError}
                   fileHref={`/app/${orgSlug}/file?file=${queue.id}`}
@@ -249,7 +325,13 @@ export function ProfileSection({
                 />
               ) : (
                 <div className={styles.pickerFoot}>
-                  <button type="button" className="btn btn--quiet btn--sm" onClick={() => { setPickerOpen(false); setCandidate(null); }}>
+                  <button
+                    type="button"
+                    className="btn btn--quiet btn--sm"
+                    aria-expanded
+                    aria-controls={pickerId}
+                    onClick={() => { setPickerOpen(false); setCandidate(null); }}
+                  >
                     Fermer
                   </button>
                 </div>
@@ -270,6 +352,7 @@ export function ProfileSection({
         setOption={setOption}
         run={run}
         staff={staff}
+        reviewLink={reviewLink}
       />
     </Section>
   );
@@ -280,11 +363,12 @@ export function ProfileSection({
    -------------------------------------------------------------------- */
 
 function SwitchTicket({
-  queueName, from, to, switching, error, fileHref, onConfirm, onCancel,
+  queueName, from, to, labelOf, switching, error, fileHref, onConfirm, onCancel,
 }: {
   queueName: string;
   from: QueueProfile;
   to: QueueProfile;
+  labelOf: (p: QueueProfile) => string;
   switching: boolean;
   error: { message: string; busy: boolean } | null;
   fileHref: string;
@@ -292,7 +376,6 @@ function SwitchTicket({
   onCancel: () => void;
 }) {
   const def = getProfile(to);
-  const fromDef = getProfile(from);
   const ttl = def.queueDefaults.entryTtlMinutes;
   const lines: string[] = [
     `Le poste, l’écran client et la TV parlent de ${def.vocab.subjectPlural} : « ${def.vocab.call} », « ${def.vocab.complete} ».`,
@@ -301,12 +384,12 @@ function SwitchTicket({
     lines.push(`S’il n’y a aucune prestation, les motifs du métier sont proposés : ${def.defaultServices.slice(0, 4).join(', ')}${def.defaultServices.length > 4 ? '…' : ''}`);
   }
   if (ttl && ttl > 1440) lines.push(`Une fiche reste suivie ${Math.round(ttl / 1440)} jours, même d’un jour sur l’autre.`);
-  lines.push(`Les réglages de « ${fromDef.label} » sont gardés de côté : y revenir les rétablit.`);
+  lines.push(`Les réglages de « ${labelOf(from)} » sont gardés de côté : y revenir les rétablit.`);
 
   return (
     <div className={styles.ticket} data-state={error ? 'error' : undefined}>
       <p className={styles.ticketTitle}>
-        Passer « {queueName} » en <strong>{def.label}</strong> ?
+        Passer « {queueName} » en <strong>{labelOf(to)}</strong> ?
       </p>
       <ul className={styles.ticketList}>
         {lines.map((l) => <li key={l}>{l}</li>)}
@@ -340,7 +423,7 @@ function SwitchTicket({
    -------------------------------------------------------------------- */
 
 function ProfileOptionsRows({
-  orgSlug, queue, profile, options, canConfigure, pending, setOption, run, staff,
+  orgSlug, queue, profile, options, canConfigure, pending, setOption, run, staff, reviewLink,
 }: {
   orgSlug: string;
   queue: ProfileQueue;
@@ -351,6 +434,7 @@ function ProfileOptionsRows({
   setOption: (patch: ProfileOptions) => void;
   run: Runner;
   staff: DeskStaff[];
+  reviewLink: boolean;
 }) {
   const disabled = !canConfigure || pending;
   const review = (
@@ -359,6 +443,7 @@ function ProfileOptionsRows({
       options={options}
       disabled={disabled}
       setOption={setOption}
+      reviewLink={reviewLink}
     />
   );
 
@@ -458,31 +543,53 @@ function ProfileOptionsRows({
   }
 }
 
-/** Demande d'avis : oui/non, puis quand (restaurant, guichet). */
+/**
+ * Demande d'avis : oui/non, puis quand (restaurant, guichet). Ce réglage
+ * décide, POUR CETTE FILE, de la notification de fin de passage et du
+ * bouton d'avis de l'écran client ; le lien est celui de la section
+ * « Avis Google ». Les textes suivent le métier : au restaurant, la fin
+ * du passage est « Installer » (le groupe s'assoit), d'où le délai.
+ */
 function ReviewRows({
-  profile, options, disabled, setOption,
+  profile, options, disabled, setOption, reviewLink,
 }: {
   profile: QueueProfile;
   options: ProfileOptions;
   disabled: boolean;
   setOption: (patch: ProfileOptions) => void;
+  reviewLink: boolean;
 }) {
   const on = options.review !== false;
   const withDelay = profile === 'table' || profile === 'desk';
-  const hint = profile === 'table'
-    ? 'Envoyée après le repas, pas quand on s’assoit : le délai part de « Installer ».'
+  const lead = profile === 'table'
+    ? 'Envoyée après le repas, pas quand le groupe s’assoit : réglez le délai ci-dessous.'
     : options.sensitive
-      ? 'En santé, solliciter des avis pose des questions de déontologie : coupée par défaut.'
+      ? 'Coupée en santé ; à vous de décider.'
       : 'Proposée à la fin du passage, à tous, sans filtrage sur la satisfaction.';
+  const hint = reviewLink
+    ? `${lead} Le lien est celui de « Avis Google ».`
+    : `${lead} Sans lien dans « Avis Google », seul le merci part.`;
   const delay = options.reviewDelayMinutes === undefined ? 0 : options.reviewDelayMinutes;
+  const delayHint = profile === 'table'
+    ? 'Compté depuis « Installer », quand le groupe s’assoit : comptez la durée d’un repas.'
+    : 'Compté depuis « Terminer », à la fin du passage au guichet.';
+  // Rallumer l'avis sur une file réglée à « jamais » (la santé) : il
+  // repart au délai du métier, sinon l'interrupteur s'allumerait sans
+  // qu'aucune demande ne parte jamais.
+  const turn = (v: boolean) => {
+    if (v && withDelay && options.reviewDelayMinutes === null) {
+      setOption({ review: true, reviewDelayMinutes: profile === 'table' ? 75 : 0 });
+    } else {
+      setOption({ review: v });
+    }
+  };
   return (
     <>
       <SettingRow label="Demande d’avis Google" hint={hint}>
-        <Toggle checked={on} label="Demande d’avis Google" disabled={disabled}
-          onChange={(v) => setOption({ review: v })} />
+        <Toggle checked={on} label="Demande d’avis Google" disabled={disabled} onChange={turn} />
       </SettingRow>
       {on && withDelay && (
-        <SettingRow label="Envoyée" hint="Délai compté depuis la fin du passage.">
+        <SettingRow label="Envoyée" hint={delayHint}>
           <select className="select" value={delay === null ? 'jamais' : String(delay)} disabled={disabled} aria-label="Délai de la demande d’avis"
             onChange={(e) => setOption({ reviewDelayMinutes: e.target.value === 'jamais' ? null : Number(e.target.value) })}>
             {REVIEW_DELAYS.map((d) => (
@@ -655,7 +762,7 @@ function DeskRow({
         className={`input ${styles.deskInput}`}
         value={value}
         maxLength={24}
-        placeholder={`Guichet ${index + 1}`}
+        placeholder={member.display_name}
         disabled={disabled}
         aria-label={`Libellé du guichet de ${member.display_name}`}
         onChange={(e) => setValue(e.target.value)}

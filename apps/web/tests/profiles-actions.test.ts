@@ -359,11 +359,29 @@ describe('modèles de messages', () => {
     db.tables.message_templates = [
       { id: 't1', organization_id: ORG, location_id: null, profile: 'vehicle', key: 'cles' },
     ];
-    const r = await upsertMessageTemplate('garage-demo', { profile: 'vehicle', key: 'cles', label: 'Clés', body: 'Clés à l’accueil.', isActive: false });
+    const r = await upsertMessageTemplate('garage-demo', { profile: 'vehicle', key: 'cles', label: 'Clés', body: 'Clés à l’accueil.' });
     expect(r.ok).toBe(true);
     expect(db.writes).toEqual([
-      expect.objectContaining({ table: 'message_templates', op: 'update', values: { label: 'Clés', body: 'Clés à l’accueil.', is_active: false } }),
+      expect.objectContaining({ table: 'message_templates', op: 'update', values: { label: 'Clés', body: 'Clés à l’accueil.', is_active: true } }),
     ]);
+  });
+
+  it('ne masque pas un modèle : l’envoi ne sait pas encore le refuser (isActive refusé)', async () => {
+    const r = await upsertMessageTemplate('garage-demo', {
+      profile: 'vehicle', key: 'cles', label: 'Clés', body: 'Clés à l’accueil.', isActive: false,
+    } as never);
+    expect(r).toMatchObject({ ok: false, code: 'validation' });
+    expect(db.writes).toHaveLength(0);
+  });
+
+  it('pose l’espace fine insécable avant « : ; ? ! » à l’enregistrement, sans toucher 19:00', async () => {
+    const r = await upsertMessageTemplate('garage-demo', {
+      profile: 'vehicle', key: 'rappel', label: 'Rappel',
+      body: 'Pouvez-vous nous rappeler? Ouvert dès 19:00 ; merci !',
+    });
+    expect(r.ok).toBe(true);
+    const insert = db.writes.find((w) => w.op === 'insert');
+    expect(insert?.values?.body).toBe('Pouvez-vous nous rappeler\u202F? Ouvert dès 19:00\u202F; merci\u202F!');
   });
 
   it('refuse un métier sans messages (le passage au fauteuil)', async () => {
@@ -446,7 +464,7 @@ describe('mergeTemplates (Réglages, section Messages)', () => {
     profile: 'vehicle', key: 'x', label: 'X', body: 'X.', is_active: true, location_id: null, sort_order: 0, ...over,
   }) as Parameters<typeof mergeTemplates>[1][number];
 
-  it('garde l’ordre du code, marque les retouches, les masqués et les ajouts', () => {
+  it('garde l’ordre du code, marque les retouches et les ajouts ; une surcharge inactive est lue comme à l’envoi', () => {
     const list = mergeTemplates('vehicle', [
       row({ key: 'cles', label: 'Clés', body: 'Clés à l’accueil.' }),
       row({ key: 'retard', label: 'Retard', body: 'Petit retard : votre véhicule sera prêt demain matin.', is_active: false }),
@@ -454,19 +472,146 @@ describe('mergeTemplates (Réglages, section Messages)', () => {
       row({ key: 'cles', label: 'Autre', body: 'Ailleurs.', location_id: LOC }),
       row({ key: 'bientot', profile: 'table', label: 'Table', body: 'Table.' }),
     ]);
-    expect(list.map((t) => [t.key, t.origin, t.isActive])).toEqual([
-      ['retard', 'default', false],
-      ['rappel', 'default', true],
-      ['cles', 'edited', true],
-      ['fermeture', 'default', true],
-      ['devis_maj', 'default', true],
-      ['fausse_alerte', 'default', true],
-      ['perso_ab12', 'custom', true],
+    expect(list.map((t) => [t.key, t.origin])).toEqual([
+      ['retard', 'default'],
+      ['rappel', 'default'],
+      ['cles', 'edited'],
+      ['fermeture', 'default'],
+      ['devis_maj', 'default'],
+      ['fausse_alerte', 'default'],
+      ['perso_ab12', 'custom'],
     ]);
     expect(list[2]?.original?.body).toBe('Vos clés sont disponibles à l’accueil.');
+    // `sendTemplateMessage` écarte une surcharge inactive : le texte du code part.
+    expect(list[0]?.body).toBe('Petit retard : votre véhicule sera prêt demain matin.');
+  });
+
+  it('un modèle du code réenregistré tel quel (espace fine posée) n’est pas « Retouché »', () => {
+    const list = mergeTemplates('vehicle', [
+      row({ key: 'rappel', label: 'Nous rappeler', body: 'Pouvez-vous nous rappeler au {telephone_etablissement}\u202F?' }),
+    ]);
+    expect(list.find((t) => t.key === 'rappel')?.origin).toBe('default');
   });
 
   it('un barbier n’a aucun modèle', () => {
     expect(mergeTemplates('walkin', [])).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Données de santé : ni prénom, ni avis par défaut                     */
+/* ------------------------------------------------------------------ */
+
+describe('file de santé (sensitive)', () => {
+  const Q_HEALTH = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  beforeEach(() => {
+    db.features = { profiles: true };
+    db.tables.queues!.push({
+      id: Q_HEALTH, organization_id: ORG, location_id: LOC, profile: 'desk',
+      profile_options: { numbering: true, sensitive: true, review: false, reviewDelayMinutes: null }, ticket_prefix: 'A',
+    });
+  });
+
+  it('updateQueueSettings refuse de demander ou d’exiger le prénom : join_queue le refuserait à tout patient', async () => {
+    const ask = await updateQueueSettings({ queueId: Q_HEALTH, askClientName: true });
+    const required = await updateQueueSettings({ queueId: Q_HEALTH, clientNameRequired: true });
+    expect(ask).toMatchObject({ ok: false, code: 'validation' });
+    expect(required).toMatchObject({ ok: false, code: 'validation' });
+    expect(db.writes).toHaveLength(0);
+  });
+
+  it('les couper reste toujours possible, et un guichet ordinaire peut demander le prénom', async () => {
+    const off = await updateQueueSettings({ queueId: Q_HEALTH, askClientName: false, clientNameRequired: false });
+    expect(off.ok).toBe(true);
+    const desk = await updateQueueSettings({ queueId: Q_DESK, askClientName: true });
+    expect(desk.ok).toBe(true);
+  });
+
+  it('passer une file en santé coupe aussi la demande d’avis (review false, délai « jamais »)', async () => {
+    const r = await updateProfileOptions('garage-demo', { queueId: Q_DESK, options: { sensitive: true } });
+    expect(r).toMatchObject({ ok: true, data: { options: { numbering: true, sensitive: true, review: false, reviewDelayMinutes: null } } });
+    expect(db.writes[0]?.values).toMatchObject({
+      profile_options: { numbering: true, sensitive: true, review: false, reviewDelayMinutes: null },
+      ask_client_name: false,
+      client_name_required: false,
+    });
+  });
+
+  it('un choix explicite du même appel l’emporte ; rallumer l’avis ensuite reste possible', async () => {
+    const same = await updateProfileOptions('garage-demo', { queueId: Q_DESK, options: { sensitive: true, review: true } });
+    expect(same).toMatchObject({ ok: true, data: { options: { sensitive: true, review: true, reviewDelayMinutes: null } } });
+    db.writes = [];
+    const later = await updateProfileOptions('garage-demo', { queueId: Q_HEALTH, options: { review: true, reviewDelayMinutes: 0 } });
+    expect(later).toMatchObject({ ok: true, data: { options: { sensitive: true, review: true, reviewDelayMinutes: 0 } } });
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Choix du métier : jamais proposé à un barbier                       */
+/* ------------------------------------------------------------------ */
+
+const { offersMetierChoice, metierLabel } = await import('@/app/app/[org]/reglages/ProfileSection');
+
+describe('offersMetierChoice (Réglages, « Voir les autres métiers »)', () => {
+  const base = { current: 'walkin' as const, activity: 'barber', features: null, orgHasProfiledQueue: false, availableCount: 6 };
+
+  it('un barbier au passage : jamais, même si six métiers étaient ouverts', () => {
+    expect(offersMetierChoice(base)).toBe(false);
+  });
+
+  it('une activité à métier propre, une organisation activée ou une autre file à métier : oui', () => {
+    expect(offersMetierChoice({ ...base, activity: 'garage' })).toBe(true);
+    expect(offersMetierChoice({ ...base, features: { profiles: true } })).toBe(true);
+    expect(offersMetierChoice({ ...base, orgHasProfiledQueue: true })).toBe(true);
+  });
+
+  it('une file déjà dans un métier peut toujours revenir en arrière ; un seul métier possible : rien', () => {
+    expect(offersMetierChoice({ ...base, current: 'table' })).toBe(true);
+    expect(offersMetierChoice({ ...base, activity: 'garage', availableCount: 1 })).toBe(false);
+  });
+
+  it('« Passage au fauteuil » chez un coiffeur, « Passage sans rendez-vous » dans un garage', () => {
+    expect(metierLabel('walkin', 'barber')).toBe('Passage au fauteuil');
+    expect(metierLabel('walkin', null)).toBe('Passage au fauteuil');
+    expect(metierLabel('walkin', 'garage')).toBe('Passage sans rendez-vous');
+    expect(metierLabel('table', 'garage')).toBe('Table');
+  });
+});
+
+describe('ProfileSection (rendu) avec OPEN_PROFILES étendu à tous les métiers', () => {
+  it('un barbier voit « Passage au fauteuil » sans « Voir les autres métiers » ; un garage le voit', async () => {
+    vi.resetModules();
+    vi.doMock('next/navigation', () => ({ useRouter: () => ({ refresh: () => undefined }) }));
+    vi.doMock('@/lib/profiles/capabilities', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@/lib/profiles/capabilities')>();
+      const all = new Set(['walkin', 'event', 'vehicle', 'device', 'table', 'desk', 'retail'] as const);
+      return { ...actual, OPEN_PROFILES: all, profileAvailable: () => true };
+    });
+    const { createElement } = await import('react');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const { ProfileSection } = await import('@/app/app/[org]/reglages/ProfileSection');
+    const props = {
+      orgSlug: 'barber-house',
+      queue: { id: Q_WALKIN, name: 'Salon', profile: 'walkin' as const, profile_options: {}, ticket_prefix: 'A' },
+      features: null,
+      canConfigure: true,
+      staff: [],
+      run: () => undefined,
+      pending: false,
+    };
+    const barber = renderToStaticMarkup(createElement(ProfileSection, { ...props, activity: 'barber' }));
+    expect(barber).toContain('Passage au fauteuil');
+    expect(barber).not.toContain('Voir les autres métiers');
+    expect(barber).not.toContain('Changer de métier');
+
+    const garage = renderToStaticMarkup(createElement(ProfileSection, {
+      ...props, activity: 'garage', queue: { ...props.queue, name: 'Pneus minute' },
+    }));
+    expect(garage).toContain('Passage sans rendez-vous');
+    expect(garage).not.toContain('Au fauteuil');
+    // Le garage a son métier : le sélecteur s'ouvre de lui-même, suggestion comprise.
+    expect(garage).toContain('Fait pour vous');
+    vi.doUnmock('@/lib/profiles/capabilities');
+    vi.doUnmock('next/navigation');
   });
 });

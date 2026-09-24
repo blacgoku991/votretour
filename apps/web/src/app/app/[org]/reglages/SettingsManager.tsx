@@ -11,6 +11,7 @@ import {
 import { WEEKDAYS, formatPrice } from '@/lib/format';
 import { hasStages, isLegacyProfile, isQueueProfile } from '@/lib/profiles';
 import { OPEN_PROFILES, profileAvailable } from '@/lib/profiles/capabilities';
+import { clientNameAllowed, resolveProfileOptions } from '@/lib/profiles/options';
 import type { QueueProfile } from '@/lib/profiles/types';
 import { ProfileSection, type DeskStaff } from './ProfileSection';
 import { TemplatesSection } from './TemplatesSection';
@@ -32,6 +33,17 @@ import styles from './settings.module.css';
  * file est déjà dans un autre métier, ou un métier est ouvert à tous
  * (`OPEN_PROFILES`). Un barbier d'aujourd'hui ne voit donc RIEN de
  * nouveau : ses réglages restent identiques au pixel près (captures R0).
+ *
+ * Plusieurs files dans l'établissement, avec un métier en jeu : le choix
+ * de la file remonte AU-DESSUS de « Métier », dans un bandeau collant
+ * commun à « Métier », « Fonctionnement » et « Messages », et chaque titre
+ * nomme la file réglée. On ne règle jamais le métier d'une file sans voir
+ * laquelle.
+ *
+ * Données de santé (`sensitive`) : ni « Demander le prénom » ni « Prénom
+ * obligatoire ». `join_queue` efface le prénom en santé ; l'exiger
+ * fermerait la file à tout patient. Une ligne en lecture seule le dit,
+ * et `updateQueueSettings` refuse de les rallumer.
  *
  * Mise en page : un sommaire collant en rail à partir de 1200 px, une
  * liste « Aller à la section » en dessous. Les horaires passent par
@@ -66,7 +78,7 @@ interface Service {
 export function SettingsManager({
   orgSlug, organizationId, canManage, locations, currentLocation, settings,
   queues, selectedQueueId, hours, services,
-  canConfigure = canManage, activity = null, staff = [], templateRows = [],
+  canConfigure = canManage, activity = null, staff = [], templateRows = [], orgHasProfiledQueue = false,
 }: {
   orgSlug: string;
   organizationId: string;
@@ -86,6 +98,8 @@ export function SettingsManager({
   staff?: DeskStaff[];
   /** Surcharges des modèles de messages de l'organisation. */
   templateRows?: StoredTemplateRow[];
+  /** Une file de l'organisation est déjà dans un métier (hors passage). */
+  orgHasProfiledQueue?: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +115,10 @@ export function SettingsManager({
   const openBeyondToday = [...OPEN_PROFILES].some((p) => !isLegacyProfile(p));
   const showProfile = queue !== null && (features?.profiles === true || !isLegacyProfile(profile) || openBeyondToday);
   const showTemplates = showProfile && !isLegacyProfile(profile) && profileAvailable(profile, features);
+  // Le bandeau des files ne remplace l'onglet d'avant que lorsqu'un
+  // métier est en jeu : un barbier à plusieurs files garde sa page.
+  const queueStrip = showProfile && queues.length > 1;
+  const nameAllowed = queue === null || clientNameAllowed(resolveProfileOptions(profile, queue.profile_options, activity));
   // Une réparation dure plusieurs jours : jusqu'à 30 jours pour une file à
   // étapes. Les autres gardent exactement la liste d'avant.
   const ttlChoices = hasStages(profile)
@@ -185,6 +203,20 @@ export function SettingsManager({
       </div>
     );
   }
+
+  const queueTabs = queue && queues.length > 1 ? (
+    <div className={`seg ${styles.queueTabs}`} role="group" aria-label="File à régler">
+      {queues.map((q) => (
+        <a
+          key={q.id}
+          href={`/app/${orgSlug}/reglages?lieu=${currentLocation.id}&file=${q.id}`}
+          aria-current={q.id === queue.id ? 'page' : undefined}
+        >
+          {q.name}
+        </a>
+      ))}
+    </div>
+  ) : undefined;
 
   const toc: TocEntry[] = [
     { id: 'etablissement', label: 'Établissement' },
@@ -279,6 +311,17 @@ export function SettingsManager({
             </Section>
           </div>
 
+          <div className={queueStrip ? styles.queueScope : styles.queueScopePlain}>
+          {queueStrip && queue && (
+            <div className={styles.queueStrip}>
+              <p className={styles.queueStripLabel}>
+                <span className={styles.queueStripNotch} aria-hidden="true" />
+                File réglée
+              </p>
+              {queueTabs}
+            </div>
+          )}
+
           {/* ---------------- Métier de la file ---------------- */}
           {showProfile && queue && (
             <div id="metier" className={styles.anchor}>
@@ -297,6 +340,9 @@ export function SettingsManager({
                 staff={staff}
                 run={run}
                 pending={pending}
+                orgHasProfiledQueue={orgHasProfiledQueue}
+                showQueueName={queueStrip}
+                reviewLink={Boolean(currentLocation.google_review_url)}
               />
             </div>
           )}
@@ -305,20 +351,8 @@ export function SettingsManager({
           {queue && (
             <div id="file" className={styles.anchor}>
               <Section
-                title="Fonctionnement de la file"
-                actions={queues.length > 1 ? (
-                  <div className={`seg ${styles.queueTabs}`} role="group" aria-label="File à régler">
-                    {queues.map((q) => (
-                      <a
-                        key={q.id}
-                        href={`/app/${orgSlug}/reglages?lieu=${currentLocation.id}&file=${q.id}`}
-                        aria-current={q.id === queue.id ? 'page' : undefined}
-                      >
-                        {q.name}
-                      </a>
-                    ))}
-                  </div>
-                ) : undefined}
+                title={queueStrip ? `Fonctionnement de « ${queue.name} »` : 'Fonctionnement de la file'}
+                actions={queueStrip ? undefined : queueTabs}
               >
                 <SettingRow label="Mode" hint="File commune, ou une file par professionnel.">
                   <select className="select" value={queue.mode} disabled={!canManage} aria-label="Mode"
@@ -344,17 +378,28 @@ export function SettingsManager({
                   </select>
                 </SettingRow>
 
-                <SettingRow label="Demander le prénom" hint="Sinon, rejoindre ne demande rien du tout.">
-                  <Toggle checked={queue.ask_client_name} label="Demander le prénom" disabled={!canManage}
-                    onChange={(v) => run(() => updateQueueSettings({ queueId: queue.id, askClientName: v }))} />
-                </SettingRow>
+                {nameAllowed ? (
+                  <>
+                    <SettingRow label="Demander le prénom" hint="Sinon, rejoindre ne demande rien du tout.">
+                      <Toggle checked={queue.ask_client_name} label="Demander le prénom" disabled={!canManage}
+                        onChange={(v) => run(() => updateQueueSettings({ queueId: queue.id, askClientName: v }))} />
+                    </SettingRow>
 
-                {queue.ask_client_name && (
-                  <SettingRow label="Prénom obligatoire">
-                    <Toggle checked={queue.client_name_required} label="Prénom obligatoire" disabled={!canManage}
-                      onChange={(v) => run(() => updateQueueSettings({
-                        queueId: queue.id, clientNameRequired: v,
-                      }))} />
+                    {queue.ask_client_name && (
+                      <SettingRow label="Prénom obligatoire">
+                        <Toggle checked={queue.client_name_required} label="Prénom obligatoire" disabled={!canManage}
+                          onChange={(v) => run(() => updateQueueSettings({
+                            queueId: queue.id, clientNameRequired: v,
+                          }))} />
+                      </SettingRow>
+                    )}
+                  </>
+                ) : (
+                  <SettingRow
+                    label="Prénom"
+                    hint="Données de santé : le patient rejoint sans rien saisir. Il est appelé par son numéro."
+                  >
+                    <span className="chip">Aucun prénom demandé (données de santé)</span>
                   </SettingRow>
                 )}
 
@@ -447,6 +492,7 @@ export function SettingsManager({
               />
             </div>
           )}
+          </div>
 
           {/* ---------------- Horaires ---------------- */}
           <div id="horaires" className={styles.anchor}>
@@ -593,7 +639,9 @@ export function SettingsManager({
 
               <SettingRow
                 label="Proposer l’avis Google en fin de passage"
-                hint="Nécessite un lien d’avis renseigné ci-dessus."
+                hint={orgHasProfiledQueue
+                  ? 'Sur le pass Wallet du client ; nécessite un lien d’avis. Dans une file à métier, la demande de fin de passage se règle aussi file par file, dans « Métier ».'
+                  : 'Nécessite un lien d’avis renseigné ci-dessus.'}
               >
                 <Toggle checked={settings?.send_completion_review ?? true} label="Avis Google"
                   disabled={!canManage}

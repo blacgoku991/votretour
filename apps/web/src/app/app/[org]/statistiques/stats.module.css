@@ -58,6 +58,8 @@
   background: var(--accent);
   transform: translateY(-4px);
 }
+.bandNote { margin-top: var(--sp-3); font-size: 0.875rem; }
+.bandNote a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
 .arrow { color: var(--accent); font-variation-settings: 'wght' 700; }
 .impactRate { color: var(--text-muted); }
 

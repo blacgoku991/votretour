@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { requireOrgAccess } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { isLegacyProfile } from '@/lib/profiles';
 import { SettingsManager } from './SettingsManager';
 
 export const metadata: Metadata = { title: 'Réglages', robots: { index: false } };
@@ -28,7 +29,7 @@ export default async function SettingsPage({
 
   const [
     { data: settings }, { data: queues }, { data: hours }, { data: services },
-    { data: organization }, { data: staff }, { data: templateRows },
+    { data: organization }, { data: staff }, { data: templateRows }, { data: orgQueues },
   ] =
     await Promise.all([
       db.from('organization_settings').select('*').eq('organization_id', organizationId).maybeSingle(),
@@ -53,7 +54,14 @@ export default async function SettingsPage({
       db.from('message_templates')
         .select('profile, key, label, body, is_active, location_id, sort_order')
         .eq('organization_id', organizationId).is('location_id', null),
+      // Une file déjà dans un métier, ailleurs dans l'organisation : elle
+      // seule, avec l'activité et `features.profiles`, ouvre le choix du
+      // métier d'une file au passage (jamais pour un simple barbier).
+      db.from('queues').select('id, profile').eq('organization_id', organizationId),
     ]);
+
+  const orgHasProfiledQueue = ((orgQueues ?? []) as { id: string; profile: string | null }[])
+    .some((q) => !isLegacyProfile(q.profile));
 
   return (
     <SettingsManager
@@ -62,6 +70,7 @@ export default async function SettingsPage({
       canManage={access.can('settings.manage')}
       canConfigure={access.can('queue.configure')}
       activity={(organization?.activity as string | undefined) ?? null}
+      orgHasProfiledQueue={orgHasProfiledQueue}
       staff={(staff ?? []) as never}
       templateRows={(templateRows ?? []) as never}
       locations={list as never}

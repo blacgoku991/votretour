@@ -203,9 +203,16 @@ const PREFIXED_PROFILES: ReadonlySet<QueueProfile> = new Set(['desk', 'retail'])
  * schéma strict du profil : une clé d'un autre métier est refusée.
  *
  * Données de santé : passer une file en `sensitive` coupe aussi la
- * demande du prénom. L'option est masquée dans Réglages et la base
- * n'en recevrait plus, mais un prénom déjà demandé la veille ne doit pas
- * continuer de l'être par la seule inertie d'un réglage d'avant.
+ * demande du prénom (colonnes `ask_client_name` et `client_name_required`).
+ * Réglages masque alors ces deux interrupteurs et `updateQueueSettings`
+ * refuse de les rallumer : `join_queue` efface le prénom en santé, un
+ * « prénom obligatoire » resté allumé fermerait la file à tout patient.
+ *
+ * Au passage en santé, la demande d'avis Google est aussi coupée
+ * (`review: false`, et « jamais » pour le délai), comme le fait
+ * `apply_profile_defaults` en SQL : décision du propriétaire, aucune
+ * sollicitation d'avis par défaut en santé. Le pro peut la rallumer,
+ * explicitement, ensuite ; une clé envoyée dans le même appel l'emporte.
  */
 export async function updateProfileOptions(
   orgSlug: string,
@@ -223,7 +230,12 @@ export async function updateProfileOptions(
     // Seules les clés réellement stockées sont reprises : un défaut que le
     // pro n'a jamais touché reste un défaut (il suivra le code).
     const stored = resolveStoredOnly(queue.profile, queue.profile_options);
+    const wasSensitive = resolveProfileOptions(queue.profile, queue.profile_options).sensitive === true;
     const next = parse(profileOptionsSchema(queue.profile), { ...stored, ...parsed.options }) as ProfileOptions;
+    if (next.sensitive === true && !wasSensitive) {
+      if (!('review' in parsed.options)) next.review = false;
+      if (!('reviewDelayMinutes' in parsed.options)) next.reviewDelayMinutes = null;
+    }
 
     const patch: Record<string, unknown> = { profile_options: next };
     if (parsed.ticketPrefix !== undefined) {
@@ -285,8 +297,6 @@ const templateSchema = z
     key: z.string().regex(TEMPLATE_KEY_RE, 'Modèle invalide.').optional(),
     label: z.string().trim().min(1, 'Donnez un nom au modèle.').max(TEMPLATE_LABEL_MAX, `${TEMPLATE_LABEL_MAX} caractères au plus pour le nom.`),
     body: z.string().max(400),
-    /** Un modèle du code peut être masqué du poste sans être supprimé. */
-    isActive: z.boolean().default(true),
     /** Absent ou null : pour tous les établissements de l'organisation. */
     locationId: uuid.nullish(),
   })
@@ -323,6 +333,20 @@ function keyFromLabel(label: string): string {
 }
 
 /**
+ * Typographie française À L'ENREGISTREMENT : l'apostrophe ’ (via
+ * `typographie`), puis l'espace fine insécable (U+202F) avant « : ; ? ! ».
+ * Le texte stocké est déjà juste : le poste, la notification et l'écran
+ * verrouillé l'affichent tel quel, sans correction de dernière minute, et
+ * « ? » ne part jamais seul en début de ligne. Une ponctuation collée à
+ * une autre (« ?! ») ou suivie d'un caractère (« 19:00 », « :) ») n'est
+ * pas touchée.
+ */
+const THIN_NBSP = '\u202F';
+function typographieFr(text: string): string {
+  return typographie(text).replace(/([^\s;:!?])[ \u00A0\u202F]?([;:!?])(?=\s|$)/gu, `$1${THIN_NBSP}$2`);
+}
+
+/**
  * Enregistre un modèle (surcharge d'un modèle du code, ou modèle ajouté).
  * Le texte est contrôlé comme à l'envoi : 180 caractères, variables sur
  * liste blanche, AUCUNE adresse web (un compte pro volé ne doit pas faire
@@ -339,8 +363,8 @@ export async function upsertMessageTemplate(
     const locationId = parsed.locationId ?? null;
     if (locationId) await assertLocationInOrg(locationId, organizationId);
 
-    const body = typographie(parsed.body);
-    const label = typographie(parsed.label);
+    const body = typographieFr(parsed.body);
+    const label = typographieFr(parsed.label);
     const check = validateTemplateBody(body, parsed.profile);
     if (!check.ok) throw new AppError('validation', check.errors[0] ?? 'Message invalide.', 422);
 
@@ -363,7 +387,7 @@ export async function upsertMessageTemplate(
     if (found) {
       const { error } = await db
         .from('message_templates')
-        .update({ label, body, is_active: parsed.isActive })
+        .update({ label, body, is_active: true })
         .eq('id', found.id)
         .eq('organization_id', organizationId);
       if (error) throw error;
@@ -377,7 +401,7 @@ export async function upsertMessageTemplate(
         key,
         label,
         body,
-        is_active: parsed.isActive,
+        is_active: true,
         // Les modèles du code gardent leur rang ; les ajouts viennent après.
         sort_order: order >= 0 ? order * 10 : 1000,
       });
@@ -390,7 +414,7 @@ export async function upsertMessageTemplate(
       action: 'message_template.saved',
       targetType: 'message_template',
       targetId: key,
-      metadata: { profile: parsed.profile, locationId, isActive: parsed.isActive, length: Array.from(body).length },
+      metadata: { profile: parsed.profile, locationId, length: Array.from(body).length },
     });
     revalidate(orgSlug);
     return { ok: true, data: { key } };
