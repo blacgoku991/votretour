@@ -22,6 +22,15 @@ import styles from './client.module.css';
  * exactement ce qu'il disait : « C'est votre tour », « Présentez-vous au
  * comptoir ». Un titre fourni remplace le couple « C'est » / « votre
  * tour » : il se suffit à lui-même.
+ *
+ * `thresholdLabel` : le mot écrit sur le linteau du Seuil, celui du
+ * métier (« Réception atelier », « Accueil », « Guichet », « Caisse »).
+ * Défaut « Comptoir » : le rideau des barbiers ne change pas d'un pixel.
+ *
+ * `emblem` : l'objet du client posé DANS le Seuil, juste sous le titre
+ * (la plaque, le numéro « A-042 », le chevalet). C'est lui que l'on vient
+ * chercher : il passe la porte avec le titre, pas sous elle. `frameClassName`
+ * permet alors au cadre de se resserrer sur ce qu'il contient.
  */
 
 const FLIP_MS = 640;
@@ -36,6 +45,9 @@ export function TurnCurtain({
   clientName,
   title,
   subtitle,
+  thresholdLabel = 'Comptoir',
+  emblem,
+  frameClassName,
   children,
 }: {
   /** Conteneur du Rang : on y cherche la latte « Vous » (.slat--self). */
@@ -48,6 +60,12 @@ export function TurnCurtain({
   title?: string;
   /** Consigne sous le titre ; défaut : « Présentez-vous au comptoir ». */
   subtitle?: string;
+  /** Mot du linteau ; défaut : « Comptoir ». */
+  thresholdLabel?: string;
+  /** Objet du client dans le Seuil, sous le titre. */
+  emblem?: React.ReactNode;
+  /** Classe ajoutée au cadre (hauteur, espacements) quand il porte un objet. */
+  frameClassName?: string;
   children: React.ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -98,11 +116,15 @@ export function TurnCurtain({
 
         {/* Une seule annonce : le focus sur le titre quand le rideau se
             déploie ; role="alert" seulement quand il est déjà là. */}
-        <div className={styles.curtainMain} role={animate ? undefined : 'alert'}>
-          <Seuil tone="ink" draw label="Comptoir" className={styles.curtainSeuil}>
+        <div
+          className={frameClassName ? `${styles.curtainMain} ${frameClassName}` : styles.curtainMain}
+          role={animate ? undefined : 'alert'}
+        >
+          <Seuil tone="ink" draw label={thresholdLabel} className={styles.curtainSeuil}>
             {clientName && <p className={styles.turnName}>{clientName}</p>}
             {title === undefined && <p className={styles.turnKicker}>C’est</p>}
             <h2 ref={titleRef} tabIndex={-1} className={styles.turnTitle}>{title ?? 'votre tour'}</h2>
+            {emblem}
             <p className={styles.turnHint}>{subtitle ?? 'Présentez-vous au comptoir'}</p>
           </Seuil>
         </div>

@@ -9,7 +9,7 @@ import { loadOrganizationFeatures } from '@/server/profiles/queue';
 import { ClientExperience, type StaffGate } from '../ClientExperience';
 import { ProfileShell } from './ProfileShell';
 
-export type { ProfileEntryPoint };
+export type { ProfileEntryPoint, ProfileTicketState };
 
 /**
  * L'EXPÉRIENCE CLIENT DES PROFILS MÉTIER — atelier (véhicule, appareil),
@@ -24,6 +24,11 @@ export type { ProfileEntryPoint };
  *    activé pour elle y est servi comme un passage au fauteuil ; l'écran
  *    fait donc de même, avec `ClientExperience` — jamais un formulaire
  *    d'atelier dont l'inscription perdrait les informations ;
+ *  - le ticket repris sur cet appareil (`find_active_ticket`, valable pour
+ *    toute l'organisation) : une fiche d'atelier ouverte depuis la page
+ *    d'une file de barbiers s'affiche ICI, jamais dans le Rang des
+ *    barbiers, qui ne sait pas dire une étape ni un devis. L'inverse (un
+ *    passage au fauteuil repris sur la page d'un garage) repart chez eux ;
  *  - le délai pour se présenter après l'appel (`absent_grace_minutes`),
  *    absent de `ticket_state` : le compte à rebours de la table est celui
  *    que le moteur appliquera, pas un chiffre inventé ;
@@ -55,41 +60,50 @@ export async function ProfileExperience({
   walletSlot = null,
 }: Props) {
   const queue = entryPoint.queue;
-  const profile = getProfile(queue?.profile).id;
+  const pageProfile = getProfile(queue?.profile).id;
   const features = await loadOrganizationFeatures(entryPoint.organization.id).catch(() => null);
-
-  // Garde de l'inscription, ou ticket repris sur cet appareil qui est un
-  // passage au fauteuil (une autre file du même établissement) : l'écran
-  // des barbiers, qui sait l'afficher.
   const resumed = initialTicket as ProfileTicketState | null;
-  if (!queue || !profileAvailable(profile, features) || (resumed && isLegacyProfile(resumed.queue.profile))) {
-    return (
-      <ClientExperience
-        entryPoint={entryPoint}
-        initialTicket={initialTicket}
-        source={source}
-        staffGate={staffGate}
-        vapidPublicKey={vapidPublicKey}
-        activityLabel={activityLabel}
-      />
-    );
+  // La file de la page ne s'inscrit pas en profil métier : walkin ou
+  // event (la page d'une file de barbiers qui reprend une fiche d'atelier
+  // de cet appareil), ou profil ni ouvert à tous ni activé pour
+  // l'organisation — même garde que `api/client/join` (`resolveJoinPath`),
+  // qui servirait l'inscription comme un passage au fauteuil.
+  const joinLegacy = !queue || isLegacyProfile(pageProfile) || !profileAvailable(pageProfile, features);
+
+  // Rien de métier à montrer : ni ticket métier repris, ni inscription
+  // métier. L'écran des barbiers, qui sait tout afficher de ce cas.
+  if (!resumed || isLegacyProfile(resumed.queue.profile)) {
+    if (joinLegacy) {
+      return (
+        <ClientExperience
+          entryPoint={entryPoint}
+          initialTicket={initialTicket}
+          source={source}
+          staffGate={staffGate}
+          vapidPublicKey={vapidPublicKey}
+          activityLabel={activityLabel}
+        />
+      );
+    }
   }
 
-  // Le ticket repris sur cet appareil peut appartenir à une AUTRE file du
-  // lieu : c'est la sienne qui compte pour l'état public.
-  const ticket = resumed;
-  const queueId = ticket?.queue.id ?? queue.id;
-  const [graceMinutes, publicState] = await Promise.all([
-    readGraceMinutes(queueId),
-    getPublicQueueState(queueId).catch((): PublicQueueState | null => null),
+  // Le ticket repris sur cet appareil peut appartenir à une AUTRE file de
+  // l'établissement : c'est la sienne qui compte pour l'état public, et
+  // les deux délais (page, ticket) sont lus pour le compte à rebours.
+  const ticketQueueId = resumed && !isLegacyProfile(resumed.queue.profile) ? resumed.queue.id : null;
+  const queueIds = [...new Set([queue?.id, ticketQueueId].filter((id): id is string => Boolean(id)))];
+  const [graces, publicState] = await Promise.all([
+    Promise.all(queueIds.map(async (id) => [id, await readGraceMinutes(id)] as const)),
+    getPublicQueueState(ticketQueueId ?? queue?.id ?? '').catch((): PublicQueueState | null => null),
   ]);
 
   return (
     <ProfileShell
       entryPoint={entryPoint}
-      initialTicket={ticket}
+      initialTicket={resumed}
       initialPublic={publicState ? publicState.entries.map(({ id, ahead, status }) => ({ id, ahead, status })) : null}
-      graceMinutes={graceMinutes}
+      graceByQueue={Object.fromEntries(graces)}
+      joinLegacy={joinLegacy}
       source={source}
       staffGate={staffGate}
       vapidPublicKey={vapidPublicKey}

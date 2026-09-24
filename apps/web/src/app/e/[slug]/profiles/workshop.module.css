@@ -486,3 +486,156 @@
   .hang { --ring: 68px; }
   .tag { padding-inline: 24px; }
 }
+
+/* L'étiquette tient son air sous elle : son ombre portée ne touche pas le
+   titre « Où en est votre véhicule » (surtout sur grand écran). */
+.hang { margin-bottom: 8px; }
+@media (min-width: 600px) {
+  .hang { margin-bottom: 16px; }
+}
+
+/* ---------------------------------------------------------------------
+   Le ticket de dépôt (appareil) — bord droit dentelé, souche perforée
+   --------------------------------------------------------------------- */
+.deposit {
+  --tooth: 6px;
+  --stub: 46px;
+  align-self: center;
+  width: min(100%, 340px);
+  margin: 6px 0 8px;
+  /* Relief sur l'enveloppe : le masque de la latte rognerait une
+     box-shadow. Une tranche dure de 3 px, puis l'ombre portée. */
+  filter:
+    drop-shadow(0 3px 0 var(--bone-500))
+    drop-shadow(0 22px 22px rgb(0 0 0 / 0.5));
+  transform: rotate(-1deg);
+}
+
+.depositCard {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--stub);
+  background: var(--bone-200);
+  color: var(--ink-900);
+  border-radius: var(--r-card) 0 0 var(--r-card);
+  /* Les dents : un rectangle plein jusqu'à 6 px du bord droit, puis une
+     colonne de triangles (6 × 12 px) répétée sur toute la hauteur, sans
+     dent coupée (round). */
+  -webkit-mask:
+    linear-gradient(#000 0 0) left / calc(100% - var(--tooth)) 100% no-repeat,
+    conic-gradient(from -135deg at right, #000 90deg, #0000 0) right / var(--tooth) calc(var(--tooth) * 2) no-repeat round;
+  mask:
+    linear-gradient(#000 0 0) left / calc(100% - var(--tooth)) 100% no-repeat,
+    conic-gradient(from -135deg at right, #000 90deg, #0000 0) right / var(--tooth) calc(var(--tooth) * 2) no-repeat round;
+}
+
+.depositMain {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 20px 16px 20px 20px;
+}
+
+/* La souche : perforée à gauche, le numéro écrit à la verticale. */
+.depositStub {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding-right: var(--tooth);
+  background: var(--bone-300);
+}
+.depositStub::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: -1px;
+  width: 2px;
+  background: repeating-linear-gradient(to bottom, rgb(11 14 19 / 0.28) 0 5px, transparent 5px 10px);
+}
+.stubText {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+  font-size: 0.6875rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-500);
+  white-space: nowrap;
+}
+
+/* « Dossier 0042 » : le mot en capitales étroites, le numéro en volets. */
+.dossier {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.dossierWord {
+  font-variation-settings: 'wdth' 88, 'wght' 760;
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+}
+
+.depositName {
+  font-variation-settings: 'wdth' 100, 'wght' 680;
+  font-size: 0.9375rem;
+  color: var(--ink-500);
+}
+
+/* Le tampon « Rendu » se pose sur la partie qu'on garde, pas sur la souche. */
+.depositStamp { right: calc(var(--stub) + 12px); top: 16px; }
+
+/* Sur le rideau : plus compact, la latte tient dans le Seuil. */
+.deposit[data-variant='curtain'] {
+  width: min(100%, 300px);
+  margin: 0;
+  filter: drop-shadow(0 3px 0 var(--bone-500)) drop-shadow(0 14px 16px rgb(0 0 0 / 0.28));
+  transform: rotate(-2deg);
+  text-align: left;
+}
+.deposit[data-variant='curtain'] .depositMain { gap: 10px; padding: 16px 12px 16px 16px; }
+.deposit[data-variant='curtain'] .deviceIcon { width: 46px; height: 46px; border-radius: 12px; }
+.deposit[data-variant='curtain'] .deviceModel { font-size: 1.0625rem; }
+
+/* Plus suivi : le contour du ticket, en pointillé, sans dents ni souche. */
+.depositGhost {
+  align-self: flex-start;
+  width: min(88%, 300px);
+  min-height: 132px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 22px;
+  border: 2px dashed var(--line-strong);
+  border-radius: var(--r-card);
+  transform: rotate(3deg);
+}
+
+/* Juste après le dépôt, le ticket glisse du comptoir vers la main, une
+   fois ; au rechargement, il est simplement là. */
+@media (prefers-reduced-motion: no-preference) {
+  .deposit[data-swing] { animation: deposit-in 900ms var(--ease-slat) both; }
+  .deposit[data-variant='done'] .depositStamp { animation: stamp-in 520ms var(--ease-slat) 380ms both; }
+  .depositGhost { animation: tag-slip 900ms var(--ease-out) both; }
+}
+@keyframes deposit-in {
+  from { opacity: 0; transform: translateY(18px) rotate(4deg); }
+  60%  { opacity: 1; }
+  to   { opacity: 1; transform: rotate(-1deg); }
+}
+
+/* « Un autre véhicule à déposer ? » : une ligne discrète, pas un bouton. */
+.another {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+.another span { color: var(--text-faint); }

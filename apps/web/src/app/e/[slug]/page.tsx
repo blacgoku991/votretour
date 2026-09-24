@@ -8,7 +8,7 @@ import { ACTIVITY_LABEL } from '@/lib/copy';
 import type { EntryPoint } from '@/lib/types';
 import { ClientExperience, type StaffGate } from './ClientExperience';
 import { UnassignedPlate } from './UnassignedPlate';
-import { ProfileExperience, type ProfileEntryPoint } from './profiles/ProfileExperience';
+import { ProfileExperience, type ProfileEntryPoint, type ProfileTicketState } from './profiles/ProfileExperience';
 import { findUnassignedStockPlate } from '@/server/plate-stock';
 import { getSessionUser } from '@/server/auth';
 import styles from './client.module.css';
@@ -177,8 +177,17 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
 
   // Profils métier (atelier, table, guichet, boutique) : leur propre
   // écran. Walkin, event et toute campagne d'événement gardent
-  // ClientExperience ci-dessous, inchangée.
-  const profile = (effectiveEntryPoint as ProfileEntryPoint).queue?.profile ?? 'walkin';
+  // ClientExperience ci-dessous, inchangée. Le ticket repris sur cet
+  // appareil décide d'abord : la session vaut pour toute l'organisation,
+  // et une fiche d'atelier suivie depuis la page d'une file de barbiers
+  // doit rester une fiche d'atelier (étapes, devis), pas une latte du Rang.
+  // Un ticket de barbier repris sur la page d'un garage, lui, laisse la
+  // page décider : ProfileExperience le rend chez les barbiers.
+  const resumedProfile = (initialTicket as ProfileTicketState | null)?.queue.profile;
+  const profile =
+    resumedProfile && resumedProfile !== 'walkin' && resumedProfile !== 'event'
+      ? resumedProfile
+      : (effectiveEntryPoint as ProfileEntryPoint).queue?.profile ?? 'walkin';
   if (profile !== 'walkin' && profile !== 'event' && !eventId) {
     return (
       <main className={styles.screen} data-theme="dark" data-accent={entryPoint.settings.brandAccent}>

@@ -70,8 +70,16 @@
 .boardCount > :first-child { flex: none; }
 .boardCount p > :first-child { color: var(--bone-100); }
 
-/* Sur le rideau : le numéro et sa flèche vers le guichet. */
-.curtainNumber { --flap-tile: var(--ink-900); }
+/* Sur le rideau, dans le Seuil : le numéro en grandes tuiles d'encre,
+   le tiret en encre de l'accent (le gris du tableau disparaîtrait sur le
+   vermillon). */
+.curtainTicket {
+  --text-faint: var(--accent-ink);
+  display: inline-flex;
+  justify-content: center;
+  max-width: 100%;
+}
+.curtainNumber { --flap-tile: var(--ink-900); justify-content: center; }
 
 .curtainError {
   font-variation-settings: 'wght' 700;
@@ -162,17 +170,46 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Sur le rideau, dans le Seuil : l'étiquette de sac en petit, percée,
+   coins coupés, le numéro que la caisse cherche. */
 .curtainOrder {
+  position: relative;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  min-height: 56px;
-  padding: 0 20px;
-  border-radius: var(--r-slat);
+  gap: 4px;
+  max-width: 100%;
+  padding: 30px 22px 16px;
   background: var(--bone-200);
   color: var(--ink-900);
-  box-shadow: 0 3px 0 var(--bone-500);
+  clip-path: polygon(16px 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%, 0 16px);
+  border-radius: 0 0 var(--r-slat) var(--r-slat);
+  box-shadow: inset 0 -3px 0 var(--bone-500);
+  transform: rotate(-1.5deg);
+}
+.curtainOrderHole {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  width: 11px;
+  height: 11px;
+  margin-left: -5.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2.5px var(--bone-400);
+}
+.curtainOrderKicker {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.curtainOrderRef {
   font-variation-settings: 'wdth' 118, 'wght' 820;
   font-size: 1.75rem;
+  line-height: 1;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }

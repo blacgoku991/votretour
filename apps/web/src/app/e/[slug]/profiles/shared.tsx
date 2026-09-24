@@ -174,12 +174,15 @@ export function StageNotify({
   entryId,
   vapidPublicKey,
   promise,
+  title = 'Me prévenir à chaque étape',
 }: {
   organizationId: string;
   entryId: string;
   vapidPublicKey: string | null;
   /** « Nous vous prévenons à chaque étape, même demain. » */
   promise: string;
+  /** Le geste, dans les mots de la promesse (une commande n'a qu'une étape qui compte). */
+  title?: string;
 }) {
   const [state, setState] = useState<'idle' | 'working' | 'on' | 'denied' | 'unavailable'>('idle');
   const [reason, setReason] = useState<string | null>(null);
@@ -250,7 +253,7 @@ export function StageNotify({
     <button type="button" className={clientStyles.noticeAction} onClick={enable} disabled={state === 'working'}>
       <span className={`${clientStyles.noticeIcon} ${clientStyles.noticeIconOn}`}><BellIcon on={false} /></span>
       <div className={clientStyles.noticeText}>
-        <p className={clientStyles.noticeTitle}>{state === 'working' ? 'Activation…' : 'Me prévenir à chaque étape'}</p>
+        <p className={clientStyles.noticeTitle}>{state === 'working' ? 'Activation…' : title}</p>
         <p className={clientStyles.noticeBody}>{promise}</p>
       </div>
       <ChevronIcon />

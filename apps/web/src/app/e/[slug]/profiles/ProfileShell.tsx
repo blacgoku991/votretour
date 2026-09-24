@@ -5,11 +5,12 @@ import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useQueueRealtime } from '@/hooks/useQueueRealtime';
 import { getProfile, isLegacyProfile } from '@/lib/profiles';
 import type { ProfileEntryPoint, ProfileTicketState, QueueProfile } from '@/lib/profiles/types';
-import type { PublicQueueState } from '@/lib/types';
-import { ClientExperience, ClosedPanel, DonePanel, Header, type StaffGate } from '../ClientExperience';
+import type { PublicQueueState, TicketState } from '@/lib/types';
+import { ClientExperience, Header, type StaffGate } from '../ClientExperience';
+import { QueueClosed, QueueDone } from './EndScreens';
 import { buildDetails, INITIAL_JOIN_VALUES, type JoinField, type JoinOptions, type JoinValues } from './JoinFields';
 import { ProfileJoin } from './ProfileJoin';
-import { profilePhase, type PublicEntryLite } from './phase';
+import { placeLabel, profilePhase, queueStatusLabel, type PublicEntryLite } from './phase';
 import { typo, type ActOutcome, type ClientAction, type TicketViewProps } from './shared';
 import { WorkshopTicket, WorkshopDone, WorkshopClosed, Unfollowed } from './WorkshopTicket';
 import { TableTicket, TableDone } from './TableTicket';
@@ -31,13 +32,30 @@ import clientStyles from '../client.module.css';
  *  - un changement d'ÉTAPE sans changement de statut (devis envoyé en
  *    plein diagnostic) arrive par l'événement `updated` du ticket, que
  *    `onTicketEvent` traite comme tous les autres : relire.
+ *
+ * Quand l'écran revient aux barbiers (`ClientExperience` : ticket de
+ * passage au fauteuil repris sur cet appareil, ou page d'une file walkin
+ * une fois la fiche d'atelier terminée), il leur laisse TOUT, temps réel
+ * compris : le canal n'est jamais ouvert deux fois.
  */
 
 interface Props {
   entryPoint: ProfileEntryPoint;
   initialTicket: ProfileTicketState | null;
   initialPublic: PublicEntryLite[] | null;
-  graceMinutes: number | null;
+  /**
+   * Délai pour se présenter après l'appel, par file (celle de la page et
+   * celle du ticket repris). Une file inconnue (fiche d'une autre file
+   * suivie ensuite) : null, pas de compte à rebours inventé.
+   */
+  graceByQueue: Readonly<Record<string, number | null>>;
+  /**
+   * La file de la page ne se rejoint pas en profil métier (walkin, event,
+   * ou profil non disponible pour l'organisation) : l'inscription est
+   * celle des barbiers. Seul le SUIVI d'un ticket métier repris ici passe
+   * par cet écran.
+   */
+  joinLegacy: boolean;
   source: 'qr' | 'nfc' | 'appclip' | 'link';
   staffGate: StaffGate | null;
   vapidPublicKey: string | null;
@@ -53,7 +71,8 @@ export function ProfileShell({
   entryPoint,
   initialTicket,
   initialPublic,
-  graceMinutes,
+  graceByQueue,
+  joinLegacy,
   source,
   staffGate,
   vapidPublicKey,
@@ -129,9 +148,15 @@ export function ProfileShell({
     [refetch],
   );
 
+  // Écran rendu par ClientExperience (voir plus bas) : c'est lui qui
+  // s'abonne ; ici, rien, pour ne pas ouvrir le même canal deux fois.
+  const delegated = ticket
+    ? isLegacyProfile(ticket.queue.profile)
+    : joinLegacy && !unfollowed;
+
   const { connection } = useQueueRealtime({
     queueId,
-    enabled: Boolean(queueId),
+    enabled: Boolean(queueId) && !delegated,
     onState: applyState,
     onTicketEvent: (event) => {
       if (event.entryId === entryId) void refetch();
@@ -199,7 +224,9 @@ export function ProfileShell({
         const response = await fetch('/api/client/action', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ organizationId, entryId, action, ...(quoteN ? { quoteN } : {}) }),
+          // Une décision sur un devis part TOUJOURS avec le numéro lu
+          // (le serveur refuse sans lui : jamais d'accord sans version).
+          body: JSON.stringify({ organizationId, entryId, action, quoteN }),
         });
         const payload = (await response.json()) as ActionResponse;
         if (!payload.ok) {
@@ -265,7 +292,16 @@ export function ProfileShell({
 
   const queueStatus = ticket?.queue.status ?? entryPoint.queue?.status ?? 'closed';
   const locationName = ticket?.location.name ?? entryPoint.location.name;
-  const subtitle = [activityLabel, entryPoint.location.city].filter(Boolean).join(' · ');
+  // Le mot du lieu vient du métier de la FILE suivie (ou rejointe), pas de
+  // l'activité de l'organisation seule : une organisation « Garage » qui
+  // tient aussi un guichet n'écrit pas « Garage » au-dessus de « A-042 ».
+  const place = placeLabel(profile, entryPoint.organization.activity) ?? activityLabel;
+  const subtitle = [place, ticket?.location.city ?? entryPoint.location.city].filter(Boolean).join(' · ');
+  const graceMinutes = ticket ? graceByQueue[ticket.queue.id] ?? null : null;
+  // Sur la page d'une file de barbiers, la fin d'une fiche d'atelier ne
+  // propose pas de « déposer » : elle ramène à la file de la page.
+  const againLabel = joinLegacy ? 'Rejoindre la file' : undefined;
+  const headerStatus = phase === 'join' && queueStatus === 'open' && staffGate && !staffGate.autoAssign ? 'no_staff' : queueStatus;
   const inTicket = phase === 'tracking' || phase === 'ready';
 
   const view: TicketViewProps | null = ticket && inTicket
@@ -291,12 +327,13 @@ export function ProfileShell({
   };
 
   // Un ticket de passage au fauteuil relu sur cet appareil (autre file du
-  // même établissement) : l'écran des barbiers, tel quel.
-  if (ticket && isLegacyProfile(ticket.queue.profile)) {
+  // même établissement), ou l'inscription d'une file de barbiers : l'écran
+  // des barbiers, tel quel.
+  if (delegated) {
     return (
       <ClientExperience
         entryPoint={entryPoint}
-        initialTicket={ticket}
+        initialTicket={ticket as TicketState | null}
         source={source}
         staffGate={staffGate}
         vapidPublicKey={vapidPublicKey}
@@ -312,7 +349,8 @@ export function ProfileShell({
         subtitle={subtitle}
         logoUrl={entryPoint.location.logoUrl}
         connection={connection}
-        queueStatus={phase === 'join' && queueStatus === 'open' && staffGate && !staffGate.autoAssign ? 'no_staff' : queueStatus}
+        queueStatus={headerStatus}
+        statusLabel={queueStatusLabel(profile, headerStatus)}
         inQueue={inTicket}
       />
 
@@ -321,7 +359,7 @@ export function ProfileShell({
       )}
 
       {phase === 'join' && unfollowed && (
-        <Unfollowed profile={unfollowed} location={entryPoint.location} onAgain={reset} />
+        <Unfollowed profile={unfollowed} location={entryPoint.location} onAgain={reset} againLabel={againLabel} />
       )}
 
       {phase === 'join' && !unfollowed && (
@@ -360,16 +398,16 @@ export function ProfileShell({
 
       {phase === 'done' && ticket && (
         profile === 'vehicle' || profile === 'device'
-          ? <WorkshopDone ticket={ticket} onAgain={reset} />
+          ? <WorkshopDone ticket={ticket} timeZone={timeZone} onAgain={reset} againLabel={againLabel} />
           : profile === 'table'
-            ? <TableDone ticket={ticket} />
-            : <DonePanel ticket={ticket} onRejoin={reset} />
+            ? <TableDone ticket={ticket} timeZone={timeZone} />
+            : <QueueDone ticket={ticket} timeZone={timeZone} onAgain={reset} />
       )}
 
       {phase === 'closed' && ticket && (
         profile === 'vehicle' || profile === 'device'
-          ? <WorkshopClosed ticket={ticket} onAgain={reset} />
-          : <ClosedPanel ticket={ticket} onRejoin={reset} />
+          ? <WorkshopClosed ticket={ticket} onAgain={reset} againLabel={againLabel} />
+          : <QueueClosed ticket={ticket} onAgain={reset} />
       )}
     </div>
   );

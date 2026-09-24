@@ -3,14 +3,15 @@
 import { useRef } from 'react';
 import { DeviceGlyph, DEVICE_LABEL } from '@/components/objects/DeviceGlyph';
 import { Immatriculation } from '@/components/objects/Immatriculation';
-import { StageRail } from '@/components/objects/StageRail';
 import { TicketNumber } from '@/components/objects/TicketNumber';
 import { getProfile } from '@/lib/profiles';
 import { clientAheadLabel } from '@/lib/profiles/copy';
 import type { ProfileTicketState, QueueProfile } from '@/lib/profiles/types';
-import { hoursLine, intakeAhead, promiseLabel, quoteOf, type PublicEntryLite } from './phase';
+import { ClientStageRail } from './ClientStageRail';
+import { VisitInfo } from './EndScreens';
+import { hoursLine, intakeAhead, promiseLabel, quoteOf, quoteRailOverride, type PublicEntryLite } from './phase';
 import { QuoteCard } from './QuoteCard';
-import { ReadyCurtain, ReadyNote, ReadyObject } from './ReadyCurtain';
+import { ReadyCurtain, ReadyNote } from './ReadyCurtain';
 import {
   ClockIcon, ConfirmAction, ContactRow, CurtainOrigin, StageNotify, StarIcon, WalkIcon,
   type ContactLocation, type TicketViewProps,
@@ -28,10 +29,15 @@ import styles from './workshop.module.css';
  * l'a donnée, et dite comme telle : « annoncé par le garage » (conception,
  * § 3.2). Rangvia n'invente jamais un « prêt vers 17 h ».
  *
- * L'objet central est l'étiquette de clé du lien de suivi (`/s/[jeton]`),
- * accrochée à son anneau : le client qui a scanné l'étiquette retrouve ici
- * le même objet, et sa plaque en entier (c'est la sienne, sur son
- * téléphone). Dessous, le Rang vertical des étapes.
+ * L'objet central dépend du métier :
+ *  - véhicule : l'étiquette de clé du lien de suivi (`/s/[jeton]`),
+ *    accrochée à son anneau ; le client qui a scanné l'étiquette retrouve
+ *    ici le même objet, et sa plaque en entier (c'est la sienne, sur son
+ *    téléphone) ;
+ *  - appareil : le TICKET DE DÉPÔT (conception, § 4.3) — une latte au bord
+ *    droit dentelé, la souche qu'on détache au comptoir, « Dossier 0042 »
+ *    en volets. Un téléphone n'a pas de porte-clés.
+ * Dessous, le Rang vertical des étapes.
  */
 
 /** « le garage », « l'atelier » : qui parle, dans les phrases du client. */
@@ -53,6 +59,9 @@ export function WorkshopTicket({
   const tagRef = useRef<HTMLDivElement>(null);
   const quote = ticket.queue.publicOptions?.quotes === false ? null : quoteOf(entry.details);
   const awaiting = Boolean(quote && quote.decision === null && entry.stage === 'quote_pending');
+  // Devis déjà tranché, étape pas encore changée par l'atelier : la latte
+  // courante dit la décision, pas « Devis à valider ».
+  const railOverride = quoteRailOverride(profile, entry.stage, quote);
   const ahead = entry.stage === 'received' ? intakeAhead(publicEntries, entry.id) : null;
   const promise = promiseLabel(entry.readyEta ?? entry.details.readyEta, timeZone);
   const hours = hoursLine(ticket.location.todayHours, timeZone);
@@ -62,7 +71,9 @@ export function WorkshopTicket({
   return (
     <div className={clientStyles.panel}>
       <div className={clientStyles.queued} inert={isReady}>
-        <WorkshopTag ticket={ticket} swing={fresh} originRef={tagRef} />
+        {profile === 'device'
+          ? <DepositTicket ticket={ticket} variant="tag" swing={fresh} originRef={tagRef} />
+          : <WorkshopTag ticket={ticket} swing={fresh} originRef={tagRef} />}
 
         {/* Un devis qui attend passe devant tout : c'est la seule chose que
             le client a à faire. Décidé, il rejoint le récit, sous le rail. */}
@@ -72,12 +83,13 @@ export function WorkshopTicket({
 
         <section className={styles.progress} aria-labelledby="etapes-titre">
           <p id="etapes-titre" className="t-label">Où en est {profile === 'vehicle' ? 'votre véhicule' : 'votre appareil'}</p>
-          <StageRail
+          <ClientStageRail
             profile={profile}
             current={entry.stage}
             history={ticket.stages}
-            orientation="vertical"
             timeZone={timeZone}
+            currentLabel={railOverride?.label}
+            currentTone={railOverride?.tone}
           />
           {entry.stage === 'received' && (
             <p className={styles.intake}>
@@ -127,6 +139,14 @@ export function WorkshopTicket({
           </nav>
         )}
 
+        {/* Un second dépôt depuis ce téléphone passe par l'accueil (la base
+            renvoie la fiche en cours plutôt que d'en créer une autre) : on
+            dit comment, sans bouton qui ne mènerait nulle part. */}
+        <p className={styles.another}>
+          {profile === 'vehicle' ? 'Un autre véhicule à déposer ?' : 'Un autre appareil à déposer ?'}{' '}
+          <span>Demandez à l’accueil un QR de suivi : il s’ajoutera ici.</span>
+        </p>
+
         <div className={clientStyles.actions}>
           {error && !isReady && (
             <div className="banner banner--error" role="alert"><span>{error}</span></div>
@@ -151,10 +171,13 @@ export function WorkshopTicket({
           title={vocab.clientTurn}
           subtitle={readySubtitle(hours)}
           long
+          profile={profile}
+          object={
+            profile === 'device'
+              ? <DepositTicket ticket={ticket} variant="curtain" />
+              : <SubjectObject ticket={ticket} size="curtain" />
+          }
         >
-          <ReadyObject>
-            <SubjectObject ticket={ticket} size="curtain" />
-          </ReadyObject>
           {present ? (
             <ReadyNote>{profile === 'vehicle' ? 'Le garage sait que vous arrivez.' : 'L’atelier sait que vous arrivez.'}</ReadyNote>
           ) : (
@@ -193,16 +216,15 @@ function WorkshopTag({
   originRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const profile = ticket.queue.profile;
-  const kicker = profile === 'vehicle' ? 'Fiche atelier' : 'Dossier de réparation';
   return (
-    <figure className={styles.hang} data-swing={swing ? 'true' : undefined} aria-label={`${kicker}, ${ticket.location.name}`}>
+    <figure className={styles.hang} data-swing={swing ? 'true' : undefined} aria-label={`Fiche atelier, ${ticket.location.name}`}>
       <svg className={styles.ring} viewBox="0 0 64 64" aria-hidden="true" focusable="false">
         <circle cx="32" cy="30" r="21" />
         <path d="M32 9.5c7 0 12.5 4.2 14.6 10.2" />
       </svg>
       <div ref={originRef} className={styles.tag} data-profile={profile}>
         <span className={styles.eyelet} aria-hidden="true" />
-        <p className={styles.tagKicker}>{kicker}</p>
+        <p className={styles.tagKicker}>Fiche atelier</p>
         <SubjectObject ticket={ticket} size="tag" />
         <CurtainOrigin />
       </div>
@@ -211,9 +233,8 @@ function WorkshopTag({
 }
 
 /**
- * Le sujet suivi : la plaque (véhicule) ou l'appareil et son numéro de
- * dossier. Sur l'écran de SON téléphone, le client voit sa plaque en
- * entier ; c'est à la TV qu'elle est masquée.
+ * Le véhicule suivi : sa plaque. Sur l'écran de SON téléphone, le client
+ * la voit en entier ; c'est à la TV qu'elle est masquée.
  */
 function SubjectObject({ ticket, size }: { ticket: ProfileTicketState; size: 'tag' | 'curtain' }) {
   const { entry } = ticket;
@@ -221,31 +242,86 @@ function SubjectObject({ ticket, size }: { ticket: ProfileTicketState; size: 'ta
   // Sur le rideau, le prénom est déjà écrit au-dessus du titre : on ne
   // le répète pas sous la plaque.
   const who = [d.model, size === 'tag' ? entry.name : null].filter(Boolean).join(' · ');
-  if (ticket.queue.profile === 'vehicle') {
-    return (
-      <div className={styles.subject}>
-        {d.registration
-          ? <Immatriculation value={d.registration} country={d.country ?? 'FR'} size="lg" width={size === 'tag' ? 300 : 280} className={styles.plate} />
-          : <p className={styles.subjectModel}>{d.model ?? 'Votre véhicule'}</p>}
-        {d.registration && who && <p className={styles.subjectWho}>{who}</p>}
-        {d.stay === 'onsite' && size === 'tag' && <p className={styles.subjectStay}>Vous attendez sur place</p>}
-      </div>
-    );
-  }
-  const kind = d.deviceKind ?? 'other';
   return (
     <div className={styles.subject}>
-      <div className={styles.device}>
-        <span className={styles.deviceIcon}><DeviceGlyph kind={kind} size={30} /></span>
-        <span className={styles.deviceText}>
-          <span className={styles.deviceKind}>{DEVICE_LABEL[kind]}</span>
-          <span className={styles.deviceModel}>{d.model ?? DEVICE_LABEL[kind]}</span>
-        </span>
-      </div>
-      {entry.ticketNo && (
-        <TicketNumber value={entry.ticketNo} kind="dossier" size="clamp(2rem, 1.5rem + 2.4vw, 2.5rem)" />
-      )}
+      {d.registration
+        ? <Immatriculation value={d.registration} country={d.country ?? 'FR'} size="lg" width={size === 'tag' ? 300 : 280} className={styles.plate} />
+        : <p className={styles.subjectModel}>{d.model ?? 'Votre véhicule'}</p>}
+      {d.registration && who && <p className={styles.subjectWho}>{who}</p>}
+      {d.stay === 'onsite' && size === 'tag' && <p className={styles.subjectStay}>Vous attendez sur place</p>}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Le ticket de dépôt (appareil)                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * LE TICKET DE DÉPÔT — la moitié qu'on garde quand on laisse son
+ * téléphone au comptoir. Une latte en os, bord droit DENTELÉ (dents de
+ * 6 px, `mask` CSS : la souche a été détachée), une souche perforée qui
+ * porte le numéro à la verticale, et au centre l'appareil et « Dossier
+ * 0042 » en volets — le numéro que l'atelier recherche.
+ *
+ *  - `tag` : l'objet central du suivi (il glisse en place après le dépôt) ;
+ *  - `curtain` : posé dans le Seuil du rideau « Votre appareil est prêt » ;
+ *  - `done` : tamponné « Rendu ».
+ *
+ * Le relief (tranche et ombre) est un `drop-shadow` sur l'enveloppe : le
+ * masque rognerait une `box-shadow` posée sur la latte elle-même.
+ */
+function DepositTicket({
+  ticket, variant, swing = false, originRef,
+}: {
+  ticket: ProfileTicketState;
+  variant: 'tag' | 'curtain' | 'done';
+  swing?: boolean;
+  originRef?: React.RefObject<HTMLDivElement | null>;
+}) {
+  const { entry } = ticket;
+  const d = entry.details;
+  const kind = d.deviceKind ?? 'other';
+  const model = d.model ?? DEVICE_LABEL[kind];
+  return (
+    <figure
+      className={styles.deposit}
+      data-variant={variant}
+      data-swing={swing ? 'true' : undefined}
+      aria-label={variant === 'tag' ? `Ticket de dépôt, ${ticket.location.name}` : undefined}
+      aria-hidden={variant === 'tag' ? undefined : true}
+    >
+      <div ref={originRef} className={styles.depositCard}>
+        <div className={styles.depositMain}>
+          <p className={styles.tagKicker}>Ticket de dépôt</p>
+          <div className={styles.device}>
+            <span className={styles.deviceIcon}><DeviceGlyph kind={kind} size={variant === 'curtain' ? 26 : 30} /></span>
+            <span className={styles.deviceText}>
+              <span className={styles.deviceKind}>{DEVICE_LABEL[kind]}</span>
+              <span className={styles.deviceModel}>{model}</span>
+            </span>
+          </div>
+          {entry.ticketNo && (
+            <p className={styles.dossier}>
+              <span className={styles.dossierWord} aria-hidden="true">Dossier</span>
+              <TicketNumber
+                value={entry.ticketNo}
+                kind="dossier"
+                size={variant === 'curtain' ? '2rem' : 'clamp(2rem, 1.5rem + 2.4vw, 2.5rem)'}
+              />
+            </p>
+          )}
+          {variant === 'tag' && entry.name && <p className={styles.depositName}>{entry.name}</p>}
+        </div>
+        {/* La souche : perforée, le numéro à la verticale, comme sur le
+            carnet du comptoir. */}
+        <div className={styles.depositStub} aria-hidden="true">
+          <span className={styles.stubText}>{entry.ticketNo ? `Dépôt ${entry.ticketNo}` : 'Dépôt'}</span>
+        </div>
+        {variant === 'done' && <span className={`${styles.stamp} ${styles.depositStamp}`}>Rendu</span>}
+        {variant === 'tag' && <CurtainOrigin />}
+      </div>
+    </figure>
   );
 }
 
@@ -253,27 +329,40 @@ function SubjectObject({ ticket, size }: { ticket: ProfileTicketState; size: 'ta
 /* Fin : rendu, clos, plus suivi                                        */
 /* ------------------------------------------------------------------ */
 
-export function WorkshopDone({ ticket, onAgain }: { ticket: ProfileTicketState; onAgain: () => void }) {
+export function WorkshopDone({
+  ticket, timeZone, onAgain, againLabel,
+}: {
+  ticket: ProfileTicketState;
+  timeZone: string;
+  onAgain: () => void;
+  /** Page d'une autre file (barbiers) : le bouton y ramène, sans parler de dépôt. */
+  againLabel?: string;
+}) {
   const reviewUrl = ticket.location.googleReviewUrl;
   const profile = ticket.queue.profile;
   return (
     <div className={clientStyles.panel}>
       <div className={clientStyles.doneGroup}>
-        <figure className={styles.hang} data-state="done" aria-hidden="true">
-          <svg className={styles.ring} viewBox="0 0 64 64" focusable="false">
-            <circle cx="32" cy="30" r="21" />
-            <path d="M32 9.5c7 0 12.5 4.2 14.6 10.2" />
-          </svg>
-          <div className={styles.tag} data-profile={profile}>
-            <span className={styles.eyelet} />
-            <p className={styles.tagKicker}>{profile === 'vehicle' ? 'Fiche atelier' : 'Dossier de réparation'}</p>
-            <SubjectObject ticket={ticket} size="curtain" />
-            <span className={styles.stamp}>Rendu</span>
-          </div>
-        </figure>
+        {profile === 'device' ? (
+          <DepositTicket ticket={ticket} variant="done" />
+        ) : (
+          <figure className={styles.hang} data-state="done" aria-hidden="true">
+            <svg className={styles.ring} viewBox="0 0 64 64" focusable="false">
+              <circle cx="32" cy="30" r="21" />
+              <path d="M32 9.5c7 0 12.5 4.2 14.6 10.2" />
+            </svg>
+            <div className={styles.tag} data-profile={profile}>
+              <span className={styles.eyelet} />
+              <p className={styles.tagKicker}>Fiche atelier</p>
+              <SubjectObject ticket={ticket} size="curtain" />
+              <span className={styles.stamp}>Rendu</span>
+            </div>
+          </figure>
+        )}
         <section className={clientStyles.doneText}>
           <h2 className="t-display">Merci pour votre confiance</h2>
           <p className={clientStyles.doneName}>{ticket.location.name}</p>
+          <VisitInfo ticket={ticket} timeZone={timeZone} />
         </section>
       </div>
       <div className={clientStyles.bottom}>
@@ -284,14 +373,20 @@ export function WorkshopDone({ ticket, onAgain }: { ticket: ProfileTicketState; 
           </a>
         )}
         <button type="button" className={reviewUrl ? 'btn btn--quiet btn--block' : 'btn btn--ghost btn--hero'} onClick={onAgain}>
-          {profile === 'vehicle' ? 'Déposer un autre véhicule' : 'Déposer un autre appareil'}
+          {againLabel ?? (profile === 'vehicle' ? 'Déposer un autre véhicule' : 'Déposer un autre appareil')}
         </button>
       </div>
     </div>
   );
 }
 
-export function WorkshopClosed({ ticket, onAgain }: { ticket: ProfileTicketState; onAgain: () => void }) {
+export function WorkshopClosed({
+  ticket, onAgain, againLabel,
+}: {
+  ticket: ProfileTicketState;
+  onAgain: () => void;
+  againLabel?: string;
+}) {
   const status = ticket.entry.status;
   const vehicle = ticket.queue.profile === 'vehicle';
   const kicker = status === 'expired' ? 'Suivi expiré' : status === 'cancelled' ? 'Dépôt annulé' : 'Fiche close';
@@ -313,7 +408,7 @@ export function WorkshopClosed({ ticket, onAgain }: { ticket: ProfileTicketState
       <div className={clientStyles.bottom}>
         <ContactRow location={ticket.location} callLabel="Appeler" />
         <button type="button" className="btn btn--quiet btn--block" onClick={onAgain}>
-          {vehicle ? 'Déposer un autre véhicule' : 'Déposer un autre appareil'}
+          {againLabel ?? (vehicle ? 'Déposer un autre véhicule' : 'Déposer un autre appareil')}
         </button>
       </div>
     </div>
@@ -326,26 +421,35 @@ export function WorkshopClosed({ ticket, onAgain }: { ticket: ProfileTicketState
  * simplement, avec la seule façon de reprendre le suivi.
  */
 export function Unfollowed({
-  profile, location, onAgain,
+  profile, location, onAgain, againLabel,
 }: {
   profile: QueueProfile;
   location: ContactLocation;
   onAgain: () => void;
+  againLabel?: string;
 }) {
   const vehicle = profile === 'vehicle';
   return (
     <div className={clientStyles.panel}>
       <div className={clientStyles.doneGroup}>
-        <div className={styles.hang} data-state="empty" aria-hidden="true">
-          <svg className={styles.ring} viewBox="0 0 64 64" focusable="false">
-            <circle cx="32" cy="30" r="21" />
-          </svg>
-          <div className={`${styles.tag} ${styles.tagGhost}`}>
-            <span className={styles.eyelet} />
+        {vehicle ? (
+          <div className={styles.hang} data-state="empty" aria-hidden="true">
+            <svg className={styles.ring} viewBox="0 0 64 64" focusable="false">
+              <circle cx="32" cy="30" r="21" />
+            </svg>
+            <div className={`${styles.tag} ${styles.tagGhost}`}>
+              <span className={styles.eyelet} />
+              <span className={styles.ghostLine} />
+              <span className={`${styles.ghostLine} ${styles.ghostLineShort}`} />
+            </div>
+          </div>
+        ) : (
+          // Le ticket de dépôt rendu à l'état de contour : plus rien à suivre ici.
+          <div className={styles.depositGhost} aria-hidden="true">
             <span className={styles.ghostLine} />
             <span className={`${styles.ghostLine} ${styles.ghostLineShort}`} />
           </div>
-        </div>
+        )}
         <section className={clientStyles.doneText}>
           <p className="t-label">Suivi arrêté</p>
           <h2 className={clientStyles.closedTitle}>
@@ -360,7 +464,7 @@ export function Unfollowed({
       <div className={clientStyles.bottom}>
         <ContactRow location={location} callLabel="Appeler" />
         <button type="button" className="btn btn--quiet btn--block" onClick={onAgain}>
-          {vehicle ? 'Déposer un autre véhicule' : 'Déposer un autre appareil'}
+          {againLabel ?? (vehicle ? 'Déposer un autre véhicule' : 'Déposer un autre appareil')}
         </button>
       </div>
     </div>

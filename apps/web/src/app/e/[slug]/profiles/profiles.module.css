@@ -36,16 +36,30 @@
   overflow-wrap: normal;
 }
 
-/* La consigne sous le titre : jamais un mot seul sur sa ligne. */
-.ready h2 + p { text-wrap: balance; }
+/* La consigne sous le titre (et sous l'objet) : jamais un mot seul sur
+   sa ligne. */
+.ready h2 ~ p { text-wrap: balance; }
 
-/* L'objet du client posé sur le vermillon : la plaque, le numéro, le
-   chevalet. Centré, au-dessus des actions. */
+/* L'objet du client, DANS le Seuil, sous le titre : la plaque, le
+   numéro, le chevalet, la commande. C'est lui qu'on vient chercher. */
 .readyObject {
   display: flex;
   justify-content: center;
-  padding: 2px 0 10px;
+  margin-top: 26px;
   min-width: 0;
+}
+
+/* Le cadre qui porte un objet se resserre sur son contenu (au lieu de
+   remplir la hauteur, presque vide) et se tient au milieu de l'écran ;
+   les actions restent en bas. Double classe : elle l'emporte sur
+   `.curtainMain` quel que soit l'ordre des feuilles. */
+.ready .readyFrame {
+  flex: 0 1 auto;
+  min-height: 0;
+  margin-block: auto;
+}
+.ready .readyFrame > :global(.seuil) {
+  padding: 64px 16px 36px;
 }
 
 .readyNote {
@@ -100,6 +114,14 @@
 .platePreview[data-empty] {
   opacity: 1;
   transform: translateY(4px);
+}
+/* Plaque vide : les caractères d'exemple en fantôme, la plaque elle-même
+   (bandes, bord) reste nette. Les caractères sont le bloc `aria-hidden`
+   qui suit la bande européenne, ou le seul enfant d'une plaque étrangère
+   (structure de `Immatriculation`, sans classe exposée). */
+.platePreview[data-empty] [role='img'] > span > [aria-hidden='true']:not(:first-child):not(:last-child),
+.platePreview[data-empty] [role='img'][data-country='other'] > span > [aria-hidden='true'] {
+  opacity: 0.25;
 }
 
 .heroNote {
@@ -264,8 +286,7 @@
   font-variation-settings: 'wdth' 100, 'wght' 620;
   font-size: 0.9375rem;
   line-height: 1.1;
-  transition: transform var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out),
-              border-color var(--dur-1) var(--ease-out);
+  transition: transform var(--dur-1) var(--ease-out);
 }
 .chip:active { transform: scale(0.97); }
 .chip[data-on] {
@@ -314,7 +335,14 @@
   font-variation-settings: 'wdth' 96, 'wght' 640;
   font-size: 0.8125rem;
   line-height: 1.15;
-  transition: transform var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
+  position: relative;
+  cursor: pointer;
+  transition: transform var(--dur-1) var(--ease-out);
+}
+/* Le radio natif est masqué : l'anneau de focus se pose sur la latte. */
+.deviceKind:has(> .radioInput:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .deviceKind:active { transform: translateY(2px); box-shadow: 0 0 0 var(--slat-edge); }
 .deviceKind[data-on] {
@@ -430,7 +458,50 @@
   font-size: 0.875rem;
   line-height: 1.2;
   text-wrap: balance;
-  transition: color var(--dur-2) var(--ease-out);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
 }
-.segItem[aria-checked='true'] { color: var(--text); font-variation-settings: 'wdth' 96, 'wght' 720; }
-.segItem:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.segItem[data-on] { color: var(--text); font-variation-settings: 'wdth' 96, 'wght' 720; }
+.segItem:has(> .radioInput:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Radio natif sous une latte ou un segment : présent pour le clavier et
+   les lecteurs d'écran, invisible à l'œil (la latte dit l'état). */
+.radioInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------
+   Écrans de fin : l'adresse et les horaires, ancrés sous le récit
+   --------------------------------------------------------------------- */
+.visitInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+.visitInfo li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+.visitInfo svg { margin-top: 1px; color: var(--text-faint); }
+
+/* Le numéro du guichet sur la latte qui passe : tiret en encre de
+   l'accent (sur vermillon, le gris disparaîtrait). */
+.doneTicket { --text-faint: var(--accent-ink); }

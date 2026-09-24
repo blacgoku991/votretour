@@ -344,22 +344,25 @@ function DeviceFields(props: Props) {
     <>
       <div className="field">
         <label id="appareil-label">Votre appareil</label>
+        {/* De vrais boutons radio (masqués) sous des lattes : un seul arrêt
+            de tabulation pour le groupe, les flèches passent d'un appareil
+            à l'autre, et le lecteur d'écran dit « 1 sur 6 » à bon droit. */}
         <div className={styles.deviceGrid} role="radiogroup" aria-labelledby="appareil-label">
           {DEVICE_KINDS.map((kind) => {
             const on = values.deviceKind === kind;
             return (
-              <button
-                key={kind}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                className={styles.deviceKind}
-                data-on={on ? 'true' : undefined}
-                onClick={() => onChange({ deviceKind: kind })}
-              >
+              <label key={kind} className={styles.deviceKind} data-on={on ? 'true' : undefined}>
+                <input
+                  type="radio"
+                  name="appareil"
+                  value={kind}
+                  checked={on}
+                  onChange={() => onChange({ deviceKind: kind })}
+                  className={styles.radioInput}
+                />
                 <DeviceGlyph kind={kind} size={28} />
                 <span>{DEVICE_LABEL[kind]}</span>
-              </button>
+              </label>
             );
           })}
         </div>
@@ -512,15 +515,18 @@ function MotifChips({
       {services.length > 0 && (
         <>
           <label id="motif-label">{label}{optional ? ' (facultatif)' : ''}</label>
-          <div className={styles.chips} role="radiogroup" aria-labelledby="motif-label">
+          {/* Un motif se choisit ET se retire (il est facultatif) : des
+              boutons à bascule (`aria-pressed`), comme le choix de la
+              prestation chez les barbiers, pas des radios, qu'on ne
+              décoche pas. */}
+          <div className={styles.chips} role="group" aria-labelledby="motif-label">
             {services.map((s) => {
               const on = serviceId === s.id;
               return (
                 <button
                   key={s.id}
                   type="button"
-                  role="radio"
-                  aria-checked={on}
+                  aria-pressed={on}
                   className={styles.chip}
                   data-on={on ? 'true' : undefined}
                   // Toucher le motif choisi le retire : le motif reste facultatif.
@@ -601,9 +607,12 @@ function Segmented<T extends string>({
   items: { value: T; label: string }[];
 }) {
   const labelId = useId();
+  const name = useId();
   return (
     <div className="field">
       <label id={labelId}>{label}</label>
+      {/* Boutons radio natifs, masqués sous le curseur : un arrêt de
+          tabulation, les flèches pour changer, l'option lue « 1 sur 3 ». */}
       <div
         className={styles.segmented}
         role="radiogroup"
@@ -612,18 +621,22 @@ function Segmented<T extends string>({
       >
         {/* Le curseur glisse sous l'option choisie (transform seulement). */}
         <span className={styles.segThumb} aria-hidden="true" />
-        {items.map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            role="radio"
-            aria-checked={item.value === value}
-            className={styles.segItem}
-            onClick={() => onChange(item.value)}
-          >
-            {item.label}
-          </button>
-        ))}
+        {items.map((item) => {
+          const on = item.value === value;
+          return (
+            <label key={item.value} className={styles.segItem} data-on={on ? 'true' : undefined}>
+              <input
+                type="radio"
+                name={name}
+                value={item.value}
+                checked={on}
+                onChange={() => onChange(item.value)}
+                className={styles.radioInput}
+              />
+              <span>{item.label}</span>
+            </label>
+          );
+        })}
       </div>
     </div>
   );

@@ -2,11 +2,11 @@
 
 import { useRef } from 'react';
 import { FlapNumber } from '@/components/FlapNumber';
-import { StageRail } from '@/components/objects/StageRail';
 import { Rang } from '@/components/Rang';
 import { NotificationPanel } from '../ClientExperience';
+import { ClientStageRail } from './ClientStageRail';
 import { hoursLine, isRetailOrder } from './phase';
-import { ReadyCurtain, ReadyObject } from './ReadyCurtain';
+import { ReadyCurtain } from './ReadyCurtain';
 import { ConfirmAction, ContactRow, CurtainOrigin, StageNotify, Threshold, type TicketViewProps } from './shared';
 import clientStyles from '../client.module.css';
 import styles from './desk.module.css';
@@ -51,12 +51,13 @@ export function RetailTicket({
             </figure>
             <section className={styles.progress} aria-labelledby="commande-titre">
               <p id="commande-titre" className="t-label">Où en est votre commande</p>
-              <StageRail profile="retail" current={entry.stage} history={ticket.stages} orientation="vertical" timeZone={timeZone} />
+              <ClientStageRail profile="retail" current={entry.stage} history={ticket.stages} timeZone={timeZone} />
             </section>
             <StageNotify
               organizationId={organizationId}
               entryId={entry.id}
               vapidPublicKey={vapidPublicKey}
+              title="Me prévenir quand elle est prête"
               promise="Nous vous prévenons dès que votre commande est prête."
             />
           </>
@@ -121,6 +122,7 @@ export function RetailTicket({
           animate={animateReady}
           locationName={ticket.location.name}
           clientName={entry.name}
+          profile="retail"
           {...(order || entry.stage === 'ready'
             ? {
                 title: 'Votre commande est prête',
@@ -128,12 +130,17 @@ export function RetailTicket({
                 long: true,
               }
             : { subtitle: entry.status === 'serving' ? 'Un vendeur s’occupe de vous' : 'Un vendeur vous attend' })}
+          object={
+            orderRef ? (
+              // L'étiquette du sac, en petit : le numéro que la caisse cherche.
+              <span className={styles.curtainOrder}>
+                <span className={styles.curtainOrderHole} aria-hidden="true" />
+                <span className={styles.curtainOrderKicker}>Commande</span>
+                <span className={styles.curtainOrderRef}>n° {orderRef}</span>
+              </span>
+            ) : undefined
+          }
         >
-          {orderRef && (
-            <ReadyObject>
-              <span className={styles.curtainOrder}>n° {orderRef}</span>
-            </ReadyObject>
-          )}
           <ContactRow location={ticket.location} tone="ink" />
         </ReadyCurtain>
       )}

@@ -338,7 +338,7 @@ export function ClientExperience({
 type Connection = 'connecting' | 'live' | 'polling' | 'offline';
 
 export function Header({
-  name, subtitle, logoUrl, connection, queueStatus, inQueue,
+  name, subtitle, logoUrl, connection, queueStatus, inQueue, statusLabel,
 }: {
   name: string;
   subtitle: string;
@@ -346,6 +346,8 @@ export function Header({
   connection: Connection;
   queueStatus: string;
   inQueue: boolean;
+  /** Mot de l'état de la file hors suivi (profils métier : « Liste fermée ») ; défaut : celui des barbiers. */
+  statusLabel?: string;
 }) {
   const connectionLabel =
     connection === 'live' ? 'En direct'
@@ -362,7 +364,7 @@ export function Header({
     : queueStatus === 'open' ? 'pip pip--live'
       : queueStatus === 'paused' || queueStatus === 'no_staff' ? 'pip pip--warn'
       : 'pip pip--off';
-  const label = inQueue ? connectionLabel : queueLabel(queueStatus);
+  const label = inQueue ? connectionLabel : statusLabel ?? queueLabel(queueStatus);
 
   return (
     <header className={styles.header}>

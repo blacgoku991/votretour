@@ -20,6 +20,8 @@ import type {
   QueueProfile,
   TodayHours,
 } from '@/lib/profiles/types';
+import { ACTIVITY_LABEL } from '@/lib/copy';
+import { profileForActivity } from '@/lib/profiles';
 import { formatClock } from '@/lib/profiles/copy';
 
 export type ProfilePhase = 'join' | 'tracking' | 'ready' | 'done' | 'closed';
@@ -205,4 +207,70 @@ export function quoteOf(details: unknown): ClientQuoteN | null {
     decision,
     sentAt: typeof q.sentAt === 'string' ? q.sentAt : null,
   };
+}
+
+/**
+ * La latte courante du rail quand le client a DÉJÀ répondu au devis mais
+ * que l'atelier n'a pas encore changé d'étape : « Devis à valider »
+ * serait faux. On dit ce qui s'est passé, en ardoise (la main est à
+ * l'atelier) plutôt qu'en cuivre (« attend le client »). null sinon :
+ * le rail garde le nom de l'étape.
+ */
+export function quoteRailOverride(
+  profile: QueueProfile,
+  stage: ProfileStage | null,
+  quote: Pick<ClientQuoteN, 'decision'> | null,
+): { label: string; tone: 'ardoise' } | null {
+  if (stage !== 'quote_pending' || !quote?.decision) return null;
+  const who = profile === 'vehicle' ? 'le garage' : 'l’atelier';
+  return quote.decision === 'accepted'
+    ? { label: `Devis accepté · ${who} reprend la main`, tone: 'ardoise' }
+    : { label: 'Devis refusé', tone: 'ardoise' };
+}
+
+/**
+ * Le mot sous le nom de l'établissement, dans l'en-tête. L'activité de
+ * l'ORGANISATION ne vaut que si elle parle le même métier que la file :
+ * une organisation « Garage » qui ouvre aussi un guichet ne doit pas
+ * écrire « Garage » au-dessus d'un numéro « A-042 ». Sinon, le mot du
+ * profil.
+ */
+export const PROFILE_PLACE_LABEL: Readonly<Record<QueueProfile, string | null>> = {
+  walkin: null,
+  event: null,
+  vehicle: 'Atelier automobile',
+  device: 'Atelier de réparation',
+  table: 'Restaurant',
+  desk: 'Accueil du public',
+  retail: 'Boutique',
+};
+
+export function placeLabel(profile: QueueProfile, activity: string | null | undefined): string | null {
+  const label = activity ? ACTIVITY_LABEL[activity] ?? null : null;
+  if (label && profileForActivity(activity) === profile) return label;
+  return PROFILE_PLACE_LABEL[profile] ?? label;
+}
+
+/**
+ * La pastille d'état de l'en-tête, avant l'inscription, dans le mot du
+ * métier : « Liste fermée » au restaurant (comme le titre dessous),
+ * « Dépôts ouverts » à l'atelier, « Guichets en pause » au guichet. La
+ * boutique garde les mots des barbiers (`File ouverte`).
+ */
+export function queueStatusLabel(profile: QueueProfile, status: string): string {
+  if (status === 'no_staff') return 'Personne de disponible';
+  const words: Record<'open' | 'paused' | 'closed', string> = (() => {
+    switch (profile) {
+      case 'vehicle':
+      case 'device':
+        return { open: 'Dépôts ouverts', paused: 'Dépôts en pause', closed: 'Dépôts fermés' };
+      case 'table':
+        return { open: 'Liste ouverte', paused: 'Liste en pause', closed: 'Liste fermée' };
+      case 'desk':
+        return { open: 'Guichets ouverts', paused: 'Guichets en pause', closed: 'Guichets fermés' };
+      default:
+        return { open: 'File ouverte', paused: 'En pause', closed: 'File fermée' };
+    }
+  })();
+  return status === 'open' ? words.open : status === 'paused' ? words.paused : words.closed;
 }

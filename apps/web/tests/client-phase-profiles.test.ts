@@ -6,9 +6,12 @@ import {
   graceRemaining,
   hoursLine,
   intakeAhead,
+  placeLabel,
   profilePhase,
   promiseLabel,
+  queueStatusLabel,
   quoteOf,
+  quoteRailOverride,
   spokenHour,
   type PhaseInput,
 } from '@/app/e/[slug]/profiles/phase';
@@ -171,6 +174,49 @@ describe('devis reçu par le client', () => {
   });
 });
 
+describe('devis tranché, étape pas encore changée par l’atelier', () => {
+  it('la latte courante dit la décision, en ardoise, jamais « Devis à valider »', () => {
+    expect(quoteRailOverride('vehicle', 'quote_pending', { decision: 'accepted' })).toEqual({
+      label: 'Devis accepté · le garage reprend la main',
+      tone: 'ardoise',
+    });
+    expect(quoteRailOverride('device', 'quote_pending', { decision: 'accepted' })?.label).toBe(
+      'Devis accepté · l’atelier reprend la main',
+    );
+    expect(quoteRailOverride('vehicle', 'quote_pending', { decision: 'declined' })).toEqual({
+      label: 'Devis refusé',
+      tone: 'ardoise',
+    });
+  });
+
+  it('devis en attente, ou étape déjà changée : le rail garde le nom de l’étape', () => {
+    expect(quoteRailOverride('vehicle', 'quote_pending', { decision: null })).toBeNull();
+    expect(quoteRailOverride('vehicle', 'quote_pending', null)).toBeNull();
+    expect(quoteRailOverride('vehicle', 'in_repair', { decision: 'accepted' })).toBeNull();
+  });
+});
+
+describe('en-tête : le mot du lieu et de la file, par métier', () => {
+  it('l’activité de l’organisation seulement si elle parle le métier de la file', () => {
+    expect(placeLabel('vehicle', 'garage')).toBe('Garage');
+    expect(placeLabel('desk', 'health')).toBe('Santé');
+    // Une organisation « Garage » qui tient aussi un guichet ou une table.
+    expect(placeLabel('desk', 'garage')).toBe('Accueil du public');
+    expect(placeLabel('table', 'garage')).toBe('Restaurant');
+    expect(placeLabel('retail', 'garage')).toBe('Boutique');
+    expect(placeLabel('device', null)).toBe('Atelier de réparation');
+  });
+
+  it('pastille avant l’inscription : « Liste fermée » à table, comme le titre', () => {
+    expect(queueStatusLabel('table', 'closed')).toBe('Liste fermée');
+    expect(queueStatusLabel('table', 'open')).toBe('Liste ouverte');
+    expect(queueStatusLabel('vehicle', 'paused')).toBe('Dépôts en pause');
+    expect(queueStatusLabel('desk', 'closed')).toBe('Guichets fermés');
+    expect(queueStatusLabel('retail', 'open')).toBe('File ouverte');
+    expect(queueStatusLabel('table', 'no_staff')).toBe('Personne de disponible');
+  });
+});
+
 describe('saisie : les informations qui partent au serveur', () => {
   it('véhicule : immatriculation mise en forme, clés du profil seulement', () => {
     const r = buildDetails('vehicle', { ...INITIAL_JOIN_VALUES, registration: 'ab-123-cd', model: ' Peugeot 208 ' }, { stayChoice: true }, null);
@@ -241,5 +287,49 @@ describe('non-régression des barbiers (lecture du source)', () => {
     expect(src).toContain("{title === undefined && <p className={styles.turnKicker}>C’est</p>}");
     expect(src).toContain("{title ?? 'votre tour'}");
     expect(src).toContain("{subtitle ?? 'Présentez-vous au comptoir'}");
+  });
+
+  it('TurnCurtain : le linteau dit « Comptoir » par défaut ; les métiers passent le leur', () => {
+    const src = read('TurnCurtain.tsx');
+    expect(src).toContain("thresholdLabel = 'Comptoir',");
+    expect(src).toContain('label={thresholdLabel}');
+    // Plus aucun « Comptoir » écrit en dur dans le Seuil.
+    expect(src).not.toContain('label="Comptoir"');
+    const ready = read('profiles/ReadyCurtain.tsx');
+    expect(ready).toContain('thresholdLabel={getProfile(profile).vocab.counter}');
+  });
+
+  it('page.tsx : un ticket métier repris décide avant la file de la page', () => {
+    const page = read('page.tsx');
+    // La session vaut pour toute l'organisation : une fiche d'atelier
+    // ouverte depuis la page d'une file de barbiers reste une fiche.
+    expect(page).toMatch(/const resumedProfile = \(initialTicket as ProfileTicketState \| null\)\?\.queue\.profile;/);
+    expect(page).toMatch(/resumedProfile && resumedProfile !== 'walkin' && resumedProfile !== 'event'\s*\? resumedProfile/);
+    // Un seul bloc d'aiguillage, placé avant le rendu historique.
+    expect(page.match(/<ProfileExperience/g)).toHaveLength(1);
+  });
+
+  it('ProfileShell : jamais deux abonnements au même canal quand il rend les barbiers', () => {
+    const shell = read('profiles/ProfileShell.tsx');
+    expect(shell).toContain('enabled: Boolean(queueId) && !delegated,');
+    expect(shell).toMatch(/if \(delegated\) \{\s*return \(\s*<ClientExperience/);
+  });
+
+  it('écrans de fin des métiers : ni « Comptoir » ni « Revenir dans la file » au guichet', () => {
+    const shell = read('profiles/ProfileShell.tsx');
+    expect(shell).not.toContain('<DonePanel');
+    expect(shell).not.toContain('<ClosedPanel');
+    const end = read('profiles/EndScreens.tsx');
+    expect(end).toContain('<Threshold label={vocab.counter} />');
+    expect(end).toContain("desk ? 'Reprendre un numéro' : 'Revenir dans la file'");
+  });
+
+  it('inscription : de vrais radios pour les choix exclusifs, des bascules pour les motifs', () => {
+    const src = read('profiles/JoinFields.tsx');
+    // Plus de faux radios (bouton + role) : ni arrêt par option ni flèches mortes.
+    expect(src).not.toContain('role="radio"');
+    expect(src).not.toContain('aria-checked');
+    expect(src.match(/type="radio"/g)?.length).toBe(2);
+    expect(src).toContain('aria-pressed={on}');
   });
 });

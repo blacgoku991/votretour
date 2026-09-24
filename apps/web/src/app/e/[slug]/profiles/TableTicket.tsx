@@ -7,7 +7,8 @@ import { Rang } from '@/components/Rang';
 import type { ProfileTicketState, TableSeating } from '@/lib/profiles/types';
 import { NotificationPanel } from '../ClientExperience';
 import { formatCountdown, graceRemaining } from './phase';
-import { ReadyCurtain, ReadyNote, ReadyObject } from './ReadyCurtain';
+import { VisitInfo } from './EndScreens';
+import { ReadyCurtain, ReadyNote } from './ReadyCurtain';
 import { ConfirmAction, ContactRow, Threshold, WalkIcon, type TicketViewProps } from './shared';
 import clientStyles from '../client.module.css';
 import styles from './table.module.css';
@@ -42,6 +43,9 @@ export function TableTicket({
   const selfHint = [`${covers} ${covers > 1 ? 'couverts' : 'couvert'}`, seating].filter(Boolean).join(' · ');
   const remaining = useGraceCountdown(isReady ? entry.calledAt : null, graceMinutes);
   const present = entry.status === 'present';
+  // Délai dépassé : on ne dit pas que la table est perdue (l'hôte décide),
+  // on invite simplement à venir, sans brusquer.
+  const late = remaining === 0;
 
   return (
     <div className={clientStyles.panel}>
@@ -105,29 +109,31 @@ export function TableTicket({
           clientName={entry.name}
           title="Votre table est prête"
           subtitle={
-            graceMinutes
-              ? `Présentez-vous à l’accueil dans les ${graceMinutes} minutes`
-              : 'Présentez-vous à l’accueil'
+            late
+              ? 'Présentez-vous maintenant à l’accueil'
+              : graceMinutes
+                // Espace insécable : « 5 » ne se sépare pas de « minutes ».
+                ? `Présentez-vous à l’accueil dans les ${graceMinutes}\u00a0minutes`
+                : 'Présentez-vous à l’accueil'
           }
           long
-        >
-          <ReadyObject>
+          profile="table"
+          object={
             <div className={styles.readyRow}>
               <PartySize count={covers} size="md" />
               {remaining !== null && (
-                <p className={styles.countdown} data-late={remaining === 0 ? 'true' : undefined}>
-                  <span className={styles.countdownLabel}>{remaining > 0 ? 'Encore' : 'Délai passé'}</span>
-                  <span className={styles.countdownValue}>
-                    {remaining > 0 ? formatCountdown(remaining) : 'Vite !'}
-                  </span>
+                <p className={styles.countdown} data-late={late ? 'true' : undefined}>
+                  <span className={styles.countdownLabel}>{late ? 'Délai passé' : 'Encore'}</span>
+                  <span className={styles.countdownValue}>{formatCountdown(remaining)}</span>
                   {/* Une annonce à la minute, pas à la seconde. */}
                   <span className="sr-only" aria-live="polite">
-                    {remaining > 0 ? `${Math.ceil(remaining / 60)} minutes pour vous présenter` : 'Présentez-vous vite à l’accueil'}
+                    {late ? 'Présentez-vous maintenant à l’accueil' : `${Math.ceil(remaining / 60)} minutes pour vous présenter`}
                   </span>
                 </p>
               )}
             </div>
-          </ReadyObject>
+          }
+        >
           {present ? (
             <ReadyNote>L’accueil sait que vous arrivez.</ReadyNote>
           ) : (
@@ -174,7 +180,7 @@ function useGraceCountdown(calledAt: string | null, graceMinutes: number | null)
  * un avis à qui vient de s'asseoir. La demande part après le repas, si le
  * restaurant l'a réglée (`reviewDelayMinutes`, appliqué en SQL).
  */
-export function TableDone({ ticket }: { ticket: ProfileTicketState }) {
+export function TableDone({ ticket, timeZone }: { ticket: ProfileTicketState; timeZone: string }) {
   const covers = ticket.entry.details.partySize ?? 1;
   return (
     <div className={clientStyles.panel}>
@@ -184,10 +190,10 @@ export function TableDone({ ticket }: { ticket: ProfileTicketState }) {
         </div>
         <section className={clientStyles.doneText}>
           <h2 className="t-display">Bon appétit</h2>
-          <p className={clientStyles.doneName}>{ticket.location.name}</p>
+          <p className={clientStyles.doneName}>{ticket.location.name} · merci d’avoir patienté.</p>
+          <VisitInfo ticket={ticket} timeZone={timeZone} />
         </section>
       </div>
-      <p className={`${clientStyles.reassure} ${clientStyles.bottom}`}>Merci d’avoir patienté.</p>
     </div>
   );
 }

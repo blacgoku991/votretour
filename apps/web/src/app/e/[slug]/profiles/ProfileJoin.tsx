@@ -219,10 +219,16 @@ function JoinHero({ profile, waitingCount, values }: { profile: QueueProfile; wa
         <p className={styles.kicker}>Dépôt au garage</p>
         <h2 className={styles.heroTitle}>Suivez votre véhicule, étape par étape.</h2>
         {/* La plaque se dessine pendant que le client la tape : il vérifie
-            d'un coup d'œil ce qu'il a saisi. Vide, une plaque vierge, qui
-            attend ses caractères. */}
+            d'un coup d'œil ce qu'il a saisi. Vide, elle montre le format
+            attendu en fantôme (« AB-123-CD », encre à 25 %) : une plaque
+            blanche passerait pour un bug. */}
         <div className={styles.platePreview} data-empty={typed ? undefined : 'true'} aria-hidden="true">
-          <Immatriculation value={values.registration} country={values.country} size="lg" width={340} />
+          <Immatriculation
+            value={typed ? values.registration : values.country === 'FR' ? 'AB-123-CD' : 'ABC 1234'}
+            country={values.country}
+            size="lg"
+            width={340}
+          />
         </div>
       </section>
     );
