@@ -11,9 +11,20 @@ qui fait foi.
 
 **Le profil se règle sur la file** (`queues.profile`), pas sur
 l'établissement. Un centre auto peut ainsi avoir une file « Atelier » en
-`vehicle` et une file « Pneus minute » en `walkin`. Le profil par défaut
-vient de l'activité de l'organisation (`ACTIVITY_PROFILE`, dont le miroir SQL
-est `internal.default_profile`).
+`vehicle` et une file « Pneus minute » en `walkin`.
+
+**Le métier est attribué par l'équipe Rangvia, et par elle seule**
+(décision du propriétaire). Le commerçant déclare son activité à
+l'inscription ; sa file naît **toujours** au passage (`walkin`, migration
+0042), sans avis Google en santé et en service administratif, et sans
+prénom en santé, en attendant l'installation. Le super-admin attribue
+ensuite le métier depuis `/admin/etablissements/[id]` (section « Métier »,
+action `assignQueueProfile`, `server/actions/admin-profiles.ts`, qui appelle
+`switch_queue_profile`). Le commerçant voit son métier en lecture seule
+dans ses Réglages et en règle les options. `ACTIVITY_PROFILE` (miroir SQL :
+`internal.default_profile`) ne dit plus que le métier **attendu** : la liste
+des établissements et la vue d'ensemble `/admin` signalent « Métier à
+activer » tant qu'aucune file n'y est (`admin/etablissements/metier-pending.ts`).
 
 | Profil | Métiers | Ce qui avance | Ordre |
 |---|---|---|---|
@@ -161,4 +172,7 @@ nouveau compte : `walkin` et `event` aujourd'hui) et `PROFILE_CAPABILITIES`
 figure. Les deux listes ne changent **que** dans la PR qui ouvre un profil,
 jamais par une variable d'environnement. En attendant, un profil fermé reste
 utilisable par une organisation qui a `organization_settings.features.profiles
-= true` (`profileAvailable`), ce qui suffit au banc de développement.
+= true` (`profileAvailable`), posé par `assignQueueProfile` quand le
+super-admin attribue un métier hors passage ; cela suffit aussi au banc de
+développement. Remplir `OPEN_PROFILES` ne change rien pour un barbier : la
+section Métier des Réglages (et son entrée de sommaire) suit `showsMetier`.

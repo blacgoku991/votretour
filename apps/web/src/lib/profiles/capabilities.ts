@@ -14,7 +14,9 @@
  *
  * Tant qu'un profil n'est pas ouvert, il reste accessible au banc de
  * développement et aux organisations qui ont `features.profiles = true`
- * (posé en SQL par l'exploitant) : `profileAvailable` ci-dessous. Rien
+ * (posé par `assignQueueProfile`, l'attribution d'un métier par le
+ * super-admin, server/actions/admin-profiles.ts) : `profileAvailable`
+ * ci-dessous. Rien
  * dans le développement ni dans les tests n'attend une organisation
  * « pilote ».
  */

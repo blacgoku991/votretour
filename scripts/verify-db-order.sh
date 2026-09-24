@@ -16,8 +16,9 @@
 # La dernière plage (0039 et au-delà) réunit la jonction Wallet × profils
 # (0039-0040) et les migrations écrites APRÈS les deux chantiers, qui ne
 # dépendent d'aucun des deux ordres (0041 : les dix premiers commerces du
-# pied de page). Elles sont appliquées en dernier dans les deux ordres, en
-# production comme sur une base neuve.
+# pied de page ; 0042 : le métier d'une file attribué par le super-admin,
+# create_location redéfinie, toujours au passage). Elles sont appliquées
+# en dernier dans les deux ordres, en production comme sur une base neuve.
 #
 # Tant qu'une plage est vide, les deux ordres coïncident : le script est
 # trivialement vert. apps/web/tests/migrations-commute.test.ts fait la même

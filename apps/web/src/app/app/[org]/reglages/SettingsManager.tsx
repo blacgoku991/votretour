@@ -10,10 +10,10 @@ import {
 } from '@/server/actions/settings';
 import { WEEKDAYS, formatPrice } from '@/lib/format';
 import { hasStages, isLegacyProfile, isQueueProfile } from '@/lib/profiles';
-import { OPEN_PROFILES, profileAvailable } from '@/lib/profiles/capabilities';
+import { profileAvailable } from '@/lib/profiles/capabilities';
 import { clientNameAllowed, resolveProfileOptions } from '@/lib/profiles/options';
 import type { QueueProfile } from '@/lib/profiles/types';
-import { ProfileSection, type DeskStaff } from './ProfileSection';
+import { ProfileSection, showsMetier, type DeskStaff } from './ProfileSection';
 import { TemplatesSection } from './TemplatesSection';
 import { mergeTemplates, type StoredTemplateRow } from './templateRows';
 import { SettingsTocRail, SettingsTocSelect, type TocEntry } from './SettingsToc';
@@ -28,12 +28,16 @@ import styles from './settings.module.css';
  * de données : l'établissement, la file, l'avis Google, les horaires,
  * les prestations, et les données personnelles.
  *
- * Profils métier : la section « Métier de la file » (et « Messages »
- * pour un métier qui en envoie) n'apparaît que si elle a quelque chose à
- * dire : l'organisation a les profils activés (`features.profiles`), la
- * file est déjà dans un autre métier, ou un métier est ouvert à tous
- * (`OPEN_PROFILES`). Un barbier d'aujourd'hui ne voit donc RIEN de
- * nouveau : ses réglages restent identiques au pixel près (captures R0).
+ * Profils métier : le métier est ATTRIBUÉ par l'équipe Rangvia (espace
+ * super-admin) ; le commerçant le voit en lecture seule et en règle les
+ * options. La section « Métier de la file » (et « Messages » pour un
+ * métier qui en envoie) suit exactement ce que rend `ProfileSection`
+ * (`showsMetier`) : une file dans un métier, ou une file au passage d'une
+ * organisation où l'équipe a installé un métier. Le sommaire ne peut donc
+ * pas annoncer une section vide, même quand des métiers seront ouverts à
+ * tous (`OPEN_PROFILES`, rempli à l'ouverture) : cette liste ne décide
+ * rien ici. Un barbier d'aujourd'hui ne voit RIEN de nouveau : ses
+ * réglages restent identiques au pixel près (captures R0).
  *
  * Plusieurs files dans l'établissement, avec un métier en jeu : le choix
  * de la file remonte AU-DESSUS de « Métier », dans un bandeau collant
@@ -99,7 +103,7 @@ export function SettingsManager({
   services: Service[];
   /** Permission `queue.configure` (métier de la file, messages, guichets). */
   canConfigure?: boolean;
-  /** Activité de l'organisation : elle seule fonde une suggestion de métier. */
+  /** Activité de l'organisation : nom du passage (« au fauteuil » ou non), santé. */
   activity?: string | null;
   /** Fiches de l'établissement : une fiche = un guichet. */
   staff?: DeskStaff[];
@@ -121,8 +125,9 @@ export function SettingsManager({
 
   const features = settings?.features && typeof settings.features === 'object' ? settings.features : null;
   const profile: QueueProfile = queue && isQueueProfile(queue.profile) ? queue.profile : 'walkin';
-  const openBeyondToday = [...OPEN_PROFILES].some((p) => !isLegacyProfile(p));
-  const showProfile = queue !== null && (features?.profiles === true || !isLegacyProfile(profile) || openBeyondToday);
+  // Même règle que la section elle-même : jamais d'entrée de sommaire
+  // (ni de bandeau des files) pour une section qui ne rend rien.
+  const showProfile = queue !== null && showsMetier({ current: profile, features, orgHasProfiledQueue });
   const showTemplates = showProfile && !isLegacyProfile(profile) && profileAvailable(profile, features);
   // Le bandeau des files ne remplace l'onglet d'avant que lorsqu'un
   // métier est en jeu : un barbier à plusieurs files garde sa page.

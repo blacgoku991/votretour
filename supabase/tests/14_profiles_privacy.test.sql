@@ -67,6 +67,40 @@ begin
 end;
 $$;
 
+-- Depuis 0042, une file naît toujours au passage : le métier est attribué
+-- ensuite par l'équipe Rangvia (switch_queue_profile, via l'action
+-- super-admin). Ce test exerce le moteur de chaque métier : il provisionne
+-- comme un commerçant, puis installe le métier de l'activité exactement
+-- comme create_location le faisait en 0037 (réglages par défaut du métier
+-- et motifs, sans ligne de journal : la file n'a « quitté » aucun métier).
+create or replace function internal.test_provision_metier(
+  p_user_id       uuid,
+  p_org_name      text,
+  p_activity      public.activity_type default 'other',
+  p_location_name text default null,
+  p_queue_mode    public.queue_mode default 'shared',
+  p_plan_code     text default 'starter'
+) returns jsonb
+language plpgsql
+as $$
+declare
+  v_prov    jsonb := public.provision_organization(
+    p_user_id, p_org_name, p_activity, p_location_name, p_queue_mode, p_plan_code);
+  v_profile public.queue_profile := internal.default_profile(p_activity);
+  v_queue   public.queues;
+begin
+  if v_prov -> 'queue' ->> 'id' is not null and v_profile <> 'walkin' then
+    perform internal.apply_profile_defaults((v_prov -> 'queue' ->> 'id')::uuid, v_profile, p_activity);
+    perform internal.seed_default_services((v_prov -> 'location' ->> 'id')::uuid, v_profile);
+    select * into v_queue from public.queues where id = (v_prov -> 'queue' ->> 'id')::uuid;
+    v_prov := jsonb_set(v_prov, '{queue,profile}', to_jsonb(v_queue.profile::text));
+    v_prov := jsonb_set(v_prov, '{queue,mode}', to_jsonb(v_queue.mode::text));
+  end if;
+  return v_prov;
+end;
+$$;
+
+
 -- Toutes les clés d'objet présentes à n'importe quelle profondeur.
 create or replace function internal.test_all_keys(p_doc jsonb)
 returns text[] language sql immutable as $$
@@ -146,7 +180,7 @@ begin
   raise notice '── 0. Parité walkin : 0036 rend exactement la sortie de 0031 ──';
 
   insert into auth.users (id, email) values (v_owner, 'p14-salon@profils.test');
-  v_prov := public.provision_organization(
+  v_prov := internal.test_provision_metier(
     v_owner, 'Salon Écran', 'barber', 'Salon Écran — Lyon 2', 'shared', 'pro');
   v_org   := (v_prov -> 'organization' ->> 'id')::uuid;
   v_loc   := (v_prov -> 'location' ->> 'id')::uuid;
@@ -264,7 +298,7 @@ begin
   -- File vide et fermée, file inconnue : mêmes sorties aussi.
   insert into auth.users (id, email) values (extensions.gen_random_uuid(), 'p14-vide@profils.test')
   returning id into v_sid;
-  v_old := (public.provision_organization(v_sid, 'Salon Vide', 'barber', 'Salon Vide', 'shared', 'pro')
+  v_old := (internal.test_provision_metier(v_sid, 'Salon Vide', 'barber', 'Salon Vide', 'shared', 'pro')
             -> 'queue' ->> 'id')::uuid;
   perform internal.assert(
     public.display_snapshot(v_old) = internal.test_display_snapshot_0031(v_old)
@@ -310,7 +344,7 @@ begin
   raise notice '── 1. Atelier véhicule : immatriculation masquée, rien d''autre ──';
 
   insert into auth.users (id, email) values (v_owner, 'p14-garage@profils.test');
-  v_prov := public.provision_organization(
+  v_prov := internal.test_provision_metier(
     v_owner, 'P14 Garage Martin', 'garage', 'Garage Martin — Nanterre', 'shared', 'pro');
   v_org   := (v_prov -> 'organization' ->> 'id')::uuid;
   v_loc   := (v_prov -> 'location' ->> 'id')::uuid;
@@ -463,7 +497,7 @@ begin
   raise notice '';
   raise notice '── Atelier appareil : dossier et type d''appareil seulement ──';
   insert into auth.users (id, email) values (v_owner, 'p14-phone@profils.test');
-  v_prov := public.provision_organization(v_owner, 'P14 PhoneFix', 'phone_repair', 'PhoneFix Lille', 'shared', 'pro');
+  v_prov := internal.test_provision_metier(v_owner, 'P14 PhoneFix', 'phone_repair', 'PhoneFix Lille', 'shared', 'pro');
   v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
   perform public.set_queue_status(v_queue, 'open', v_owner);
   v_id := public.add_walkin(v_queue, 'Salomé', null, null, v_owner, null,
@@ -517,7 +551,7 @@ begin
   raise notice '';
   raise notice '── 2. Guichet (santé) : un numéro et un guichet, jamais un prénom ──';
   insert into auth.users (id, email) values (v_owner, 'p14-sante@profils.test');
-  v_prov := public.provision_organization(
+  v_prov := internal.test_provision_metier(
     v_owner, 'P14 Centre de prélèvements', 'health', 'Laboratoire Gambetta', 'shared', 'pro');
   v_org   := (v_prov -> 'organization' ->> 'id')::uuid;
   v_loc   := (v_prov -> 'location' ->> 'id')::uuid;
@@ -616,7 +650,7 @@ begin
   raise notice '';
   raise notice '── Restaurant : tables prêtes ──';
   insert into auth.users (id, email) values (v_owner, 'p14-resto@profils.test');
-  v_prov := public.provision_organization(v_owner, 'P14 Chez Paul', 'restaurant', 'Chez Paul', 'shared', 'pro');
+  v_prov := internal.test_provision_metier(v_owner, 'P14 Chez Paul', 'restaurant', 'Chez Paul', 'shared', 'pro');
   v_loc   := (v_prov -> 'location' ->> 'id')::uuid;
   v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
   perform public.set_queue_status(v_queue, 'open', v_owner);
@@ -703,7 +737,7 @@ begin
   raise notice '';
   raise notice '── Boutique : commandes prêtes, appels au comptoir ──';
   insert into auth.users (id, email) values (v_owner, 'p14-shop@profils.test');
-  v_prov := public.provision_organization(v_owner, 'P14 Boutique', 'shop', 'Boutique Oberkampf', 'shared', 'pro');
+  v_prov := internal.test_provision_metier(v_owner, 'P14 Boutique', 'shop', 'Boutique Oberkampf', 'shared', 'pro');
   v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
   perform public.set_queue_status(v_queue, 'open', v_owner);
   v_order := public.add_walkin(v_queue, 'Capucine', null, null, v_owner, null,
@@ -778,7 +812,7 @@ begin
   insert into auth.users (id, email) values (v_owner, 'p14-bornes@profils.test');
 
   -- Atelier : dix véhicules prêts, 8 lignes, le dernier prêt en tête.
-  v_prov := public.provision_organization(v_owner, 'P14 Bornes Garage', 'garage', 'Bornes Garage', 'shared', 'pro');
+  v_prov := internal.test_provision_metier(v_owner, 'P14 Bornes Garage', 'garage', 'Bornes Garage', 'shared', 'pro');
   v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
   perform public.set_queue_status(v_queue, 'open', v_owner);
   v_ids := '{}';
@@ -801,7 +835,7 @@ begin
   -- Restaurant : huit groupes appelés, 6 lignes, l'appel le plus ancien
   -- d'abord. Gaspard, le plus ancien, a répondu « J'arrive » : il reste
   -- « prêt » (present après l'appel).
-  v_prov := public.provision_organization(v_owner, 'P14 Bornes Resto', 'restaurant', 'Bornes Resto', 'shared', 'pro');
+  v_prov := internal.test_provision_metier(v_owner, 'P14 Bornes Resto', 'restaurant', 'Bornes Resto', 'shared', 'pro');
   v_org   := (v_prov -> 'organization' ->> 'id')::uuid;
   v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
   perform public.set_queue_status(v_queue, 'open', v_owner);
@@ -833,7 +867,7 @@ begin
 
   -- Guichet : huit appels en cours (6 lignes, le plus récent d'abord) et
   -- sept tickets terminés (5 lignes).
-  v_prov := public.provision_organization(v_owner, 'P14 Bornes Mairie', 'admin_service', 'Bornes Mairie', 'shared', 'pro');
+  v_prov := internal.test_provision_metier(v_owner, 'P14 Bornes Mairie', 'admin_service', 'Bornes Mairie', 'shared', 'pro');
   v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
   perform public.set_queue_status(v_queue, 'open', v_owner);
   v_ids := '{}';
@@ -861,7 +895,7 @@ begin
     v_ids[9:13], 'guichet : derniers appels, le plus récent d''abord');
 
   -- Boutique : dix commandes prêtes (8 lignes), six appels numérotés (4).
-  v_prov := public.provision_organization(v_owner, 'P14 Bornes Boutique', 'shop', 'Bornes Boutique', 'shared', 'pro');
+  v_prov := internal.test_provision_metier(v_owner, 'P14 Bornes Boutique', 'shop', 'Bornes Boutique', 'shared', 'pro');
   v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
   perform public.set_queue_status(v_queue, 'open', v_owner);
   update public.queues set profile_options = profile_options || '{"numbering":true}' where id = v_queue;
@@ -1040,7 +1074,7 @@ begin
   -- Changement de profil : les passages d'avant ne deviennent pas des
   -- véhicules. Un barbier sert deux clients, puis essaie le poste garage.
   insert into auth.users (id, email) values (v_owner, 'p14-essai@profils.test');
-  v_prov := public.provision_organization(v_owner, 'P14 Essai', 'barber', 'Essai Montreuil', 'shared', 'pro');
+  v_prov := internal.test_provision_metier(v_owner, 'P14 Essai', 'barber', 'Essai Montreuil', 'shared', 'pro');
   v_loc   := (v_prov -> 'location' ->> 'id')::uuid;
   v_queue := (v_prov -> 'queue' ->> 'id')::uuid;
   perform public.set_queue_status(v_queue, 'open', v_owner);
@@ -1123,7 +1157,7 @@ begin
   raise notice '';
   raise notice '── 5. RLS : modèles de messages et details ──';
   insert into auth.users (id, email) values (v_rival, 'p14-rival@profils.test');
-  perform public.provision_organization(v_rival, 'P14 Garage Rival', 'garage', 'Rival Puteaux', 'shared', 'pro');
+  perform internal.test_provision_metier(v_rival, 'P14 Garage Rival', 'garage', 'Rival Puteaux', 'shared', 'pro');
   insert into public.message_templates (organization_id, location_id, profile, key, label, body)
   values (v_org, v_loc, 'vehicle', 'retard', 'Retard', 'Votre véhicule sera prêt demain matin.');
 

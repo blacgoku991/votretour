@@ -11,6 +11,7 @@ import {
 } from './labels';
 import { monthlyRecurringCents } from './revenue';
 import { WalletStatusCard, loadWalletCard } from './WalletStatusCard';
+import { MetiersToActivateCard, loadMetiersToActivate } from './etablissements/MetiersToActivate';
 import styles from './admin.module.css';
 
 export const metadata: Metadata = { title: 'Salle de contrôle', robots: { index: false } };
@@ -65,6 +66,7 @@ export default async function AdminHomePage({
     searchEvents,
     searchPlates,
     wallet,
+    metiersToActivate,
   ] = await Promise.all([
     db.rpc('platform_stats'),
     db.from('queues')
@@ -119,6 +121,9 @@ export default async function AdminHomePage({
           .limit(8)
       : Promise.resolve({ data: [] }),
     loadWalletCard(db, now),
+    // Les organisations qui attendent l'interface de leur métier : la
+    // promesse faite à l'inscription (« l'équipe Rangvia l'active »).
+    loadMetiersToActivate(db),
   ]);
 
   const stats = raw as PlatformStats | null;
@@ -355,6 +360,8 @@ export default async function AdminHomePage({
           tone={(stats?.errorsOpen ?? 0) > 0 ? 'danger' : 'live'}
         />
       </AdminStats>
+
+      <MetiersToActivateCard data={metiersToActivate} />
 
       <div className={styles.analyticsGrid}>
         <section className={styles.adminCard}>

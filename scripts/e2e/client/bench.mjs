@@ -93,6 +93,24 @@ export function ensureBench() {
            '75011', 'Paris', 'FR', 'Europe/Paris', 'https://g.page/r/exemple/review', 'shared', null, ${lit(place.slug)})`);
     }
   }
+  // Depuis 0042, une file naît toujours au passage : le métier est
+  // attribué ensuite par l'équipe Rangvia (switch_queue_profile, comme
+  // l'action super-admin). Idempotent : un métier déjà posé ne change pas.
+  for (const [key, place] of Object.entries(PLACES)) {
+    const profile = key === 'health' ? 'desk' : key;
+    if (profile === 'walkin') continue;
+    const queue = sql(`select q.id from public.queues q join public.slug_registry sr on sr.ref_id = q.location_id
+                       where sr.slug = ${lit(place.slug)} and q.is_default`);
+    if (sql(`select profile from public.queues where id = ${lit(queue)}`) === profile) continue;
+    resetPlace(place);
+    sql(`select public.switch_queue_profile(${lit(queue)}, ${lit(profile)}, null)`);
+    // L'organisation du banc est déclarée « garage » : l'activité propre du
+    // lieu (santé, mairie, restaurant…) est redite ici, comme create_location
+    // le faisait en 0037 (données de santé, pas d'avis en mairie).
+    if (place.activity !== 'garage') {
+      sql(`select internal.apply_profile_defaults(${lit(queue)}, ${lit(profile)}, ${lit(place.activity)})`);
+    }
+  }
   sql(`update public.locations set phone = '+33143000000' where organization_id = ${lit(org)}`);
   // Ouvert toute la journée : la recette ne dépend pas de l'heure.
   sql(`update public.opening_hours set opens_at = '00:00', closes_at = '23:59', is_closed = false

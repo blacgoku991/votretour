@@ -48,6 +48,40 @@ begin
 end;
 $$;
 
+-- Depuis 0042, une file naît toujours au passage : le métier est attribué
+-- ensuite par l'équipe Rangvia (switch_queue_profile, via l'action
+-- super-admin). Ce test exerce le moteur de chaque métier : il provisionne
+-- comme un commerçant, puis installe le métier de l'activité exactement
+-- comme create_location le faisait en 0037 (réglages par défaut du métier
+-- et motifs, sans ligne de journal : la file n'a « quitté » aucun métier).
+create or replace function internal.test_provision_metier(
+  p_user_id       uuid,
+  p_org_name      text,
+  p_activity      public.activity_type default 'other',
+  p_location_name text default null,
+  p_queue_mode    public.queue_mode default 'shared',
+  p_plan_code     text default 'starter'
+) returns jsonb
+language plpgsql
+as $$
+declare
+  v_prov    jsonb := public.provision_organization(
+    p_user_id, p_org_name, p_activity, p_location_name, p_queue_mode, p_plan_code);
+  v_profile public.queue_profile := internal.default_profile(p_activity);
+  v_queue   public.queues;
+begin
+  if v_prov -> 'queue' ->> 'id' is not null and v_profile <> 'walkin' then
+    perform internal.apply_profile_defaults((v_prov -> 'queue' ->> 'id')::uuid, v_profile, p_activity);
+    perform internal.seed_default_services((v_prov -> 'location' ->> 'id')::uuid, v_profile);
+    select * into v_queue from public.queues where id = (v_prov -> 'queue' ->> 'id')::uuid;
+    v_prov := jsonb_set(v_prov, '{queue,profile}', to_jsonb(v_queue.profile::text));
+    v_prov := jsonb_set(v_prov, '{queue,mode}', to_jsonb(v_queue.mode::text));
+  end if;
+  return v_prov;
+end;
+$$;
+
+
 -- Identifiants partagés entre les blocs (session psql uniquement).
 create temp table p13 (k text primary key, v text not null);
 
@@ -124,7 +158,7 @@ begin
       else 'walkin'
     end;
     -- 'per_staff' demandé partout : seuls walkin et event le gardent.
-    v_prov := public.provision_organization(
+    v_prov := internal.test_provision_metier(
       v_owner, 'P13 ' || v_act::text, v_act, 'P13 ' || v_act::text || ' Centre', 'per_staff', 'pro');
     select * into v_queue from public.queues where id = (v_prov -> 'queue' ->> 'id')::uuid;
     if v_queue.profile::text is distinct from v_expected
@@ -614,7 +648,7 @@ begin
     and v_state::text not like '%CD-456%' and v_state::text not like '%Yanis%',
     'aperçu : immatriculation masquée, ni plaque en clair ni prénom');
 
-  v_rival_org := (public.provision_organization(
+  v_rival_org := (internal.test_provision_metier(
     v_rival, 'P13 Concurrent', 'garage', 'P13 Concurrent Centre') -> 'organization' ->> 'id')::uuid;
   v_rival_s := (public.upsert_client_session(v_rival_org, 'p13-rival-1', 'web', null) ->> 'id')::uuid;
   perform internal.assert(public.claim_entry(v_hash1, v_rival_s) is null,
@@ -1440,7 +1474,7 @@ declare
 begin
   raise notice '';
   raise notice '── 15. Concurrence : changement de profil, rattachement, devis ──';
-  v_prov := public.provision_organization(
+  v_prov := internal.test_provision_metier(
     (select v::uuid from p13 where k = 'owner'), 'P13 Concurrence', 'counter', 'P13 Concurrence Centre');
   v_org := (v_prov -> 'organization' ->> 'id')::uuid;
   perform public.set_queue_status((v_prov -> 'queue' ->> 'id')::uuid, 'open', null);
@@ -1450,7 +1484,7 @@ begin
     ('cs2', public.upsert_client_session(v_org, 'p13-conc-2', 'web', null) ->> 'id');
 
   -- Garage : une fiche à rattacher, une fiche avec un devis en attente.
-  v_prov := public.provision_organization(
+  v_prov := internal.test_provision_metier(
     (select v::uuid from p13 where k = 'owner'), 'P13 Concurrence Garage', 'garage',
     'P13 Concurrence Garage Centre');
   v_org := (v_prov -> 'organization' ->> 'id')::uuid;

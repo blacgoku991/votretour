@@ -45,7 +45,7 @@ export default async function SignupPage({
         {activityLabel && (
           <p className={local.metier}>
             <span className={local.metierSlat}>{activityLabel}</span>
-            <span className={local.metierHint}>Métier présélectionné, modifiable à l’étape suivante.</span>
+            <span className={local.metierHint}>Activité présélectionnée, modifiable à l’étape suivante.</span>
           </p>
         )}
       </div>

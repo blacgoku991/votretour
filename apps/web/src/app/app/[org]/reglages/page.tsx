@@ -45,7 +45,7 @@ export default async function SettingsPage({
         ? db.from('services').select('id, name, duration_minutes, price_cents, is_active')
             .eq('location_id', current.id).eq('is_active', true).order('sort_order')
         : Promise.resolve({ data: [] }),
-      // Profils métier : l'activité (suggestion d'un métier), les fiches
+      // Profils métier : l'activité (nom du passage, santé), les fiches
       // (une fiche = un guichet) et les modèles de messages retouchés.
       db.from('organizations').select('activity, name').eq('id', organizationId).maybeSingle(),
       current
@@ -55,9 +55,10 @@ export default async function SettingsPage({
       db.from('message_templates')
         .select('profile, key, label, body, is_active, location_id, sort_order')
         .eq('organization_id', organizationId).is('location_id', null),
-      // Une file déjà dans un métier, ailleurs dans l'organisation : elle
-      // seule, avec l'activité et `features.profiles`, ouvre le choix du
-      // métier d'une file au passage (jamais pour un simple barbier).
+      // Une file déjà dans un métier (attribué par l'équipe Rangvia),
+      // ailleurs dans l'organisation : avec `features.profiles`, elle seule
+      // fait dire à la section Métier qu'une file au passage y reste
+      // (jamais pour un simple barbier). Aucun choix du métier ici.
       db.from('queues').select('id, profile').eq('organization_id', organizationId),
     ]);
 
