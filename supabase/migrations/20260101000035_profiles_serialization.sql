@@ -17,7 +17,10 @@ begin;
 
 -- Ce que le client voit de SES propres informations : tout ce qu'il a
 -- décrit, sauf ce qui ne regarde que l'atelier (clés reçues), et le devis
--- réduit à son montant, son libellé et sa décision.
+-- réduit à son numéro, son montant, son libellé, sa décision et son
+-- heure d'envoi. Le numéro (n) sert de version : le client le renvoie
+-- avec sa décision (client_queue_action, p_options.quoteN) pour ne jamais
+-- accepter un devis modifié entre-temps.
 create or replace function internal.details_for_client(p_details jsonb)
 returns jsonb
 language sql
@@ -26,8 +29,10 @@ as $$
   select (coalesce(p_details, '{}'::jsonb) - 'keys' - 'quote')
     || case when jsonb_typeof(p_details -> 'quote') = 'object' then jsonb_build_object(
          'quote', jsonb_build_object(
+           'n',           p_details -> 'quote' -> 'n',
            'amountCents', p_details -> 'quote' -> 'amountCents',
            'label',       p_details -> 'quote' -> 'label',
+           'sentAt',      p_details -> 'quote' -> 'sentAt',
            'decision',    p_details -> 'quote' -> 'decision'))
        else '{}'::jsonb end;
 $$;
@@ -306,8 +311,11 @@ begin
       'postalCode', v_location.postal_code, 'phone', v_location.phone,
       'latitude', v_location.latitude, 'longitude', v_location.longitude,
       'mapsUrl', v_location.maps_url, 'logoUrl', coalesce(v_location.logo_url, v_org.logo_url),
-      -- Le lien d'avis n'est révélé qu'une fois la prestation terminée.
+      -- Le lien d'avis n'est révélé qu'une fois la prestation terminée, et
+      -- jamais dans une file où l'avis est désactivé (review = false :
+      -- service administratif, santé). {} en walkin : inchangé.
       'googleReviewUrl', case when v_entry.status = 'completed'
+                               and v_queue.profile_options -> 'review' is distinct from 'false'::jsonb
                               then v_location.google_review_url else null end,
       -- « Ouvert jusqu'à 19 h 00 » : horaires réels du jour, ou null.
       'todayHours', case when v_profiled then internal.today_hours(v_location.id) end
@@ -345,9 +353,43 @@ $$;
 -- queue.profileOptions, queue.ticketPrefix, staff[].deskLabel,
 -- counts.byStage, counts.coversWaiting, counts.coversSeatedToday).
 -- Corps de 0009 inchangé par ailleurs.
+--
+-- Informations métier sur DEMANDE EXPLICITE (p_include_details) : sans
+-- elle, chaque ticket porte details = {} et registrationKey = null — les
+-- mêmes clés, des valeurs neutres. Pourquoi : jusqu'au lot T0, le kiosque
+-- /api/tv/snapshot envoie tout queue_snapshot au téléviseur, appareil
+-- public. Avec les profils, l'immatriculation en clair, le modèle et le
+-- motif saisi partiraient donc vers la TV d'un garage, contre la règle
+-- « immatriculation masquée à l'écran ». Le défaut sûr protège tous les
+-- appelants d'aujourd'hui (TV, écran /ecran, poste walkin) quel que soit
+-- l'ordre de mise en production de T0 et de ce lot ; seul le poste du
+-- professionnel (lots P2 à P4) demande les informations métier, en
+-- passant p_include_details => true.
+--
+-- Nouvelle signature (un paramètre en dernier, avec valeur par défaut) :
+-- l'ancienne est supprimée pour que PostgREST n'ait jamais à choisir
+-- entre deux surcharges ; rpc('queue_snapshot', { p_queue_id }) et les
+-- appels positionnels des tests restent valides.
 -- ---------------------------------------------------------------------
-create or replace function public.queue_snapshot(p_queue_id uuid)
+drop function if exists public.queue_snapshot(uuid);
+
+-- Ticket de l'instantané : entry_json_staff complet, ou sans les
+-- informations métier (mêmes clés, valeurs neutres).
+create or replace function internal.snapshot_entry_json(e public.queue_entries, p_include_details boolean)
 returns jsonb
+language sql
+stable
+as $$
+  select case when coalesce(p_include_details, false) then internal.entry_json_staff(e)
+              else internal.entry_json_staff(e)
+                   || jsonb_build_object('details', '{}'::jsonb, 'registrationKey', null)
+         end;
+$$;
+
+create function public.queue_snapshot(
+  p_queue_id        uuid,
+  p_include_details boolean default false
+) returns jsonb
 language plpgsql
 security definer
 set search_path = public, internal, extensions
@@ -390,18 +432,18 @@ begin
       'googleReviewUrl', v_location.google_review_url
     ),
     'serving', coalesce((
-      select jsonb_agg(internal.entry_json_staff(e)
+      select jsonb_agg(internal.snapshot_entry_json(e, p_include_details)
              order by e.service_started_at nulls last, e.sort_order)
       from public.queue_entries e
       where e.queue_id = p_queue_id and e.status = 'serving'
     ), '[]'::jsonb),
     'called', coalesce((
-      select jsonb_agg(internal.entry_json_staff(e) order by e.sort_order, e.joined_at)
+      select jsonb_agg(internal.snapshot_entry_json(e, p_include_details) order by e.sort_order, e.joined_at)
       from public.queue_entries e
       where e.queue_id = p_queue_id and e.status = 'next'
     ), '[]'::jsonb),
     'waiting', coalesce((
-      select jsonb_agg(internal.entry_json_staff(e)
+      select jsonb_agg(internal.snapshot_entry_json(e, p_include_details)
              order by internal.status_rank(e.status), e.sort_order, e.joined_at)
       from public.queue_entries e
       where e.queue_id = p_queue_id
@@ -409,7 +451,7 @@ begin
     ), '[]'::jsonb),
     -- Absents et retirés récents : permettent le "remettre plus tard".
     'parked', coalesce((
-      select jsonb_agg(internal.entry_json_staff(e) order by coalesce(e.absent_at, e.updated_at) desc)
+      select jsonb_agg(internal.snapshot_entry_json(e, p_include_details) order by coalesce(e.absent_at, e.updated_at) desc)
       from public.queue_entries e
       where e.queue_id = p_queue_id
         and e.status in ('absent', 'skipped')
@@ -485,15 +527,16 @@ begin
 end;
 $$;
 
--- Droits : mêmes signatures qu'avant, droits conservés par
--- « create or replace » ; on les réaffirme pour que ce fichier se suffise.
+-- Droits : resolve_entry_point et ticket_state gardent leur signature
+-- (droits conservés par « create or replace ») ; queue_snapshot est
+-- recréée. On les pose tous ici pour que ce fichier se suffise.
 do $$
 declare
   fn text;
   fns text[] := array[
     'public.resolve_entry_point(text)',
     'public.ticket_state(text,uuid)',
-    'public.queue_snapshot(uuid)'
+    'public.queue_snapshot(uuid,boolean)'
   ];
 begin
   foreach fn in array fns loop

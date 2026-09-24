@@ -7,8 +7,9 @@
 --   obtient exactement ce qu'il obtenait avant.
 -- * purge_expired_data (même signature) : les informations métier
 --   (immatriculation, modèle, devis, jeton de suivi) partent en même
---   temps que les prénoms, à data_retention_days ; les compteurs de
---   numéros des jours passés sont supprimés.
+--   temps que les prénoms, à data_retention_days ; un ticket EN COURS
+--   n'est jamais anonymisé ; les compteurs de numéros des jours passés
+--   sont supprimés.
 -- * Liste récapitulative des droits de toutes les fonctions publiques
 --   créées ou redéfinies par 0034 à 0037.
 --
@@ -118,11 +119,24 @@ $$;
 -- ---------------------------------------------------------------------
 -- RGPD : purge automatique (même signature qu'en 0009)
 -- ---------------------------------------------------------------------
--- Conditions ÉTENDUES, jamais restreintes : un ticket anonymisé avant
--- l'est toujours, au même délai (data_retention_days), et perd en plus
--- ses informations métier. L'immatriculation part ainsi en même temps
--- que le prénom. Les événements 'stage' ne contiennent que des codes
--- d'étape et suivent la règle existante de l'étape 4.
+-- Ce qui change avec les profils : un ticket peut désormais vivre des
+-- semaines (voiture en atelier, 30 jours au plus). Compter la rétention
+-- depuis l'inscription effacerait l'immatriculation et détacherait le
+-- téléphone d'un véhicule ENCORE EN RÉPARATION dès que son séjour dépasse
+-- data_retention_days (30 par défaut, 1 au minimum). D'où :
+--   * un ticket en cours n'est jamais anonymisé, et la session de
+--     l'appareil qui le suit n'est jamais supprimée ;
+--   * un ticket qui a porté une étape (stage_changed_at renseigné : atelier,
+--     commande suivie) compte sa rétention depuis sa FIN (terminé, annulé,
+--     expiré, absent ; à défaut, sa dernière modification) ;
+--   * tout autre ticket (walkin, table, guichet, conseil en boutique) garde
+--     exactement la règle d'avant : depuis joined_at. Il ne vit que
+--     quelques heures ; en walkin, seule l'exclusion des tickets en cours
+--     est nouvelle, et elle ne concerne aucun ticket réel (durée de vie
+--     de 24 h au plus, rétention d'un jour au moins).
+-- Le ticket anonymisé perd en plus ses informations métier : l'immatri-
+-- culation part avec le prénom. Les événements 'stage' ne contiennent que
+-- des codes d'étape et suivent la règle existante de l'étape 4.
 create or replace function public.purge_expired_data()
 returns jsonb
 language plpgsql
@@ -138,12 +152,15 @@ declare
   v_limits     int := 0;
   v_counters   int := 0;
 begin
-  -- 1. Anonymisation des tickets au-delà de la rétention.
+  -- 1. Anonymisation des tickets terminés au-delà de la rétention.
   with expired as (
     select e.id
     from public.queue_entries e
     join public.organization_settings s on s.organization_id = e.organization_id
-    where e.joined_at < now() - make_interval(days => s.data_retention_days)
+    where not public.entry_is_active(e.status)
+      and (case when e.stage_changed_at is null then e.joined_at
+                else coalesce(e.completed_at, e.cancelled_at, e.expired_at, e.absent_at, e.updated_at)
+           end) < now() - make_interval(days => s.data_retention_days)
       and (e.client_name is not null
            or e.client_session_id is not null
            or e.details <> '{}'::jsonb
@@ -163,12 +180,19 @@ begin
    where t.id = x.id;
   get diagnostics v_anonymized = row_count;
 
-  -- 2. Suppression des sessions clients expirées.
+  -- 2. Suppression des sessions clients expirées, sauf celle d'un
+  -- appareil qui suit encore un ticket en cours (le client d'un garage
+  -- peut ne pas rouvrir son suivi pendant des semaines ; sa session est
+  -- prolongée dès qu'il revient).
   delete from public.client_sessions cs
   using public.organization_settings s
   where s.organization_id = cs.organization_id
     and (cs.expires_at < now()
-         or cs.last_seen_at < now() - make_interval(days => s.data_retention_days));
+         or cs.last_seen_at < now() - make_interval(days => s.data_retention_days))
+    and not exists (
+      select 1 from public.queue_entries e
+      where e.client_session_id = cs.id and public.entry_is_active(e.status)
+    );
   get diagnostics v_sessions = row_count;
 
   -- 3. Abonnements push morts.
@@ -231,7 +255,7 @@ declare
     -- 0034 : moteur
     'public.join_queue(uuid,uuid,text,uuid,uuid,public.entry_source,uuid,jsonb)',
     'public.add_walkin(uuid,text,uuid,uuid,uuid,uuid,jsonb)',
-    'public.client_queue_action(text,uuid,text)',
+    'public.client_queue_action(text,uuid,text,jsonb)',
     'public.staff_queue_action(text,text,uuid,uuid,jsonb)',
     'public.claim_pending_notifications(uuid)',
     'public.claim_entry_notification(uuid,public.notification_kind)',
@@ -245,7 +269,7 @@ declare
     -- 0035 : sérialisation
     'public.resolve_entry_point(text)',
     'public.ticket_state(text,uuid)',
-    'public.queue_snapshot(uuid)',
+    'public.queue_snapshot(uuid,boolean)',
     -- 0037 : provisionnement et purge
     'public.create_location(uuid,text,public.activity_type,text,text,text,text,text,text,public.queue_mode,uuid,text)',
     'public.purge_expired_data()'

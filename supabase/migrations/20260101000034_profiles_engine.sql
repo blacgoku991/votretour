@@ -146,6 +146,16 @@ $$;
 -- Étape cohérente avec un statut atteint par une action générique
 -- (démarrer, décaler, remettre en file…). Renvoie l'étape courante quand
 -- le couple reste légitime : « prêt » + « le client arrive » (present).
+--
+-- Boutique : une commande suivie par étape qui repasse en attente
+-- (décalée, remise en file, absente reculée) reste « en préparation »,
+-- elle ne redevient JAMAIS un ticket sans étape. Sinon elle retomberait
+-- sous l'index « une place active par téléphone » (0033), dont elle
+-- s'était affranchie : un téléphone qui attend un conseil ET suit une
+-- commande rattachée par QR ferait échouer l'action du vendeur en
+-- 23505. Le couple (preparing, waiting) est stable : promote_next et
+-- desk_call_next ignorent les tickets à étape, et le réalignement ne le
+-- modifie plus.
 create or replace function internal.stage_for_status(
   p       public.queue_profile,
   p_stage text,
@@ -155,6 +165,7 @@ language sql
 immutable
 as $$
   select case
+    when p_status = 'waiting' and p = 'retail' and p_stage is not null then 'preparing'
     when p_status = 'waiting' then internal.initial_stage(p)
     when p_status = 'serving' and p in ('vehicle', 'device')
       then case when p_stage = 'received' then 'diagnosis' else 'in_repair' end
@@ -178,25 +189,29 @@ $$;
 -- lisibles, les séparateurs sont conservés. AB-123-CD donne ••-••3-CD,
 -- 1234 AB 75 donne •••• •B 75. C'est la seule forme qui quitte le poste
 -- du professionnel (écran TV, aperçu de rattachement, notifications).
+-- Une plaque courte (étrangère, 2 ou 3 caractères) garde toujours au
+-- moins un caractère masqué : « AB1 » donne •B1, jamais la plaque entière.
 create or replace function internal.mask_registration(p_value text)
 returns text
 language plpgsql
 immutable
 as $$
 declare
-  v_out  text := '';
-  v_seen int := 0;
-  v_ch   text;
-  i      int;
+  v_out     text := '';
+  v_seen    int := 0;
+  v_visible int;
+  v_ch      text;
+  i         int;
 begin
   if p_value is null or internal.normalize_registration(p_value) is null then
     return null;
   end if;
+  v_visible := least(3, length(internal.normalize_registration(p_value)) - 1);
   for i in reverse length(p_value) .. 1 loop
     v_ch := substr(p_value, i, 1);
     if v_ch ~ '[A-Za-z0-9]' then
       v_seen := v_seen + 1;
-      v_out := case when v_seen <= 3 then upper(v_ch) else '•' end || v_out;
+      v_out := case when v_seen <= v_visible then upper(v_ch) else '•' end || v_out;
     else
       v_out := v_ch || v_out;
     end if;
@@ -263,6 +278,23 @@ as $$
   select nullif(trim(regexp_replace(regexp_replace(coalesce(p_value, ''), '[[:cntrl:]]', ' ', 'g'), '\s+', ' ', 'g')), '');
 $$;
 
+-- Un texte écrit par le professionnel et montré au client contient-il
+-- une adresse web ? Miroir de containsUrl (lib/profiles/templates.ts) :
+-- schéma (https://), « www. », ou domaine nu (bit.ly/x, exemple.fr).
+-- Un compte professionnel compromis ne doit pas pouvoir glisser un lien
+-- d'hameçonnage dans un devis que le client reçoit et accepte. Il faut
+-- au moins deux lettres après le point : « 19 h 00 », « 184,00 € » ou
+-- « n° 12.5 » ne déclenchent rien.
+create or replace function internal.contains_url(p_value text)
+returns boolean
+language sql
+immutable
+as $$
+  select coalesce(p_value, '') ~* '(^|[^a-z0-9])[a-z][a-z0-9+.-]*://'
+      or coalesce(p_value, '') ~* '(^|[^a-z0-9])www\.'
+      or coalesce(p_value, '') ~* '(^|[^a-z0-9à-ÿ_-])[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,24}($|[^a-z0-9à-ÿ_-])';
+$$;
+
 -- ---------------------------------------------------------------------
 -- Validation des informations métier (défense en profondeur)
 -- ---------------------------------------------------------------------
@@ -319,7 +351,9 @@ begin
 
   for v_key, v_val in select j.key, j.value from jsonb_each(v_in) j loop
     if not (v_key = any (v_allowed)) then
-      raise exception 'Informations invalides : champ « % » non accepté pour ce profil', v_key
+      -- Nom de clé tronqué : il vient de l'appelant, et un message
+      -- d'erreur ne doit pas renvoyer un texte arbitrairement long.
+      raise exception 'Informations invalides : champ « % » non accepté pour ce profil', left(v_key, 32)
         using errcode = 'VT015';
     end if;
     if v_key in ('keys', 'readyEta', 'accessories') and p_actor = 'client' then
@@ -339,7 +373,9 @@ begin
           raise exception 'Informations invalides : immatriculation' using errcode = 'VT015';
         end if;
         v_text := trim(v_val #>> '{}');
-        if length(v_text) > 16 or v_text !~ '^[A-Za-z0-9 -]*$'
+        -- 12 caractères utiles au plus, séparateurs compris 24 : une plaque
+        -- étrangère saisie « A B C … » reste acceptée, comme côté serveur.
+        if length(v_text) > 24 or v_text !~ '^[A-Za-z0-9 -]*$'
            or coalesce(length(internal.normalize_registration(v_text)), 0) not between 2 and 12 then
           raise exception 'Informations invalides : immatriculation' using errcode = 'VT015';
         end if;
@@ -360,7 +396,7 @@ begin
         -- (CASE entre parenthèses : sinon PL/pgSQL arrêterait la condition
         -- du IF au premier THEN.)
         if length(v_text) > (case v_key when 'model' then 40 when 'reasonText' then 80 else 24 end)
-           or (v_key = 'orderRef' and v_text !~ '^[A-Za-z0-9 _/-]+$') then
+           or (v_key = 'orderRef' and v_text !~ '^[A-Za-z0-9 ._/-]+$') then
           raise exception 'Informations invalides : %', v_key using errcode = 'VT015';
         end if;
         v_out := v_out || jsonb_build_object(v_key, v_text);
@@ -406,7 +442,8 @@ begin
         if exists (
           select 1 from unnest(v_items) i
           where not (i = any (case v_key
-                                when 'accessories' then array['charger', 'case', 'sim', 'other']
+                                -- Même liste que DEVICE_ACCESSORIES (lib/profiles/details.ts).
+                                when 'accessories' then array['box', 'case', 'charger', 'memory_card', 'sim_removed']
                                 else array['highchair', 'accessible'] end))
         ) then
           raise exception 'Informations invalides : %', v_key using errcode = 'VT015';
@@ -434,16 +471,26 @@ begin
         -- tout de même la forme, pour qu'aucun chemin ne stocke autre chose.
         if jsonb_typeof(v_val) <> 'object'
            or exists (select 1 from jsonb_object_keys(v_val) k
-                      where k not in ('amountCents', 'label', 'sentAt', 'decision', 'decidedAt'))
+                      where k not in ('n', 'amountCents', 'label', 'sentAt', 'decision', 'decidedAt'))
            or jsonb_typeof(v_val -> 'amountCents') <> 'number'
            or (v_val ->> 'amountCents')::numeric <> trunc((v_val ->> 'amountCents')::numeric)
            or (v_val ->> 'amountCents')::numeric not between 0 and 10000000
            or jsonb_typeof(v_val -> 'label') <> 'string'
            or coalesce(length(internal.clean_text(v_val ->> 'label')), 0) not between 1 and 80
-           or coalesce(v_val ->> 'decision', 'accepted') not in ('accepted', 'declined') then
+           or coalesce(v_val ->> 'decision', 'accepted') not in ('accepted', 'declined')
+           or coalesce(jsonb_typeof(v_val -> 'n'), 'number') <> 'number'
+           or coalesce((v_val ->> 'n')::numeric, 1) not between 1 and 10000
+           or coalesce((v_val ->> 'n')::numeric, 1) <> trunc(coalesce((v_val ->> 'n')::numeric, 1)) then
           raise exception 'Informations invalides : devis' using errcode = 'VT015';
         end if;
+        -- Le libellé est écrit par le professionnel et lu par le client,
+        -- qui l'accepte d'un geste : aucune adresse web ([SEC § 10], hameçonnage).
+        if internal.contains_url(v_val ->> 'label') then
+          raise exception 'Informations invalides : pas d''adresse web dans le libellé du devis'
+            using errcode = 'VT015';
+        end if;
         v_quote := jsonb_build_object(
+          'n',           (v_val ->> 'n')::int,
           'amountCents', (v_val ->> 'amountCents')::int,
           'label',       internal.clean_text(v_val ->> 'label'),
           'sentAt',      v_val -> 'sentAt',
@@ -509,9 +556,19 @@ $$;
 -- ---------------------------------------------------------------------
 -- Horaires du jour local
 -- ---------------------------------------------------------------------
--- {date, closed, opensAt, closesAt} du jour dans le fuseau de
--- l'établissement, dérogations datées comprises. Null si aucun horaire
--- n'est connu : le texte « Ouvert jusqu'à… » est alors omis, jamais deviné.
+-- Horaires du jour dans le fuseau de l'établissement, dérogations
+-- datées comprises. Null si aucun horaire n'est connu : le texte
+-- « Ouvert jusqu'à… » est alors omis, jamais deviné.
+--
+--   date      jour local ;
+--   closed    fermé toute la journée ;
+--   slots     créneaux du jour, dans l'ordre : [{opensAt, closesAt}]. Une
+--             pause de midi fait deux créneaux ;
+--   openNow   l'heure locale tombe dans un créneau ;
+--   opensAt / closesAt : le créneau EN COURS s'il y en a un, sinon le
+--             PROCHAIN créneau du jour, sinon null (fermé pour la fin de
+--             la journée). À 13 h, entre 9 h-12 h et 14 h-19 h, on lit donc
+--             « Réouvre à 14 h », jamais « Ouvert jusqu'à 19 h ».
 create or replace function internal.today_hours(p_location_id uuid)
 returns jsonb
 language plpgsql
@@ -521,46 +578,64 @@ as $$
 declare
   v_tz       text;
   v_day      date;
+  v_now      time;
   v_override public.opening_hours_overrides;
-  v_open     time;
-  v_close    time;
+  v_slots    jsonb;
   v_any      boolean;
+  v_current  jsonb;
 begin
   select coalesce(timezone, 'Europe/Paris') into v_tz from public.locations where id = p_location_id;
   if not found then
     return null;
   end if;
   v_day := (now() at time zone v_tz)::date;
+  v_now := (now() at time zone v_tz)::time;
 
   select * into v_override
   from public.opening_hours_overrides
   where location_id = p_location_id and on_date = v_day;
   if found then
-    return jsonb_build_object(
-      'date', v_day,
-      'closed', v_override.is_closed or v_override.opens_at is null or v_override.closes_at is null,
-      'opensAt', case when v_override.is_closed then null else to_char(v_override.opens_at, 'HH24:MI') end,
-      'closesAt', case when v_override.is_closed then null else to_char(v_override.closes_at, 'HH24:MI') end
-    );
+    v_any := true;
+    v_slots := case
+      when v_override.is_closed or v_override.opens_at is null or v_override.closes_at is null
+        or v_override.closes_at <= v_override.opens_at then '[]'::jsonb
+      else jsonb_build_array(jsonb_build_object(
+        'opensAt', to_char(v_override.opens_at, 'HH24:MI'),
+        'closesAt', to_char(v_override.closes_at, 'HH24:MI')))
+    end;
+  else
+    -- 0 = lundi dans opening_hours ; isodow 1 = lundi.
+    select count(*) > 0,
+           coalesce(jsonb_agg(jsonb_build_object(
+                      'opensAt', to_char(h.opens_at, 'HH24:MI'),
+                      'closesAt', to_char(h.closes_at, 'HH24:MI'))
+                    order by h.opens_at, h.closes_at)
+                    filter (where not h.is_closed), '[]'::jsonb)
+      into v_any, v_slots
+    from public.opening_hours h
+    where h.location_id = p_location_id
+      and h.weekday = extract(isodow from v_day)::int - 1;
   end if;
-
-  -- 0 = lundi dans opening_hours ; isodow 1 = lundi.
-  select min(h.opens_at) filter (where not h.is_closed),
-         max(h.closes_at) filter (where not h.is_closed),
-         count(*) > 0
-    into v_open, v_close, v_any
-  from public.opening_hours h
-  where h.location_id = p_location_id
-    and h.weekday = extract(isodow from v_day)::int - 1;
 
   if not v_any then
     return null;
   end if;
+
+  -- Créneau en cours, sinon le prochain de la journée. Les heures
+  -- « HH24:MI » se comparent comme du texte.
+  select s into v_current
+  from jsonb_array_elements(v_slots) s
+  where s ->> 'closesAt' > to_char(v_now, 'HH24:MI')
+  order by s ->> 'opensAt'
+  limit 1;
+
   return jsonb_build_object(
     'date', v_day,
-    'closed', v_open is null,
-    'opensAt', to_char(v_open, 'HH24:MI'),
-    'closesAt', to_char(v_close, 'HH24:MI')
+    'closed', jsonb_array_length(v_slots) = 0,
+    'slots', v_slots,
+    'openNow', coalesce(v_current ->> 'opensAt' <= to_char(v_now, 'HH24:MI'), false),
+    'opensAt', v_current ->> 'opensAt',
+    'closesAt', v_current ->> 'closesAt'
   );
 end;
 $$;
@@ -646,7 +721,11 @@ begin
            when p_profile in ('vehicle', 'device') then 'hold'
            else 'move_back' end::public.absent_policy,
          absent_grace_minutes = 5,
-         ask_client_name = not v_sensitive,
+         -- Guichet : le prénom n'est pas demandé par défaut (minimisation,
+         -- [SEC § 3.4] et § 4.5) ; on y appelle un numéro. Le
+         -- professionnel peut l'activer, sauf en santé, où join_queue
+         -- l'ignore même s'il est envoyé (option sensitive).
+         ask_client_name = p_profile <> 'desk',
          client_name_required = p_profile = 'table',
          allow_service_choice = p_profile in ('vehicle', 'device', 'desk', 'retail'),
          allow_staff_choice = false
@@ -671,31 +750,36 @@ as $$
 $$;
 
 -- Crée les prestations par défaut si l'établissement n'en a aucune
--- d'active. Renvoie le nombre de prestations créées.
+-- d'active. Renvoie les identifiants créés (tableau vide sinon) :
+-- switch_queue_profile les note dans audit_logs pour pouvoir les retirer
+-- si la file quitte ce profil.
 create or replace function internal.seed_default_services(
   p_location_id uuid,
   p_profile     public.queue_profile
-) returns int
+) returns uuid[]
 language plpgsql
 volatile
 set search_path = public, internal, extensions
 as $$
 declare
-  v_org   uuid;
-  v_count int := 0;
+  v_org uuid;
+  v_ids uuid[];
 begin
   select organization_id into v_org from public.locations where id = p_location_id;
   if v_org is null or exists (
     select 1 from public.services s where s.location_id = p_location_id and s.is_active
   ) then
-    return 0;
+    return array[]::uuid[];
   end if;
 
-  insert into public.services (organization_id, location_id, name, sort_order)
-  select v_org, p_location_id, n.name, (n.ord::int - 1) * 10
-  from unnest(internal.default_services(p_profile)) with ordinality as n(name, ord);
-  get diagnostics v_count = row_count;
-  return v_count;
+  with created as (
+    insert into public.services (organization_id, location_id, name, sort_order)
+    select v_org, p_location_id, n.name, (n.ord::int - 1) * 10
+    from unnest(internal.default_services(p_profile)) with ordinality as n(name, ord)
+    returning id
+  )
+  select coalesce(array_agg(id), array[]::uuid[]) into v_ids from created;
+  return v_ids;
 end;
 $$;
 
@@ -821,7 +905,7 @@ begin
 
   v_status := internal.stage_status(v_profile, p_stage);
   if v_status is null then
-    raise exception 'Étape inconnue pour ce profil : %', coalesce(p_stage, '(vide)')
+    raise exception 'Étape inconnue pour ce profil : %', left(coalesce(p_stage, '(vide)'), 32)
       using errcode = 'VT006';
   end if;
   if not public.entry_is_active(v_entry.status) then
@@ -1036,13 +1120,17 @@ end;
 $$;
 
 -- Réclame une notification ponctuelle (fin de passage, retrait…).
--- Avis différé : si la file porte profile_options.reviewDelayMinutes,
---   * null (« jamais ») : visit_completed n'est jamais réclamée ;
+-- Fin de passage (visit_completed, « Merci » + lien d'avis Google) :
+--   * profile_options.review = false (service administratif, santé par
+--     défaut) : jamais réclamée. La décision est prise ICI, en SQL, pour
+--     que staffAction('complete') et dispatch.ts n'aient rien à savoir des
+--     profils : ils n'envoient que ce que cette fonction leur accorde ;
+--   * reviewDelayMinutes à null (« jamais ») : jamais réclamée ;
 --   * un délai > 0 non écoulé depuis completed_at : false, SANS marquer
 --     le journal, pour que claim_due_review_notifications (cron
 --     api/cron/reviews) la réclame plus tard ;
---   * 0, ou toute autre valeur : envoi immédiat, comme aujourd'hui.
--- En walkin, profile_options = {} : la branche n'est jamais prise, et
+--   * 0, ou pas de délai : envoi immédiat, comme aujourd'hui.
+-- En walkin, profile_options = {} : aucune branche n'est prise, et
 -- staffAction('complete') continue d'envoyer l'avis tout de suite.
 create or replace function public.claim_entry_notification(
   p_entry_id uuid,
@@ -1064,14 +1152,20 @@ begin
     join public.queues q on q.id = e.queue_id
     where e.id = p_entry_id;
 
+    if v_options -> 'review' = 'false'::jsonb then
+      return false;
+    end if;
+
     if v_options ? 'reviewDelayMinutes' then
       v_delay := v_options -> 'reviewDelayMinutes';
       if jsonb_typeof(v_delay) = 'null' then
         return false;
       end if;
+      -- Borné à 240 min comme la contrainte de 0033 (défense en profondeur).
       if jsonb_typeof(v_delay) = 'number' and (v_delay #>> '{}')::numeric > 0
          and (v_completed is null
-              or now() < v_completed + make_interval(mins => (v_delay #>> '{}')::numeric::int)) then
+              or now() < v_completed
+                         + make_interval(mins => least((v_delay #>> '{}')::numeric, 240)::int)) then
         return false;
       end if;
     end if;
@@ -1116,7 +1210,8 @@ end;
 $$;
 
 -- Avis différés dus : tickets terminés dont le délai est écoulé, depuis
--- moins de 24 h, rattachés à un appareil et pas encore remerciés.
+-- moins de 24 h, rattachés à un appareil et pas encore remerciés, dans
+-- une file où l'avis n'est pas désactivé (review = false).
 -- Réclamation atomique (même motif que claim_pending_notifications) :
 -- deux crons concurrents ne réclament jamais le même ticket. Même forme
 -- de retour que claim_pending_notifications, pour réutiliser la
@@ -1149,7 +1244,13 @@ begin
     where q.profile_options ? 'reviewDelayMinutes'
       and jsonb_typeof(q.profile_options -> 'reviewDelayMinutes') = 'number'
       and (q.profile_options ->> 'reviewDelayMinutes')::numeric > 0
-      and e.completed_at + make_interval(mins => (q.profile_options ->> 'reviewDelayMinutes')::numeric::int) <= now()
+      -- Avis désactivé pour cette file : jamais, même différé.
+      and q.profile_options -> 'review' is distinct from 'false'::jsonb
+      -- Borné à 240 min (contrainte de 0033) : cette requête couvre toutes
+      -- les organisations, une seule valeur aberrante arrêterait le cron.
+      and e.completed_at
+          + make_interval(mins => least((q.profile_options ->> 'reviewDelayMinutes')::numeric, 240)::int)
+          <= now()
       and e.client_session_id is not null
       and not (e.notification_status ? 'visit_completed')
     order by e.completed_at
@@ -1363,11 +1464,14 @@ begin
   -- renvoie au lieu d'en créer un second (retour sur la page, rescan…).
   -- En atelier aussi : un second dépôt depuis le même téléphone passe par
   -- le professionnel (ajout manuel, puis QR de suivi).
+  -- Un téléphone peut suivre plusieurs fiches à étape (QR de suivi) : on
+  -- renvoie la plus récente, pour un résultat déterministe.
   select * into v_existing
   from public.queue_entries e
   where e.queue_id = p_queue_id
     and e.client_session_id = p_client_session_id
     and public.entry_is_active(e.status)
+  order by e.joined_at desc, e.id desc
   limit 1;
 
   if found then
@@ -1579,17 +1683,28 @@ $$;
 -- =====================================================================
 -- 6. Actions du client
 -- =====================================================================
--- Même signature. Actions ajoutées :
+-- Un paramètre en plus, en dernier, avec une valeur par défaut (même
+-- motif que join_queue : l'ancienne signature est supprimée, les appels à
+-- 3 arguments, nommés ou positionnels, restent valides). Actions ajoutées :
 --   quote_accept / quote_decline : le devis doit attendre une décision
---     (étape quote_pending) ; la décision est horodatée, une seule fois ;
+--     (étape quote_pending) ; la décision est horodatée, une seule fois.
+--     p_options.quoteN (le numéro du devis que le client a lu,
+--     details.quote.n) protège d'une course : si le garage renvoie un
+--     devis au moment où le client accepte le précédent, l'accord n'est
+--     PAS reporté sur un montant que le client n'a jamais vu (VT006,
+--     « Le devis a changé »). Sans quoteN, la décision porte sur le devis
+--     en cours : le serveur Next.js doit toujours le transmettre ;
 --   unfollow : l'appareil ne suit plus le véhicule ou l'appareil ; la
 --     fiche d'atelier reste active chez le professionnel.
 -- « leave » est refusé en atelier : on ne résilie pas une réparation
 -- depuis son téléphone.
-create or replace function public.client_queue_action(
+drop function if exists public.client_queue_action(text, uuid, text);
+
+create function public.client_queue_action(
   p_entry_public_id   text,
   p_client_session_id uuid,
-  p_action            text
+  p_action            text,
+  p_options           jsonb default '{}'::jsonb
 ) returns jsonb
 language plpgsql
 security definer
@@ -1625,6 +1740,16 @@ begin
        or jsonb_typeof(v_entry.details -> 'quote') is distinct from 'object'
        or jsonb_typeof(v_entry.details -> 'quote' -> 'decision') is distinct from 'null' then
       raise exception 'Aucun devis n''attend votre décision' using errcode = 'VT006';
+    end if;
+    if jsonb_typeof(coalesce(p_options, '{}'::jsonb)) <> 'object' then
+      raise exception 'Informations invalides' using errcode = 'VT015';
+    end if;
+    -- Relu sous le verrou de file et de ligne : send_quote prend le même
+    -- verrou de file, il ne peut pas se glisser entre ce contrôle et
+    -- l'écriture de la décision.
+    if p_options ? 'quoteN'
+       and (v_entry.details -> 'quote' -> 'n') is distinct from (p_options -> 'quoteN') then
+      raise exception 'Le devis a changé : relisez-le avant de répondre' using errcode = 'VT006';
     end if;
     update public.queue_entries
        set details = jsonb_set(
@@ -1957,7 +2082,9 @@ begin
     -- {amountCents, label} : le devis est réécrit (décision remise à
     -- null : un devis modifié après accord redemande l'accord), puis
     -- l'étape passe à quote_pending. L'historique des décisions reste dans
-    -- queue_events. Clé d'envoi : 'quote:<quote_count>'.
+    -- queue_events. Clé d'envoi : 'quote:<quote_count>' ; le devis porte ce
+    -- même numéro (quote.n), que le client renvoie avec sa décision. Le
+    -- libellé, lu par le client, ne peut contenir aucune adresse web.
     when 'send_quote' then
       if v_queue.profile not in ('vehicle', 'device')
          or not coalesce((v_queue.profile_options ->> 'quotes')::boolean, false) then
@@ -1975,14 +2102,15 @@ begin
          or v_label is null or length(v_label) > 80 then
         raise exception 'Informations invalides : devis' using errcode = 'VT015';
       end if;
+      v_count := coalesce((v_entry.notification_status ->> 'quote_count')::int, 0) + 1;
       v_clean := internal.clean_details(v_queue.profile, jsonb_build_object('quote', jsonb_build_object(
+        'n', v_count,
         'amountCents', v_amount::int,
         'label', v_label,
         'sentAt', to_jsonb(now()),
         'decision', null,
         'decidedAt', null
       )), 'system');
-      v_count := coalesce((v_entry.notification_status ->> 'quote_count')::int, 0) + 1;
       update public.queue_entries
          set details = details || v_clean,
              notification_status = notification_status || jsonb_build_object('quote_count', v_count)
@@ -2354,9 +2482,20 @@ $$;
 -- changement voit son ticket et échoue en VT017 ; si le changement
 -- gagne, l'inscription suit le nouveau profil.
 --
--- Ensuite : réglages par défaut du profil, prestations par défaut si
--- l'établissement n'en a aucune, et trace dans audit_logs. Retour en
--- arrière possible de la même façon, tant que la file est vide.
+-- Un vrai retour arrière, pas une réinitialisation :
+--   * les réglages que la file QUITTE (mode, avancement, durée de vie,
+--     absents, prénom, choix du motif et du professionnel, options du
+--     profil) sont écrits dans audit_logs.metadata.settings ;
+--   * en revenant à un profil déjà quitté, la file retrouve les réglages
+--     qu'elle avait alors. Un barbier en file par professionnel, absents
+--     retirés, 600 min, qui essaie le profil garage puis revient, retrouve
+--     exactement son poste. Sinon : réglages par défaut du profil ;
+--   * les motifs créés automatiquement en entrant dans le profil quitté
+--     (identifiants notés dans audit_logs) sont désactivés s'ils n'ont
+--     pas été retouchés depuis (updated_at = created_at) : un motif que
+--     le professionnel a renommé ou tarifé est à lui, on le garde ;
+--   * puis les motifs par défaut du nouveau profil, si l'établissement
+--     n'en a plus aucun d'actif.
 create or replace function internal.switch_queue_profile(
   p_queue_id      uuid,
   p_profile       public.queue_profile,
@@ -2368,7 +2507,11 @@ set search_path = public, internal, extensions
 as $$
 declare
   v_queue    public.queues;
-  v_services int := 0;
+  v_left     jsonb;
+  v_saved    jsonb;
+  v_entered  jsonb;
+  v_retired  int := 0;
+  v_created  uuid[] := array[]::uuid[];
 begin
   if p_profile is null then
     raise exception 'Profil manquant' using errcode = 'VT015';
@@ -2389,19 +2532,88 @@ begin
   if v_queue.profile = p_profile then
     return jsonb_build_object(
       'queueId', v_queue.id, 'profile', v_queue.profile,
-      'previousProfile', v_queue.profile, 'changed', false, 'servicesCreated', 0
+      'previousProfile', v_queue.profile, 'changed', false,
+      'settingsRestored', false, 'servicesCreated', 0, 'servicesRetired', 0
     );
   end if;
 
-  perform internal.apply_profile_defaults(p_queue_id, p_profile);
-  v_services := internal.seed_default_services(v_queue.location_id, p_profile);
+  -- Réglages quittés, pour un éventuel retour.
+  v_left := jsonb_build_object(
+    'profileOptions',     v_queue.profile_options,
+    'mode',               v_queue.mode,
+    'advanceMode',        v_queue.advance_mode,
+    'entryTtlMinutes',    v_queue.entry_ttl_minutes,
+    'absentPolicy',       v_queue.absent_policy,
+    'absentGraceMinutes', v_queue.absent_grace_minutes,
+    'askClientName',      v_queue.ask_client_name,
+    'clientNameRequired', v_queue.client_name_required,
+    'allowServiceChoice', v_queue.allow_service_choice,
+    'allowStaffChoice',   v_queue.allow_staff_choice
+  );
+
+  -- Dernière fois que cette file a quitté le profil demandé.
+  select a.metadata -> 'settings' into v_saved
+  from public.audit_logs a
+  where a.action = 'queue.profile_changed'
+    and a.organization_id = v_queue.organization_id
+    and a.target_type = 'queue' and a.target_id = v_queue.id::text
+    and a.metadata ->> 'from' = p_profile::text
+    and jsonb_typeof(a.metadata -> 'settings') = 'object'
+  order by a.created_at desc, a.id desc
+  limit 1;
+
+  -- Entrée dans le profil quitté : quels motifs avait-elle créés ?
+  select a.metadata into v_entered
+  from public.audit_logs a
+  where a.action = 'queue.profile_changed'
+    and a.organization_id = v_queue.organization_id
+    and a.target_type = 'queue' and a.target_id = v_queue.id::text
+    and a.metadata ->> 'to' = v_queue.profile::text
+  order by a.created_at desc, a.id desc
+  limit 1;
+
+  if jsonb_typeof(v_entered -> 'servicesCreatedIds') = 'array' then
+    update public.services sv
+       set is_active = false
+     where sv.location_id = v_queue.location_id
+       and sv.is_active
+       and sv.updated_at = sv.created_at
+       and sv.id in (select x::uuid from jsonb_array_elements_text(v_entered -> 'servicesCreatedIds') x);
+    get diagnostics v_retired = row_count;
+  end if;
+
+  if v_saved is not null then
+    update public.queues q
+       set profile              = p_profile,
+           profile_options      = coalesce(v_saved -> 'profileOptions', '{}'::jsonb),
+           mode                 = coalesce(v_saved ->> 'mode', q.mode::text)::public.queue_mode,
+           advance_mode         = coalesce(v_saved ->> 'advanceMode', q.advance_mode::text)::public.advance_mode,
+           entry_ttl_minutes    = coalesce((v_saved ->> 'entryTtlMinutes')::int, q.entry_ttl_minutes),
+           absent_policy        = coalesce(v_saved ->> 'absentPolicy', q.absent_policy::text)::public.absent_policy,
+           absent_grace_minutes = coalesce((v_saved ->> 'absentGraceMinutes')::int, q.absent_grace_minutes),
+           ask_client_name      = coalesce((v_saved ->> 'askClientName')::boolean, q.ask_client_name),
+           client_name_required = coalesce((v_saved ->> 'clientNameRequired')::boolean, q.client_name_required),
+           allow_service_choice = coalesce((v_saved ->> 'allowServiceChoice')::boolean, q.allow_service_choice),
+           allow_staff_choice   = coalesce((v_saved ->> 'allowStaffChoice')::boolean, q.allow_staff_choice)
+     where q.id = p_queue_id;
+  else
+    perform internal.apply_profile_defaults(p_queue_id, p_profile);
+  end if;
+
+  v_created := internal.seed_default_services(v_queue.location_id, p_profile);
 
   insert into public.audit_logs (
     organization_id, actor, actor_user_id, action, target_type, target_id, metadata
   ) values (
     v_queue.organization_id, 'staff', p_actor_user_id, 'queue.profile_changed', 'queue',
     v_queue.id::text,
-    jsonb_build_object('from', v_queue.profile, 'to', p_profile, 'servicesCreated', v_services)
+    jsonb_build_object(
+      'from', v_queue.profile, 'to', p_profile,
+      'settings', v_left,
+      'settingsRestored', v_saved is not null,
+      'servicesCreated', cardinality(v_created),
+      'servicesCreatedIds', to_jsonb(v_created),
+      'servicesRetired', v_retired)
   );
 
   return jsonb_build_object(
@@ -2409,7 +2621,9 @@ begin
     'profile', p_profile,
     'previousProfile', v_queue.profile,
     'changed', true,
-    'servicesCreated', v_services
+    'settingsRestored', v_saved is not null,
+    'servicesCreated', cardinality(v_created),
+    'servicesRetired', v_retired
   );
 end;
 $$;
@@ -2437,7 +2651,7 @@ declare
   fns text[] := array[
     'public.join_queue(uuid,uuid,text,uuid,uuid,public.entry_source,uuid,jsonb)',
     'public.add_walkin(uuid,text,uuid,uuid,uuid,uuid,jsonb)',
-    'public.client_queue_action(text,uuid,text)',
+    'public.client_queue_action(text,uuid,text,jsonb)',
     'public.staff_queue_action(text,text,uuid,uuid,jsonb)',
     'public.claim_pending_notifications(uuid)',
     'public.claim_entry_notification(uuid,public.notification_kind)',

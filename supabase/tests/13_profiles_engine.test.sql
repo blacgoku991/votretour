@@ -10,7 +10,17 @@
 --     n'ajoute rien à un barbier ;
 --   * en walkin, chaque clé JSON ajoutée porte une valeur neutre ;
 --   * switch_queue_profile se contrôle sous verrou de file : lancé en
---     même temps qu'une inscription, il perd proprement (VT017).
+--     même temps qu'une inscription, il perd proprement (VT017) ; un
+--     aller-retour de profil rétablit le poste d'avant ;
+--   * deux rattachements simultanés du même QR : un seul gagne ; un devis
+--     renvoyé pendant que le client accepte l'ancien : accord refusé ;
+--   * l'écran TV (queue_snapshot par défaut) ne reçoit aucune information
+--     métier ; au guichet, le prénom n'est pas demandé par défaut ;
+--     review = false coupe vraiment l'avis ;
+--   * la purge RGPD ne touche jamais un ticket en cours, et compte la
+--     rétention d'un ticket à étape depuis sa fin ;
+--   * en boutique, une commande suivie reste suivie quand elle repasse en
+--     attente (pas de 23505).
 --
 --   ./scripts/verify-db.sh
 -- =====================================================================
@@ -82,6 +92,7 @@ declare
   v_d        text[] := array[]::text[];
   v_t        text[] := array[]::text[];
   v_w        text;
+  v_x        text;
   v_id       uuid;
   v_n        int;
   v_hash1    text := encode(extensions.digest('p13-jeton-1', 'sha256'), 'hex');
@@ -184,6 +195,18 @@ begin
   perform internal.assert(
     not ((select profile_options from public.queues where id = (v_q ->> 'admin_service')::uuid) ->> 'review')::boolean,
     'service administratif : pas d''avis par défaut');
+  -- [SEC § 3.4] : au guichet, on appelle un numéro ; le prénom n'est pas
+  -- demandé par défaut (minimisation).
+  perform internal.assert(
+    not exists (select 1 from public.queues
+                where id in ((v_q ->> 'counter')::uuid, (v_q ->> 'admin_service')::uuid, v_health)
+                  and (ask_client_name or client_name_required)),
+    'guichet (comptoir, administration, santé) : prénom ni demandé ni obligatoire par défaut');
+  perform internal.assert(
+    not exists (select 1 from public.queues
+                where id in (v_garage, (v_q ->> 'phone_repair')::uuid, v_resto, v_shop)
+                  and not ask_client_name),
+    'hors guichet : le prénom reste demandé');
   perform internal.assert_eq(
     (select count(*)::int from public.services where location_id = (v_l ->> 'shop')::uuid), 3,
     'boutique : 3 motifs par défaut');
@@ -359,7 +382,24 @@ begin
   v_v2 := public.join_queue(v_garage, v_s[6], 'Inès', null, null, 'qr', null,
     '{"registration":"AA-001-AA","model":"Clio"}'::jsonb) -> 'entry' ->> 'id';
   v_v3 := public.join_queue(v_garage, v_s[7], null, null, null, 'nfc', null,
-    '{"registration":"BB-002-BB","model":"Zoé"}'::jsonb) -> 'entry' ->> 'id';
+    '{"registration":"BB-002-BB","model":"Zoé","reasonText":"bruit au freinage"}'::jsonb) -> 'entry' ->> 'id';
+
+  -- Écran TV : tant que le kiosque lit queue_snapshot (avant le lot T0),
+  -- aucune information métier ne doit en sortir par défaut.
+  v_state := public.queue_snapshot(v_garage);
+  perform internal.assert(
+    v_state::text !~* '(AB-?123-?CD|AA-?001|BB-?002|Peugeot|freinage)'
+    and v_state -> 'waiting' -> 0 -> 'details' = '{}'::jsonb
+    and v_state -> 'waiting' -> 0 -> 'registrationKey' = 'null'::jsonb,
+    'queue_snapshot par défaut (kiosque TV) : ni immatriculation, ni modèle, ni motif');
+  v_res := public.queue_snapshot(v_garage, true);
+  perform internal.assert(
+    v_res::text like '%AB-123-CD%' and v_res::text like '%AB123CD%' and v_res::text like '%bruit au freinage%',
+    'queue_snapshot(…, p_include_details => true) : le poste du garage voit la fiche complète');
+  select array_agg(k order by k) into v_keys from jsonb_object_keys(v_state -> 'waiting' -> 0) k;
+  perform internal.assert(
+    v_keys = (select array_agg(k order by k) from jsonb_object_keys(v_res -> 'waiting' -> 0) k),
+    'mêmes clés avec ou sans informations métier : seules les valeurs sont neutralisées');
 
   -- Ancien appel (application N-1, ancien App Clip) sur une file atelier :
   -- valide, fiche sans information métier que le garage complétera.
@@ -461,8 +501,32 @@ begin
     'devis envoyé : étape « devis à valider », décision en attente, clé quote:1');
   v_state := public.ticket_state(v_v1, v_s[5]) -> 'entry' -> 'details' -> 'quote';
   select array_agg(k order by k) into v_keys from jsonb_object_keys(v_state) k;
-  perform internal.assert_eq(v_keys, array['amountCents', 'decision', 'label'],
-    'le client voit le devis réduit à montant, libellé et décision');
+  perform internal.assert_eq(v_keys, array['amountCents', 'decision', 'label', 'n', 'sentAt'],
+    'le client voit le devis réduit à numéro, montant, libellé, décision et heure d''envoi');
+
+  -- Anti-hameçonnage : aucun lien dans un libellé que le client accepte.
+  begin
+    perform public.staff_queue_action(v_v1, 'send_quote', v_owner, v_tech,
+      '{"amountCents":100,"label":"Payez sur bit.ly/garage"}');
+    raise exception 'ÉCHEC: un lien a été accepté dans le libellé du devis';
+  exception when sqlstate 'VT015' then
+    raise notice '  ok  libellé de devis avec une adresse web : refusé (VT015)';
+  end;
+
+  -- Devis modifié pendant que le client décide : son accord porte sur le
+  -- devis qu'il a lu, jamais sur le nouveau montant.
+  v_res := public.staff_queue_action(v_v1, 'send_quote', v_owner, v_tech,
+    '{"amountCents":19900,"label":"Plaquettes + disques AV + main-d''œuvre"}');
+  perform internal.assert(
+    (v_res -> 'entry' -> 'details' -> 'quote' ->> 'n')::int = 2
+    and (v_res -> 'entry' -> 'notified' ->> 'quote_count')::int = 2,
+    'devis renvoyé : numéro 2, clé quote:2');
+  begin
+    perform public.client_queue_action(v_v1, v_s[5], 'quote_accept', '{"quoteN":1}');
+    raise exception 'ÉCHEC: accord du devis 1 reporté sur le devis 2';
+  exception when sqlstate 'VT006' then
+    raise notice '  ok  accord d''un devis remplacé entre-temps : refusé (VT006)';
+  end;
 
   begin
     perform public.client_queue_action(v_v1, v_s[6], 'quote_accept');
@@ -477,11 +541,12 @@ begin
   exception when sqlstate 'VT015' then
     raise notice '  ok  le garage ne peut pas écrire la décision du client (VT015)';
   end;
-  v_res := public.client_queue_action(v_v1, v_s[5], 'quote_accept');
+  v_res := public.client_queue_action(v_v1, v_s[5], 'quote_accept', '{"quoteN":2}');
   perform internal.assert(
     (select details -> 'quote' ->> 'decision' = 'accepted' and details -> 'quote' ? 'decidedAt'
+            and (details -> 'quote' ->> 'amountCents')::int = 19900
      from public.queue_entries where public_id = v_v1),
-    'accord du client enregistré et horodaté');
+    'accord du client enregistré et horodaté, sur le devis qu''il a lu');
   begin
     perform public.client_queue_action(v_v1, v_s[5], 'quote_decline');
     raise exception 'ÉCHEC: une seconde décision a été acceptée';
@@ -689,6 +754,23 @@ begin
       (select id from public.queue_entries where public_id = v_res -> 'entry' ->> 'id'), 'visit_completed'),
     'santé : aucune demande d''avis à la fin de la visite');
 
+  -- Service administratif : review = false agit vraiment. Ni « Merci » avec
+  -- le lien d'avis (claim_entry_notification), ni lien sur l'écran de fin,
+  -- même si l'établissement a renseigné son lien Google.
+  update public.locations set google_review_url = 'https://g.page/r/p13-mairie/review'
+   where id = (v_l ->> 'admin_service')::uuid;
+  perform public.set_queue_status((v_q ->> 'admin_service')::uuid, 'open', v_owner);
+  v_id := (public.upsert_client_session((v_o ->> 'admin_service')::uuid, 'p13-mairie-1', 'web', null) ->> 'id')::uuid;
+  v_res := public.join_queue((v_q ->> 'admin_service')::uuid, v_id, null);
+  perform public.staff_queue_action(v_res -> 'entry' ->> 'id', 'complete', v_owner, null);
+  perform internal.assert(
+    not public.claim_entry_notification(
+      (select id from public.queue_entries where public_id = v_res -> 'entry' ->> 'id'), 'visit_completed'),
+    'service administratif : aucune demande d''avis à la fin du passage');
+  perform internal.assert(
+    public.ticket_state(v_res -> 'entry' ->> 'id', v_id) -> 'location' -> 'googleReviewUrl' = 'null'::jsonb,
+    'service administratif : aucun lien d''avis sur l''écran de fin');
+
   -- -------------------------------------------------------------------
   raise notice '';
   raise notice '── 7. Restaurant : couverts, appel, avis différé ──';
@@ -774,6 +856,38 @@ begin
     'une seule fois');
   perform internal.assert(not public.claim_entry_notification(v_id, 'visit_completed'),
     'et l''appel immédiat devient un non-événement');
+
+  -- Avis désactivé par le restaurateur : le cron ne le réclame pas non plus.
+  v_x := public.join_queue(v_resto,
+    (public.upsert_client_session((v_o ->> 'restaurant')::uuid, 'p13-resto-4', 'web', null) ->> 'id')::uuid,
+    'Nora', null, null, 'qr', null, '{"partySize":2}'::jsonb) -> 'entry' ->> 'id';
+  perform public.staff_queue_action(v_x, 'call', v_owner, null);
+  perform public.staff_queue_action(v_x, 'complete', v_owner, null);
+  update public.queues set profile_options = profile_options || '{"review":false}'::jsonb where id = v_resto;
+  update public.queue_entries set completed_at = now() - interval '80 minutes' where public_id = v_x;
+  perform internal.assert(
+    not exists (select 1 from public.claim_due_review_notifications() c where c.entry_public_id = v_x)
+    and not public.claim_entry_notification(
+      (select id from public.queue_entries where public_id = v_x), 'visit_completed'),
+    'review = false : ni avis différé par le cron, ni avis immédiat');
+  update public.queues set profile_options = profile_options || '{"review":true}'::jsonb where id = v_resto;
+
+  -- Délai d'avis borné en base (0 à 240 min, entier, ou null) : une valeur
+  -- aberrante arrêterait le cron de toutes les organisations.
+  begin
+    update public.queues set profile_options = profile_options || '{"reviewDelayMinutes":100000000000}'::jsonb
+     where id = v_resto;
+    raise exception 'ÉCHEC: délai d''avis démesuré accepté';
+  exception when check_violation then
+    raise notice '  ok  délai d''avis hors bornes : refusé par la contrainte';
+  end;
+  begin
+    update public.queues set profile_options = profile_options || '{"reviewDelayMinutes":"75"}'::jsonb
+     where id = v_resto;
+    raise exception 'ÉCHEC: délai d''avis en texte accepté';
+  exception when check_violation then
+    raise notice '  ok  délai d''avis qui n''est pas un nombre : refusé par la contrainte';
+  end;
 
   -- Walkin : jamais par le cron (l'avis part tout de suite, comme avant).
   v_id := (select id from public.queue_entries where queue_id = v_barber and client_name = 'Alex');
@@ -868,7 +982,56 @@ begin
 
   -- -------------------------------------------------------------------
   raise notice '';
-  raise notice '── 10. Changement de profil ──';
+  raise notice '── 10. Boutique : une commande suivie reste suivie ──';
+
+  -- Un téléphone attend un conseil (ticket sans étape) ET suit une
+  -- commande rattachée par QR (ticket à étape). La commande ne doit jamais
+  -- redevenir un ticket sans étape : elle retomberait sous l'index « une
+  -- place active par téléphone » et l'action du vendeur échouerait (23505).
+  perform public.set_queue_status(v_shop, 'open', v_owner);
+  v_id := (public.upsert_client_session((v_o ->> 'shop')::uuid, 'p13-shop-1', 'web', null) ->> 'id')::uuid;
+  v_w := public.join_queue(v_shop, v_id, 'Zoé') -> 'entry' ->> 'id';
+  v_x := public.add_walkin(v_shop, null, null, null, v_owner, null, '{"orderRef":"1234"}'::jsonb) -> 'entry' ->> 'id';
+  perform internal.assert(
+    (select stage is null from public.queue_entries where public_id = v_x),
+    'commande saisie par le vendeur : sans étape tant qu''elle n''est pas en préparation');
+  perform public.staff_queue_action(v_x, 'set_stage', v_owner, null, '{"stage":"preparing"}');
+  perform public.staff_queue_action(v_x, 'set_claim', v_owner, null,
+    jsonb_build_object('tokenHash', encode(extensions.digest('p13-jeton-shop', 'sha256'), 'hex')));
+  perform internal.assert(
+    public.claim_entry(encode(extensions.digest('p13-jeton-shop', 'sha256'), 'hex'), v_id) is not null,
+    'le téléphone qui attend un conseil rattache aussi sa commande');
+
+  v_res := public.staff_queue_action(v_x, 'defer', v_owner, null);
+  perform internal.assert(
+    v_res -> 'entry' ->> 'status' = 'waiting' and v_res -> 'entry' ->> 'stage' = 'preparing',
+    '« Décaler » la commande : en attente, toujours « en préparation », sans erreur');
+  v_res := public.staff_queue_action(v_x, 'call', v_owner, null);
+  perform internal.assert(
+    v_res -> 'entry' ->> 'status' = 'next' and v_res -> 'entry' ->> 'stage' = 'ready',
+    '« Commande prête » : appelée, étape prête');
+  v_res := public.staff_queue_action(v_x, 'mark_absent', v_owner, null, '{"policy":"move_back"}');
+  perform internal.assert(
+    v_res -> 'entry' ->> 'status' = 'waiting' and v_res -> 'entry' ->> 'stage' = 'preparing',
+    'absente, reculée : de nouveau en attente, étape conservée');
+  perform public.staff_queue_action(v_x, 'remove', v_owner, null);
+  v_res := public.staff_queue_action(v_x, 'restore', v_owner, null);
+  perform internal.assert(
+    v_res -> 'entry' ->> 'status' = 'waiting' and v_res -> 'entry' ->> 'stage' = 'preparing',
+    'retirée puis remise en file : étape conservée, sans erreur');
+  perform internal.assert(
+    (select count(*) = 2 and bool_and(public.entry_is_active(status))
+     from public.queue_entries where client_session_id = v_id and queue_id = v_shop),
+    'le téléphone suit toujours son conseil et sa commande');
+  perform internal.assert(
+    (select status = 'serving' and stage is null from public.queue_entries where public_id = v_w),
+    'le conseil suit la file : la commande en attente ne lui passe pas devant');
+  perform public.staff_queue_action(v_x, 'complete', v_owner, null);
+  perform public.staff_queue_action(v_w, 'complete', v_owner, null);
+
+  -- -------------------------------------------------------------------
+  raise notice '';
+  raise notice '── 11. Changement de profil ──';
 
   -- Cas 15.
   begin
@@ -899,6 +1062,48 @@ begin
     and (v_res ->> 'servicesCreated')::int = 0,
     'retour arrière possible, sans dupliquer les motifs');
   perform internal.assert(
+    (v_res ->> 'settingsRestored')::boolean and (v_res ->> 'servicesRetired')::int = 3
+    and not exists (select 1 from public.services where location_id = (v_l ->> 'restaurant')::uuid and is_active),
+    'retour au restaurant : réglages d''avant rétablis, motifs du guichet retirés');
+
+  -- Un vrai aller-retour : un barbier qui essaie le profil garage puis
+  -- revient retrouve exactement son poste (probe D de la relecture).
+  v_id := (v_q ->> 'hair_salon')::uuid;
+  update public.queues
+     set mode = 'per_staff', absent_policy = 'remove', entry_ttl_minutes = 600,
+         allow_staff_choice = true, advance_mode = 'call_next', ask_client_name = false
+   where id = v_id;
+  v_res := public.switch_queue_profile(v_id, 'vehicle', v_owner);
+  perform internal.assert(
+    not (v_res ->> 'settingsRestored')::boolean and (v_res ->> 'servicesCreated')::int = 7
+    and (select mode = 'shared' and entry_ttl_minutes = 10080 from public.queues where id = v_id),
+    'coiffure → garage : réglages et motifs par défaut du garage');
+  -- Un motif retouché par le professionnel lui appartient : on le garde.
+  -- (Tout ce test tient dans une transaction, où now() ne bouge pas : on
+  -- recule created_at pour simuler une retouche faite plus tard.)
+  update public.services set price_cents = 4900, created_at = created_at - interval '1 minute'
+   where location_id = (v_l ->> 'hair_salon')::uuid and name = 'Vidange';
+  v_res := public.switch_queue_profile(v_id, 'walkin', v_owner);
+  select * into v_queue from public.queues where id = v_id;
+  perform internal.assert(
+    (v_res ->> 'settingsRestored')::boolean
+    and v_queue.profile = 'walkin' and v_queue.profile_options = '{}'::jsonb
+    and v_queue.mode = 'per_staff' and v_queue.absent_policy = 'remove'
+    and v_queue.entry_ttl_minutes = 600 and v_queue.allow_staff_choice
+    and v_queue.advance_mode = 'call_next' and not v_queue.ask_client_name,
+    'garage → coiffure : le poste d''avant est rétabli à l''identique');
+  perform internal.assert(
+    (v_res ->> 'servicesRetired')::int = 6
+    and (select array_agg(name) = array['Vidange'] from public.services
+         where location_id = (v_l ->> 'hair_salon')::uuid and is_active),
+    'les 6 motifs de garage intacts sont retirés, le motif retouché est gardé');
+  perform internal.assert(
+    exists (select 1 from public.audit_logs
+            where action = 'queue.profile_changed' and target_id = v_id::text
+              and metadata ->> 'to' = 'vehicle'
+              and metadata -> 'settings' ->> 'entryTtlMinutes' = '600'),
+    'les réglages quittés sont conservés dans audit_logs');
+  perform internal.assert(
     not (public.switch_queue_profile(v_resto, 'table', v_owner) ->> 'changed')::boolean,
     'même profil : rien ne change');
   v_res := public.switch_queue_profile(v_shop, 'walkin', v_owner);
@@ -911,7 +1116,7 @@ begin
 
   -- -------------------------------------------------------------------
   raise notice '';
-  raise notice '── 11. Atelier appareil, boutique et garde-fous ──';
+  raise notice '── 12. Atelier appareil et garde-fous ──';
 
   perform public.set_queue_status(v_device, 'open', v_owner);
   v_res := public.join_queue(v_device,
@@ -937,31 +1142,159 @@ begin
     raise notice '  ok  informations de plus de 2 Ko : refusées par la contrainte';
   end;
 
+  -- Horaires du jour avec une pause : pendant la pause, on annonce la
+  -- réouverture, jamais « ouvert jusqu'à » la fermeture du soir. Créneaux
+  -- posés autour de l'heure locale (sautés près de minuit).
+  v_id := (v_l ->> 'phone_repair')::uuid;
+  if (now() at time zone 'Europe/Paris')::time between time '03:00' and time '21:00' then
+    delete from public.opening_hours
+     where location_id = v_id
+       and weekday = extract(isodow from (now() at time zone 'Europe/Paris'))::int - 1;
+    insert into public.opening_hours (organization_id, location_id, weekday, opens_at, closes_at, is_closed, sort_order)
+    select (v_o ->> 'phone_repair')::uuid, v_id,
+           extract(isodow from (now() at time zone 'Europe/Paris'))::int - 1,
+           (now() at time zone 'Europe/Paris')::time + s.o,
+           (now() at time zone 'Europe/Paris')::time + s.c, false, s.n
+    from (values (interval '-3 hours', interval '-2 hours', 0),
+                 (interval '1 hour', interval '2 hours', 1)) as s(o, c, n);
+    v_state := internal.today_hours(v_id);
+    perform internal.assert(
+      not (v_state ->> 'closed')::boolean and jsonb_array_length(v_state -> 'slots') = 2
+      and not (v_state ->> 'openNow')::boolean
+      and v_state ->> 'opensAt' = v_state -> 'slots' -> 1 ->> 'opensAt'
+      and v_state ->> 'closesAt' = v_state -> 'slots' -> 1 ->> 'closesAt',
+      'pause de midi : fermé maintenant, les deux créneaux, et le prochain annoncé');
+  else
+    raise notice '  ..  horaires avec pause : sauté près de minuit (heure de Paris)';
+  end if;
+
+  -- Accessoires déposés : la liste du registre TypeScript, rien d'autre.
+  v_res := public.add_walkin(v_device, null, null, null, v_owner, null,
+    '{"deviceKind":"phone","accessories":["sim_removed","charger","charger"]}'::jsonb);
+  perform internal.assert(
+    v_res -> 'entry' -> 'details' -> 'accessories' = '["charger", "sim_removed"]'::jsonb,
+    'accessoires déposés : dédoublonnés et triés');
+  begin
+    perform public.add_walkin(v_device, null, null, null, v_owner, null,
+      '{"accessories":["code_pin"]}'::jsonb);
+    raise exception 'ÉCHEC: accessoire hors liste accepté';
+  exception when sqlstate 'VT015' then
+    raise notice '  ok  accessoire hors liste : refusé (VT015)';
+  end;
+
   -- Masquage : seuls les 3 derniers caractères restent lisibles.
   perform internal.assert_eq(internal.mask_registration('AB-123-CD'), '••-••3-CD', 'masquage SIV');
   perform internal.assert_eq(internal.mask_registration('1234 AB 75'), '•••• •B 75', 'masquage FNI');
+  perform internal.assert_eq(internal.mask_registration('AB1'), '•B1', 'plaque de 3 caractères : un caractère masqué au moins');
+  perform internal.assert_eq(internal.mask_registration('b-7'), '•-7', 'plaque de 2 caractères : un caractère masqué au moins');
+  perform internal.assert_eq(internal.mask_registration('ABC1'), '•BC1', 'plaque de 4 caractères : 3 lisibles');
+
+  -- Adresses web (miroir de containsUrl, lib/profiles/templates.ts).
+  perform internal.assert(
+    internal.contains_url('https://exemple.fr') and internal.contains_url('voir www.exemple')
+    and internal.contains_url('bit.ly/x') and internal.contains_url('Payez sur exemple.fr.')
+    and internal.contains_url('HTTP://X'),
+    'adresse web détectée : schéma, www., domaine nu');
+  perform internal.assert(
+    not internal.contains_url('Plaquettes + disques AV') and not internal.contains_url('19 h 00')
+    and not internal.contains_url('184,00 €') and not internal.contains_url('n° 12.5')
+    and not internal.contains_url('M. Dupont, 2.0 TDI') and not internal.contains_url(null),
+    'texte ordinaire : aucune fausse alerte');
+
+  -- Le nom d'un champ refusé est tronqué dans le message d'erreur.
+  begin
+    perform public.add_walkin(v_device, null, null, null, v_owner, null,
+      jsonb_build_object(repeat('k', 500), 'x'));
+    raise exception 'ÉCHEC: champ inconnu accepté';
+  exception when sqlstate 'VT015' then
+    perform internal.assert(length(sqlerrm) < 120 and sqlerrm like '%' || repeat('k', 32) || '%',
+      'champ refusé : nom tronqué à 32 caractères dans le message');
+  end;
 
   -- -------------------------------------------------------------------
   raise notice '';
-  raise notice '── 12. Purge RGPD des informations métier ──';
+  raise notice '── 13. Purge RGPD des informations métier ──';
 
-  insert into public.queue_ticket_counters (queue_id, scope_day, last_no)
-  values (v_desk, current_date - 5, 12);
+  -- Probe F de la relecture : rétention de 3 jours, véhicule déposé il y a
+  -- 4 jours, étape changée il y a 1 h. Il est EN COURS : ni l'expiration
+  -- ni la purge n'y touchent, et la session du téléphone qui le suit
+  -- survit même si elle a expiré.
+  update public.organization_settings set data_retention_days = 3
+   where organization_id = (v_o ->> 'garage')::uuid;
+  perform public.staff_queue_action(v_v2, 'set_stage', v_owner, v_tech, '{"stage":"waiting_parts"}');
+  update public.queue_entries
+     set joined_at = now() - interval '4 days', stage_changed_at = now() - interval '1 hour'
+   where public_id = v_v2;
+  update public.client_sessions
+     set last_seen_at = now() - interval '10 days', expires_at = now() - interval '1 day'
+   where id = v_s[6];
+  perform public.expire_stale_entries();
+  v_state := public.purge_expired_data();
+  perform internal.assert(
+    (select status = 'serving' and stage = 'waiting_parts' and details ->> 'registration' = 'AA-001-AA'
+            and registration_key = 'AA001AA' and client_session_id = v_s[6] and client_name = 'Inès'
+     from public.queue_entries where public_id = v_v2),
+    'véhicule en atelier depuis plus que la rétention : rien n''est effacé tant qu''il est en cours');
+  perform internal.assert(exists (select 1 from public.client_sessions where id = v_s[6]),
+    'la session du téléphone qui suit un véhicule en cours n''est pas supprimée');
+
+  -- Le même véhicule, rendu aujourd'hui : la rétention court depuis la fin.
+  -- (La cliente revient chercher sa voiture : sa session est prolongée,
+  -- comme le fait upsert_client_session.)
+  update public.client_sessions
+     set last_seen_at = now(), expires_at = now() + interval '30 days'
+   where id = v_s[6];
+  perform public.staff_queue_action(v_v2, 'complete', v_owner, v_tech);
+  perform public.purge_expired_data();
+  perform internal.assert(
+    (select details <> '{}'::jsonb and client_session_id is not null
+     from public.queue_entries where public_id = v_v2),
+    'rendu aujourd''hui : conservé pendant la rétention, comptée depuis la fin');
+  -- … et rendu il y a 4 jours, le téléphone n'étant plus revenu depuis :
+  -- purgé, et sa session avec lui.
+  update public.queue_entries set completed_at = now() - interval '4 days' where public_id = v_v2;
+  update public.client_sessions
+     set last_seen_at = now() - interval '4 days', expires_at = now() - interval '1 day'
+   where id = v_s[6];
+  perform public.purge_expired_data();
+  perform internal.assert(
+    (select details = '{}'::jsonb and registration_key is null and client_session_id is null
+            and client_name is null
+     from public.queue_entries where public_id = v_v2)
+    and not exists (select 1 from public.client_sessions where id = v_s[6]),
+    'rendu il y a 4 jours (rétention 3) : fiche, immatriculation, prénom et session effacés');
+
+  -- Tous les tickets terminés du garage, au-delà de la rétention : tout part
+  -- ensemble ; les tickets encore en cours restent intacts.
   update public.organization_settings set data_retention_days = 1
    where organization_id = (v_o ->> 'garage')::uuid;
-  update public.queue_entries set joined_at = now() - interval '10 days'
-   where organization_id = (v_o ->> 'garage')::uuid;
+  perform public.staff_queue_action(v_v6, 'cancel', v_owner, v_tech);
   update public.queue_entries
      set claim_token_hash = v_hash3, claim_expires_at = now() + interval '1 hour', client_session_id = null
    where public_id = v_v6;
+  update public.queue_entries
+     set joined_at = now() - interval '10 days',
+         completed_at = case when completed_at is not null then now() - interval '10 days' end,
+         cancelled_at = case when cancelled_at is not null then now() - interval '10 days' end,
+         expired_at   = case when expired_at   is not null then now() - interval '10 days' end,
+         absent_at    = case when absent_at    is not null then now() - interval '10 days' end
+   where organization_id = (v_o ->> 'garage')::uuid;
+  insert into public.queue_ticket_counters (queue_id, scope_day, last_no)
+  values (v_desk, current_date - 5, 12);
   v_state := public.purge_expired_data();
   perform internal.assert(
     not exists (
       select 1 from public.queue_entries
       where organization_id = (v_o ->> 'garage')::uuid
+        and not public.entry_is_active(status)
         and (details <> '{}'::jsonb or registration_key is not null or claim_token_hash is not null
              or client_name is not null or client_session_id is not null)),
-    'au-delà de la rétention : immatriculation, fiche, jeton et prénom effacés ensemble');
+    'tickets terminés au-delà de la rétention : immatriculation, fiche, jeton et prénom effacés ensemble');
+  perform internal.assert(
+    (select count(*) >= 3 and bool_and(details <> '{}'::jsonb and registration_key is not null)
+     from public.queue_entries
+     where organization_id = (v_o ->> 'garage')::uuid and public.entry_is_active(status)),
+    'tickets du garage encore en cours : intacts');
   perform internal.assert(
     not exists (select 1 from public.queue_ticket_counters where queue_id = v_desk and scope_day = current_date - 5)
     and exists (select 1 from public.queue_ticket_counters where queue_id = v_device and scope_day = date '1970-01-01'),
@@ -971,7 +1304,7 @@ begin
 
   -- -------------------------------------------------------------------
   raise notice '';
-  raise notice '── 13. Droits ──';
+  raise notice '── 14. Droits ──';
 
   perform internal.assert(
     not exists (
@@ -987,7 +1320,10 @@ begin
         'public.create_location(uuid,text,public.activity_type,text,text,text,text,text,text,public.queue_mode,uuid,text)',
         'public.purge_expired_data()',
         'public.ticket_state(text,uuid)',
-        'public.queue_snapshot(uuid)'
+        'public.queue_snapshot(uuid,boolean)',
+        'public.client_queue_action(text,uuid,text,jsonb)',
+        'public.staff_queue_action(text,text,uuid,uuid,jsonb)',
+        'public.claim_entry_notification(uuid,public.notification_kind)'
       ]) fn
       where has_function_privilege('anon', fn, 'execute')
          or has_function_privilege('authenticated', fn, 'execute')
@@ -997,9 +1333,14 @@ begin
     not exists (
       select 1 from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname = 'public' and p.proname in ('join_queue', 'add_walkin')
+      where n.nspname = 'public'
+        and p.proname in ('join_queue', 'add_walkin', 'client_queue_action', 'queue_snapshot')
       group by p.proname having count(*) > 1),
-    'une seule signature de join_queue et d''add_walkin (PostgREST sans ambiguïté)');
+    'une seule signature de join_queue, add_walkin, client_queue_action et queue_snapshot (PostgREST sans ambiguïté)');
+  perform internal.assert(
+    not has_schema_privilege('anon', 'internal', 'usage')
+    and not has_schema_privilege('authenticated', 'internal', 'usage'),
+    'schéma internal fermé à anon et authenticated');
 
   insert into p13 values
     ('owner', v_owner::text), ('rival', v_rival::text),
@@ -1084,11 +1425,13 @@ begin;
 rollback;
 
 -- =====================================================================
--- switch_queue_profile sous concurrence (deux sessions)
+-- Concurrence (deux sessions) : changement de profil, rattachement par
+-- QR, devis renvoyé pendant que le client décide
 -- ---------------------------------------------------------------------
 -- La seconde session est une vraie connexion (dblink). Si l'extension
--- n'est pas disponible, le scénario est rejoué dans l'ordre, dans une
--- seule session, et le test le signale.
+-- n'est pas disponible, chaque scénario est rejoué dans l'ordre, dans
+-- une seule session, et le test le signale. L'extension n'est supprimée
+-- à la fin que si ce test l'a lui-même créée.
 -- =====================================================================
 do $$
 declare
@@ -1096,7 +1439,7 @@ declare
   v_org  uuid;
 begin
   raise notice '';
-  raise notice '── 14. Changement de profil pendant une inscription ──';
+  raise notice '── 15. Concurrence : changement de profil, rattachement, devis ──';
   v_prov := public.provision_organization(
     (select v::uuid from p13 where k = 'owner'), 'P13 Concurrence', 'counter', 'P13 Concurrence Centre');
   v_org := (v_prov -> 'organization' ->> 'id')::uuid;
@@ -1106,6 +1449,30 @@ begin
     ('cs1', public.upsert_client_session(v_org, 'p13-conc-1', 'web', null) ->> 'id'),
     ('cs2', public.upsert_client_session(v_org, 'p13-conc-2', 'web', null) ->> 'id');
 
+  -- Garage : une fiche à rattacher, une fiche avec un devis en attente.
+  v_prov := public.provision_organization(
+    (select v::uuid from p13 where k = 'owner'), 'P13 Concurrence Garage', 'garage',
+    'P13 Concurrence Garage Centre');
+  v_org := (v_prov -> 'organization' ->> 'id')::uuid;
+  perform public.set_queue_status((v_prov -> 'queue' ->> 'id')::uuid, 'open', null);
+  insert into p13 values
+    ('gq', v_prov -> 'queue' ->> 'id'),
+    ('gs_a', public.upsert_client_session(v_org, 'p13-conc-g-a', 'web', null) ->> 'id'),
+    ('gs_b', public.upsert_client_session(v_org, 'p13-conc-g-b', 'web', null) ->> 'id'),
+    ('gs_q', public.upsert_client_session(v_org, 'p13-conc-g-q', 'web', null) ->> 'id'),
+    ('gtoken', encode(extensions.digest('p13-jeton-concurrence', 'sha256'), 'hex'));
+  insert into p13 values
+    ('gclaim', public.add_walkin((select v::uuid from p13 where k = 'gq'), null, null, null, null, null,
+                                 '{"registration":"GH-321-JK"}'::jsonb) -> 'entry' ->> 'id'),
+    ('gquote', public.join_queue((select v::uuid from p13 where k = 'gq'), (select v::uuid from p13 where k = 'gs_q'),
+                                 null, null, null, 'qr', null, '{"registration":"JK-654-LM"}'::jsonb) -> 'entry' ->> 'id');
+  perform public.staff_queue_action((select v from p13 where k = 'gclaim'), 'set_claim', null, null,
+    jsonb_build_object('tokenHash', (select v from p13 where k = 'gtoken')));
+  perform public.staff_queue_action((select v from p13 where k = 'gquote'), 'send_quote', null, null,
+    '{"amountCents":18400,"label":"Plaquettes"}');
+
+  insert into p13 values ('dblink_preexisting',
+    case when exists (select 1 from pg_extension where extname = 'dblink') then 'yes' else 'no' end);
   begin
     create extension if not exists dblink with schema extensions;
     perform extensions.dblink_connect('p13_s2', format('host=%s port=%s dbname=%s user=%s',
@@ -1192,7 +1559,6 @@ begin
   if (select v from p13 where k = 'dblink') = 'on' then
     select r into v_entry from extensions.dblink_get_result('p13_s2') as t(r jsonb);
     perform * from extensions.dblink_get_result('p13_s2') as t(r jsonb);
-    perform extensions.dblink_disconnect('p13_s2');
   else
     v_entry := public.join_queue((select v::uuid from p13 where k = 'cq'),
                                  (select v::uuid from p13 where k = 'cs2'), null);
@@ -1200,12 +1566,101 @@ begin
   perform internal.assert(
     v_entry -> 'entry' ->> 'profile' = 'walkin' and v_entry -> 'entry' -> 'ticketNo' = 'null'::jsonb,
     'le changement gagne, l''inscription suit le nouveau profil (plus de numéro)');
+end
+$$;
+
+-- Deux téléphones présentent le même QR de suivi au même instant : le
+-- premier tient le verrou de la fiche, le second attend puis est refusé.
+begin;
+  do $$
+  begin
+    perform internal.assert(
+      public.claim_entry((select v from p13 where k = 'gtoken'), (select v::uuid from p13 where k = 'gs_a')) is not null,
+      'session 1 : rattachement en cours');
+    if (select v from p13 where k = 'dblink') = 'on' then
+      perform extensions.dblink_send_query('p13_s2', format(
+        'select public.claim_entry(%L, %L::uuid)',
+        (select v from p13 where k = 'gtoken'), (select v from p13 where k = 'gs_b')));
+      perform pg_sleep(0.3);
+      perform internal.assert(extensions.dblink_is_busy('p13_s2') = 1,
+        'session 2 : le même jeton attend le verrou de la fiche');
+    end if;
+  end $$;
+commit;
+
+do $$
+declare
+  v_second jsonb;
+begin
+  if (select v from p13 where k = 'dblink') = 'on' then
+    select r into v_second from extensions.dblink_get_result('p13_s2') as t(r jsonb);
+    perform * from extensions.dblink_get_result('p13_s2') as t(r jsonb);
+  else
+    v_second := public.claim_entry((select v from p13 where k = 'gtoken'), (select v::uuid from p13 where k = 'gs_b'));
+  end if;
+  perform internal.assert(
+    v_second is null
+    and (select client_session_id = (select v::uuid from p13 where k = 'gs_a') and claim_token_hash is null
+         from public.queue_entries where public_id = (select v from p13 where k = 'gclaim')),
+    'double rattachement simultané : un seul téléphone suit la fiche, le second est refusé');
+end
+$$;
+
+-- Le garage renvoie un devis pendant que le client accepte le premier :
+-- la décision attend le verrou de la file, puis est refusée, parce que le
+-- devis qu'elle vise n'est plus le devis en cours.
+begin;
+  do $$
+  begin
+    perform public.staff_queue_action((select v from p13 where k = 'gquote'), 'send_quote', null, null,
+      '{"amountCents":25000,"label":"Plaquettes + disques"}');
+    if (select v from p13 where k = 'dblink') = 'on' then
+      perform extensions.dblink_send_query('p13_s2', format(
+        'select public.client_queue_action(%L, %L::uuid, %L, %L::jsonb)',
+        (select v from p13 where k = 'gquote'), (select v from p13 where k = 'gs_q'),
+        'quote_accept', '{"quoteN":1}'));
+      perform pg_sleep(0.3);
+      perform internal.assert(extensions.dblink_is_busy('p13_s2') = 1,
+        'session 2 : l''accord du client attend la fin de l''envoi du nouveau devis');
+    end if;
+  end $$;
+commit;
+
+do $$
+declare
+  v_refused boolean := false;
+begin
+  if (select v from p13 where k = 'dblink') = 'on' then
+    begin
+      perform * from extensions.dblink_get_result('p13_s2') as t(r jsonb);
+    exception when sqlstate 'VT006' then
+      v_refused := true;
+    end;
+    perform * from extensions.dblink_get_result('p13_s2') as t(r jsonb);
+  else
+    begin
+      perform public.client_queue_action((select v from p13 where k = 'gquote'),
+        (select v::uuid from p13 where k = 'gs_q'), 'quote_accept', '{"quoteN":1}');
+    exception when sqlstate 'VT006' then
+      v_refused := true;
+    end;
+  end if;
+  perform internal.assert(
+    v_refused
+    and (select (details -> 'quote' ->> 'n')::int = 2 and details -> 'quote' -> 'decision' = 'null'::jsonb
+                and (details -> 'quote' ->> 'amountCents')::int = 25000
+         from public.queue_entries where public_id = (select v from p13 where k = 'gquote')),
+    'accord concurrent d''un devis remplacé : refusé, le nouveau devis attend toujours sa décision');
 
   if (select v from p13 where k = 'dblink') = 'on' then
-    drop extension dblink;
+    perform extensions.dblink_disconnect('p13_s2');
+    -- On ne retire l'extension que si ce test l'a installée.
+    if (select v from p13 where k = 'dblink_preexisting') = 'no' then
+      drop extension dblink;
+    end if;
   end if;
 
   raise notice '';
-  raise notice '✅ Profils métier : concurrence du changement de profil vérifiée.';
+  raise notice '✅ Profils métier : concurrence vérifiée (profil, rattachement, devis).';
 end
 $$;

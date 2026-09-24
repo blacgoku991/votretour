@@ -33,6 +33,23 @@ alter table public.queues
   add column profile_options jsonb not null default '{}'::jsonb
     constraint queues_profile_options_shape
     check (jsonb_typeof(profile_options) = 'object' and pg_column_size(profile_options) <= 1024),
+  -- Délai de l'avis différé : absent, null (« jamais ») ou un nombre
+  -- entier de minutes entre 0 et 240. Borné EN BASE parce que le cron des
+  -- avis (claim_due_review_notifications) parcourt toutes les
+  -- organisations d'une seule requête : une valeur démesurée, écrite par
+  -- un bug de validation en amont, ferait déborder make_interval et
+  -- arrêterait les avis de tout le monde. CASE plutôt que OR : PostgreSQL
+  -- ne garantit pas l'ordre d'évaluation, et la conversion en nombre ne
+  -- doit jamais voir une chaîne.
+  add constraint queues_profile_options_review_delay
+    check (case jsonb_typeof(profile_options -> 'reviewDelayMinutes')
+             when 'number' then
+               (profile_options ->> 'reviewDelayMinutes')::numeric between 0 and 240
+               and (profile_options ->> 'reviewDelayMinutes')::numeric
+                   = trunc((profile_options ->> 'reviewDelayMinutes')::numeric)
+             when 'null' then true
+             else profile_options -> 'reviewDelayMinutes' is null  -- clé absente
+           end),
   add column ticket_prefix text not null default 'A'
     constraint queues_ticket_prefix_format
     check (ticket_prefix ~ '^[A-Z]{1,2}$');
