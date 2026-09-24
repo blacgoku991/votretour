@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { WALLET_OFFER_COPY as COPY } from '@/lib/wallet-copy';
 import type { WalletOffer as Offer } from '@/server/wallet/providers';
 import styles from './WalletOffer.module.css';
@@ -20,14 +21,21 @@ import styles from './WalletOffer.module.css';
  *    GET simple, qui garde le geste de l'utilisateur ;
  *  - le contrôle refuse le QR Wallet (`wallet_qr_enabled = false`) : pas
  *    de badge, une phrase ;
- *  - navigateur intégré sur iPhone (Instagram, Facebook…) : l'indice
- *    « Ouvrez cette page dans Safari », sans badge ;
+ *  - navigateur intégré sur iPhone (Instagram, Facebook…) : une phrase
+ *    qui dit ce qui reste valable, sans badge et SANS consigne d'ouvrir
+ *    Safari (ni cookie du laisser-passer ni session du client là-bas :
+ *    impasse, voire seconde inscription à un drop) ;
  *  - « Dans votre Apple Wallet » seulement après l'inscription RÉELLE
  *    d'un appareil (service web Apple), jamais au toucher du badge.
  *    Google n'a pas cette preuve (rappels : lot W8) : texte honnête.
  *
  * Composant sans état ni effet : rendu tel quel côté serveur (/pass) et
  * dans l'écran client (EventWelcome).
+ *
+ * `badgePreview` (planche /design seulement) : à la place du badge, un
+ * cadre en pointillés de sa taille exacte (44 px de haut). Aucun faux
+ * badge n'est jamais dessiné ; la composition réelle reste jugeable
+ * sans les fichiers officiels.
  */
 
 export interface WalletOfferProps {
@@ -36,17 +44,19 @@ export interface WalletOfferProps {
   context: 'event' | 'pass';
   /** TicketState.wallet.appleSaved : un appareil a inscrit le pass Apple. */
   appleSaved?: boolean;
+  /** Planche /design : cadre du badge à sa taille, jamais un faux badge. */
+  badgePreview?: boolean;
   className?: string;
 }
 
-export function WalletOffer({ offer, context, appleSaved = false, className }: WalletOfferProps) {
+export function WalletOffer({ offer, context, appleSaved = false, badgePreview = false, className }: WalletOfferProps) {
   if (!offer) return null;
   const cls = (base: string | undefined) => [base, className].filter(Boolean).join(' ');
 
   if (offer.qrNotAccepted) {
     return (
       <p className={cls(styles.note)} data-wallet="qr-refuse">
-        <GateGlyph />
+        <QrRefusedGlyph />
         <span>{COPY.qrNotAccepted}</span>
       </p>
     );
@@ -80,7 +90,12 @@ export function WalletOffer({ offer, context, appleSaved = false, className }: W
         <p id={titleId} className={styles.title}>{title}</p>
         <p className={styles.body}>{body}</p>
       </div>
-      {!saved && link && (
+      {!saved && link && badgePreview && (
+        <span className={styles.badgeSlot} data-provider={provider}>
+          Badge officiel {provider === 'apple' ? 'Apple' : 'Google'} — déposé tel quel
+        </span>
+      )}
+      {!saved && link && !badgePreview && (
         <a className={styles.badge} href={link.href} rel="nofollow">
           {/* Badge officiel, affiché tel quel : ni filtre, ni masque, ni recadrage. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -145,17 +160,32 @@ const QR: ReadonlyArray<readonly [number, number]> = [
   [0, 4], [1, 4], [3, 4], [4, 4],
 ];
 
-/** Le contrôle d'entrée : un portique. */
-function GateGlyph() {
+/**
+ * QR refusé au contrôle : un QR (cadre et trois repères) barré d'une
+ * diagonale. Le trait est détouré (masque) pour rester net à 20 px.
+ */
+function QrRefusedGlyph() {
+  // Identifiant du masque propre à chaque rendu ; les caractères de
+  // useId ne sont pas tous admis dans url(#…).
+  const mask = `qr-barre-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   return (
     <svg className={styles.noteIcon} viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
-      <path d="M4 17V5.5M16 17V5.5M2.5 5.5h15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M8 10.5h4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <mask id={mask} maskUnits="userSpaceOnUse" x="0" y="0" width="20" height="20">
+        <rect width="20" height="20" fill="#fff" />
+        <path d="M2.6 2.6l14.8 14.8" stroke="#000" strokeWidth="3.8" strokeLinecap="round" />
+      </mask>
+      <g mask={`url(#${mask})`}>
+        <rect x="2.8" y="2.8" width="14.4" height="14.4" rx="2.8" stroke="currentColor" strokeWidth="1.5" />
+        <rect x="5.4" y="5.4" width="3.4" height="3.4" rx="0.8" fill="currentColor" />
+        <rect x="11.2" y="5.4" width="3.4" height="3.4" rx="0.8" fill="currentColor" />
+        <rect x="5.4" y="11.2" width="3.4" height="3.4" rx="0.8" fill="currentColor" />
+      </g>
+      <path d="M3.4 3.4l13.2 13.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }
 
-/** Ouvrir ailleurs : une boussole. */
+/** Ce navigateur n'a pas Wallet : une boussole (on est ailleurs qu'on croit). */
 function CompassGlyph() {
   return (
     <svg className={styles.noteIcon} viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">

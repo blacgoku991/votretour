@@ -109,6 +109,31 @@
   width: auto;
   max-width: 100%;
 }
+/*
+ * Planche /design : la place du badge officiel, à sa hauteur exacte
+ * (44 px) et à la largeur approchée du badge français, en pointillés.
+ * Jamais un faux badge.
+ */
+.badgeSlot {
+  grid-column: 2;
+  justify-self: start;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  height: 44px;
+  width: 150px;
+  max-width: 100%;
+  padding: 0 10px;
+  border: 1.5px dashed color-mix(in oklab, var(--text, #FAF9F6) 38%, transparent);
+  border-radius: 8px;
+  font-size: 0.625rem;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  text-align: center;
+  color: var(--text-muted, #9AA3AF);
+}
+.badgeSlot[data-provider='google'] { width: 162px; }
+
 .badge:active { transform: scale(0.97); }
 .badge:focus-visible {
   outline: 2px solid var(--wallet-accent);
@@ -128,4 +153,54 @@
   flex: none;
   margin-top: 0;
   color: var(--wallet-accent);
+}
+
+/* =====================================================================
+   ENCART « WALLET INDISPONIBLE » (?wallet=indisponible)
+
+   Le même langage que les notices de la page du billet (notifications) :
+   pastille ronde, titre, phrase, entre deux filets. Il lit les jetons de
+   la surface qui l'accueille (--line, --surface-raised, --text-muted) ;
+   /pass, posé sur le sol hors du billet, les fixe sur ceux du billet.
+   ===================================================================== */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+  margin: 0;
+  padding: 16px 0;
+  border-block: 1px solid var(--line);
+  text-align: left;
+  color: inherit;
+}
+.noticeIcon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+.noticeText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 1px;
+}
+.noticeTitle {
+  margin: 0;
+  font-variation-settings: 'wdth' 100, 'wght' 660;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+}
+.noticeBody {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  text-wrap: pretty;
 }

@@ -94,11 +94,13 @@ function snapshot(over: {
     },
     location: {
       id: '00000000-0000-4000-8000-0000000000c1',
-      name: 'Barber House Bastille',
+      // Le lieu d'événement du banc (seed-demo, « evenements ») : le
+      // Wallet ne sert qu'aux drops.
+      name: 'Atelier Rivoli — Paris 4',
       slug: 'apercu',
-      addressLine1: '12 rue de la Roquette',
+      addressLine1: '18 rue de Rivoli',
       addressLine2: null,
-      postalCode: '75011',
+      postalCode: '75004',
       city: 'Paris',
       countryCode: 'FR',
       latitude: null,
@@ -110,7 +112,7 @@ function snapshot(over: {
     },
     organization: {
       id: '00000000-0000-4000-8000-0000000000b1',
-      name: 'Barber House',
+      name: 'Atelier Rivoli',
       logoUrl: null,
       brandAccent: 'cobalt',
       walletEnabled: true,
@@ -118,12 +120,12 @@ function snapshot(over: {
     },
     event: {
       id: '00000000-0000-4000-8000-0000000000e1',
-      name: 'Drop Aurore',
+      name: 'Drop Rivoli 04',
       heroTitle: null,
       logoUrl: null,
       coverUrl: null,
       accentHex: '#3A63D8',
-      rulesText: 'Une paire par personne.',
+      rulesText: 'Un laisser-passer par personne.',
       status: 'live',
       startedAt: '2026-09-24T12:00:00Z',
       endedAt: null,

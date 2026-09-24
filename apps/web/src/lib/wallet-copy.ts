@@ -333,16 +333,15 @@ export function eventQrAltText(ticketNumber: string | null, wave: number | null)
  * s'affichent donc que sur un billet d'événement : l'accueil de
  * l'événement après l'inscription (EventWelcome) et le laisser-passer
  * (/pass). Jamais sur une file classique ni sur une file à métier.
- * Les clés `card`, `appleSaved`, `googleAfter` et `safariHint`, écrites
- * pour un ticket de file, restent pour mémoire mais ne sont plus rendues.
+ *
+ * Navigateur intégré sur iPhone (Instagram, Facebook…) : on ne dit PAS
+ * « ouvrez cette page dans Safari ». Safari n'a ni le cookie du
+ * laisser-passer (/pass y répond 404) ni la session du client (/e y
+ * montre l'inscription, et un drop à stock limité accepterait une
+ * seconde place). La phrase dit ce qui reste valable, sans consigne.
  */
 
 export const WALLET_OFFER_COPY = {
-  card: 'Votre place sur l’écran verrouillé : mise à jour en direct, même page fermée.',
-  safariHint: 'Ouvrez cette page dans Safari pour ajouter votre ticket à Apple Wallet.',
-  appleSaved:
-    'Wallet vous préviendra : quand votre tour approchera, une alerte s’affichera sur l’écran verrouillé.',
-  googleAfter: 'Une fois ajouté, votre ticket se met à jour tout seul dans Google Wallet.',
   qrNotAccepted: 'Le QR Wallet n’est pas accepté pour cet événement : présentez cette page.',
   unavailableApple: 'Apple Wallet ne répond pas pour l’instant. Votre ticket reste suivi ici.',
   unavailableGoogle: 'Google Wallet ne répond pas pour l’instant. Votre ticket reste suivi ici.',
@@ -359,14 +358,26 @@ export const WALLET_OFFER_COPY = {
   eventAppleSaved: 'Une alerte s’affichera sur l’écran verrouillé dès l’ouverture de votre vague, avec le QR d’entrée.',
   /** Google : sans rappel (lot W8), on ne sait pas si le billet a été enregistré. Texte honnête, sans coche. */
   eventGoogleAfter: 'Une fois ajouté, votre billet se met à jour tout seul dans Google Wallet.',
-  eventSafariHint: 'Ouvrez cette page dans Safari pour ajouter votre billet à Apple Wallet.',
+  eventSafariHint: 'Apple Wallet n’est pas disponible dans ce navigateur : votre billet reste suivi ici.',
+  /**
+   * Bloc des notifications (page de l'événement) quand le Web Push n'est
+   * pas là (iPhone hors PWA, refus) mais qu'un appareil a inscrit le pass
+   * Apple : c'est Wallet qui préviendra, pas un échec à annoncer.
+   */
+  eventAppleSavedNoticeTitle: 'Alertes par Apple Wallet',
+  eventAppleSavedNotice: 'Apple Wallet vous préviendra sur l’écran verrouillé dès l’ouverture de votre vague.',
 
   /* ---- Laisser-passer (/pass, sous le QR tournant) ---- */
   passTitle: 'Ce laisser-passer dans Wallet',
   passCard: 'Le même accès, avec son QR d’entrée, sans rouvrir cette page.',
+  /**
+   * Vrai tant que le contrôle accepte le QR Wallet : la phrase n'est
+   * rendue qu'avec une offre, et l'offre devient `qrNotAccepted` dès que
+   * l'événement coupe wallet_qr_enabled (à garder vrai pour W2/W5).
+   */
   passAppleSaved: 'Il est dans votre Apple Wallet : au contrôle, présentez l’un ou l’autre.',
   passGoogleAfter: 'Une fois ajouté, il se met à jour tout seul dans Google Wallet.',
-  passSafariHint: 'Ouvrez cette page dans Safari pour ajouter ce laisser-passer à Apple Wallet.',
+  passSafariHint: 'Apple Wallet n’est pas disponible dans ce navigateur : ce laisser-passer reste valable ici.',
 } as const;
 
 /** Encart `?wallet=indisponible&wp=<fournisseur>` de la page d'origine. */

@@ -100,8 +100,13 @@ export function walletPrivacyNotice(configured: { apple: boolean; google: boolea
       'Google Wallet : Google Ireland Limited reçoit le contenu du billet et le traite selon sa propre politique de confidentialité. Le billet est rattaché à votre compte Google, chez Google : nous ne recevons jamais votre adresse e-mail.',
     );
   }
+  // Délai TENABLE, pas le délai nominal : la purge (purge_wallet_data,
+  // migration 0021) n'efface qu'une fois final_at passé de 24 h, à son
+  // passage horaire, puis via la file d'envoi ; et si la dernière
+  // synchronisation a manqué, le filet ne clôt le pass que 2 h après la
+  // fin du ticket. En pratique ~24 h, au pire 25 à 27 h : on promet 48 h.
   const duration =
-    'Durée : ces informations de mise à jour sont effacées au plus tard 24 heures après la fin de votre passage (billet utilisé, accès expiré ou événement terminé) ; les dernières traces techniques disparaissent 7 jours plus tard.';
+    'Durée : ces informations de mise à jour sont effacées dans les 48 heures qui suivent la fin de votre passage (billet utilisé, accès expiré ou événement terminé), en pratique au bout d’environ 24 heures ; les dernières traces techniques disparaissent 7 jours plus tard.';
   paragraphs.push(
     google
       ? `${duration} Google ne permet pas de supprimer un billet à distance : nous en effaçons le contenu. Vous pouvez à tout moment supprimer le billet de votre téléphone, sans perdre votre place.`

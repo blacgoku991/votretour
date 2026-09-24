@@ -33,6 +33,23 @@ export function ticketIsActive(ticket: Pick<TicketState, 'entry'> | null | undef
 }
 
 /**
+ * Événement à afficher sur /e/<slug> : celui de l'adresse (?event=), sinon
+ * celui du billet d'événement ENCORE ACTIF repris sur cet appareil. Le
+ * client qui revient par la plaque (sans ?event=), ou par le retour d'un
+ * ajout Wallet raté, retrouve ainsi l'accueil de son événement et son
+ * offre, pas une page de file nue. La page vérifie ensuite que
+ * l'événement est en cours, dans ce lieu, et que c'est bien la file du
+ * billet.
+ */
+export function resumedEventId(
+  queryEvent: string | string[] | undefined,
+  resumedTicket: Pick<TicketState, 'entry'> | null | undefined,
+): string | null {
+  if (typeof queryEvent === 'string' && queryEvent) return queryEvent;
+  return ticketIsActive(resumedTicket) ? eventIdOfTicket(resumedTicket) : null;
+}
+
+/**
  * Filet final, appliqué à toute offre avant de l'envoyer au navigateur :
  * hors billet d'événement, rien. (walletOffer() de W1 sait proposer un
  * pass de file ; le produit ne le veut plus.)

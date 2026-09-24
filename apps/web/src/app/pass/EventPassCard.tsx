@@ -3,6 +3,7 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useState } from 'react';
 import { FlapText } from '@/components/FlapNumber';
+import { WalletNotice } from '@/components/wallet/WalletNotice';
 import { WalletOffer } from '@/components/wallet/WalletOffer';
 import type { WalletOffer as WalletOfferData } from '@/components/wallet/offer';
 import styles from './pass.module.css';
@@ -138,12 +139,7 @@ export function EventPassCard({
   return (
     <main className={styles.screen} style={style}>
       <div className={styles.stage}>
-        {walletNotice && (
-          <p className={styles.walletNotice} role="status">
-            <span className={styles.walletNoticeTitle}>Wallet indisponible</span>
-            {walletNotice}
-          </p>
-        )}
+        {walletNotice && <WalletNotice text={walletNotice} className={styles.walletNotice} />}
         <div className={styles.tilt}>
           <article className={styles.ticket} data-tone={tone} aria-label={`Laisser-passer — ${eventName}`}>
             {/* ------------------------------------------------ Talon */}
@@ -269,9 +265,12 @@ export function EventPassCard({
           </article>
         </div>
 
+        {/* « de cette page » : le QR d'un pass Wallet, lui, reste fixe pendant
+            la fenêtre d'accès (compromis du plan Wallet) ; la mention ne
+            doit pas le contredire quand l'offre est affichée. */}
         {active && (
           <p className={styles.note}>
-            QR dynamique à usage unique : une capture d’écran ancienne cesse vite de fonctionner.
+            Le QR de cette page est dynamique et à usage unique : une capture d’écran ancienne cesse vite de fonctionner.
           </p>
         )}
       </div>

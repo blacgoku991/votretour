@@ -10,7 +10,9 @@ import { peopleAheadUnit } from '@/lib/copy';
 import { directionsUrl, initials } from '@/lib/format';
 import type { EntryPoint, PublicQueueState, TicketState } from '@/lib/types';
 import { WalletOffer } from '@/components/wallet/WalletOffer';
-import type { WalletOffer as WalletOfferData } from '@/components/wallet/offer';
+import { WalletGlyph, WalletNotice } from '@/components/wallet/WalletNotice';
+import { eventIdOfTicket, type WalletOffer as WalletOfferData } from '@/components/wallet/offer';
+import { WALLET_OFFER_COPY } from '@/lib/wallet-copy';
 import { TurnCurtain } from './TurnCurtain';
 import styles from './client.module.css';
 
@@ -296,6 +298,26 @@ export function ClientExperience({
     }
   }, [walletNotice, eventId]);
 
+  // « Dans votre Apple Wallet » : seulement après l'inscription RÉELLE
+  // d'un appareil, et seulement pour un billet d'événement (ticket.wallet
+  // n'existe pas ailleurs ; la double porte coûte une ligne).
+  const appleSaved = Boolean(eventTheme) && eventIdOfTicket(ticket) !== null && ticket?.wallet?.appleSaved === true;
+
+  // Retour de la feuille d'ajout Apple : la page redevient visible, mais
+  // rien ne garantit une resynchronisation. Tant que le badge Apple est
+  // proposé et qu'aucun appareil n'est inscrit, on relit le ticket à
+  // chaque retour au premier plan, pour passer à « Dans votre Apple
+  // Wallet » sans attendre le prochain événement de la file.
+  const awaitingApple = Boolean(walletOffer?.apple) && !appleSaved && phase === 'queued';
+  useEffect(() => {
+    if (!awaitingApple) return;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refetch();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [awaitingApple, refetch]);
+
   const locationName = ticket?.location.name ?? entryPoint.location.name;
   const subtitle = [
     activityLabel,
@@ -317,15 +339,7 @@ export function ClientExperience({
         inQueue={phase === 'queued' || phase === 'turn'}
       />
 
-      {walletNotice && eventTheme && (
-        <div className={styles.notice} role="status" data-wallet="indisponible">
-          <span className={styles.noticeIcon}><WalletIcon /></span>
-          <div className={styles.noticeText}>
-            <p className={styles.noticeTitle}>Wallet indisponible</p>
-            <p className={styles.noticeBody}>{walletNotice}</p>
-          </div>
-        </div>
-      )}
+      {walletNotice && eventTheme && <WalletNotice text={walletNotice} />}
 
       {eventTheme && (phase === 'join' || phase === 'queued') && (
         <EventWelcome
@@ -333,7 +347,7 @@ export function ClientExperience({
           // Après l'inscription seulement, et pour un billet d'événement :
           // l'offre arrive null pour tout autre ticket.
           walletOffer={phase === 'queued' && ticket ? walletOffer : null}
-          appleSaved={ticket?.wallet?.appleSaved === true}
+          appleSaved={appleSaved}
         />
       )}
 
@@ -375,6 +389,9 @@ export function ClientExperience({
           unfold={sawJoin}
           error={error}
           appClip={appClip}
+          // Billet d'événement dont le pass Apple est inscrit sur un
+          // appareil : c'est Wallet qui préviendra (§ 11.2 du plan).
+          walletAlerts={appleSaved}
         />
       )}
 
@@ -785,7 +802,7 @@ function EventWelcome({
    ================================================================== */
 
 function QueuedPanel({
-  ticket, entryPoint, phase, busy, servingCount, vapidPublicKey, onAction, unfold, error, appClip,
+  ticket, entryPoint, phase, busy, servingCount, vapidPublicKey, onAction, unfold, error, appClip, walletAlerts,
 }: {
   ticket: TicketState;
   entryPoint: EntryPoint;
@@ -797,6 +814,7 @@ function QueuedPanel({
   unfold: boolean;
   error: string | null;
   appClip: boolean;
+  walletAlerts: boolean;
 }) {
   const ahead = ticket.entry.peopleAhead;
   const isTurn = phase === 'turn';
@@ -861,6 +879,7 @@ function QueuedPanel({
           entryId={ticket.entry.id}
           vapidPublicKey={vapidPublicKey}
           appClip={appClip}
+          walletAlerts={walletAlerts}
         />
 
         <div className={styles.actions}>
@@ -1031,14 +1050,58 @@ function LeaveControl({
  */
 const APP_CLIP_PUBLISHED = process.env.NEXT_PUBLIC_APP_CLIP_PUBLIE?.trim() === '1';
 
+/**
+ * Ce que dit le bloc des notifications quand le Web Push n'est pas là
+ * (indisponible sur cet appareil, ou refusé). Fonction pure, testée.
+ *
+ * `walletAlerts` : billet d'événement dont le pass Apple est inscrit sur
+ * un appareil. Les alertes de Wallet passent sans le Web Push (écran
+ * verrouillé) : on ne l'annonce donc pas comme un échec, et on ne
+ * contredit pas l'accueil de l'événement (« Dans votre Apple Wallet »).
+ */
+export function notificationFallback({
+  state, reason, appClip, walletAlerts,
+}: {
+  state: 'idle' | 'working' | 'on' | 'unavailable' | 'denied';
+  reason: string | null;
+  appClip: boolean;
+  walletAlerts: boolean;
+}): { title: string; body: string; wallet: boolean } | null {
+  if (state === 'unavailable' || state === 'denied') {
+    if (walletAlerts) {
+      return {
+        title: WALLET_OFFER_COPY.eventAppleSavedNoticeTitle,
+        body: WALLET_OFFER_COPY.eventAppleSavedNotice,
+        wallet: true,
+      };
+    }
+    return {
+      title: state === 'denied' ? 'Notifications refusées' : 'Notifications indisponibles ici',
+      body: reason === 'ios_needs_pwa' && appClip
+        ? 'Sur iPhone, approchez votre téléphone de la plaque : l’App Clip vous préviendra. Sinon, gardez cette page ouverte.'
+        : reason === 'ios_needs_pwa' || state === 'denied'
+          ? 'Gardez cette page ouverte : votre position se met à jour toute seule.'
+          : 'Gardez un œil sur cette page : votre position se met à jour toute seule.',
+      wallet: false,
+    };
+  }
+  // Le canal est là (ou en cours d'activation) : le bouton, pas un texte.
+  return null;
+}
+
 export function NotificationPanel({
-  organizationId, entryId, vapidPublicKey, appClip = APP_CLIP_PUBLISHED,
+  organizationId, entryId, vapidPublicKey, appClip = APP_CLIP_PUBLISHED, walletAlerts = false,
 }: {
   organizationId: string;
   entryId: string;
   vapidPublicKey: string | null;
   /** L'App Clip n'est cité que s'il est réellement publié. */
   appClip?: boolean;
+  /**
+   * Billet d'événement, pass Apple inscrit : Wallet préviendra. Faux par
+   * défaut (profils métier, file classique : jamais de Wallet).
+   */
+  walletAlerts?: boolean;
 }) {
   const [state, setState] = useState<'idle' | 'working' | 'on' | 'denied' | 'unavailable'>('idle');
   const [reason, setReason] = useState<string | null>(null);
@@ -1092,23 +1155,16 @@ export function NotificationPanel({
 
   // On ne ment jamais : si le canal n'est pas disponible sur cet
   // appareil, on le dit et on explique quoi faire à la place.
-  if (state === 'unavailable' || state === 'denied') {
+  const copy = notificationFallback({ state, reason, appClip, walletAlerts });
+  if (copy) {
     return (
-      <div className={styles.notice}>
-        <span className={styles.noticeIcon}><BellIcon on={false} /></span>
+      <div className={styles.notice} data-wallet={copy.wallet ? 'alertes' : undefined}>
+        <span className={copy.wallet ? `${styles.noticeIcon} ${styles.noticeIconOn}` : styles.noticeIcon}>
+          {copy.wallet ? <WalletGlyph /> : <BellIcon on={false} />}
+        </span>
         <div className={styles.noticeText}>
-          <p className={styles.noticeTitle}>
-            {state === 'denied' ? 'Notifications refusées' : 'Notifications indisponibles ici'}
-          </p>
-          <p className={styles.noticeBody}>
-            {reason === 'ios_needs_pwa' && appClip
-              ? 'Sur iPhone, approchez votre téléphone de la plaque : l’App Clip vous préviendra. Sinon, gardez cette page ouverte.'
-              : reason === 'ios_needs_pwa'
-                ? 'Gardez cette page ouverte : votre position se met à jour toute seule.'
-              : state === 'denied'
-                ? 'Gardez cette page ouverte : votre position se met à jour toute seule.'
-                : 'Gardez un œil sur cette page : votre position se met à jour toute seule.'}
-          </p>
+          <p className={styles.noticeTitle}>{copy.title}</p>
+          <p className={styles.noticeBody}>{copy.body}</p>
         </div>
       </div>
     );
@@ -1226,17 +1282,6 @@ function BellIcon({ on }: { on: boolean }) {
         fill={on ? 'currentColor' : 'none'} fillOpacity={on ? 0.16 : 0}
       />
       <path d="M8.2 16.6a2 2 0 0 0 3.6 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-/** Wallet : un billet qui dépasse de la poche. */
-function WalletIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="M6 7.5V4.2a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v3.3" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-      <rect x="2.8" y="7.5" width="14.4" height="9.3" rx="2.2" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M13 12.1h1.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }

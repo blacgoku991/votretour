@@ -5,12 +5,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WalletOffer } from '../../src/components/wallet/WalletOffer';
 import {
-  eventIdOfTicket, eventOnlyOffer, ticketIsActive, walletUnavailableNotice,
+  eventIdOfTicket, eventOnlyOffer, resumedEventId, ticketIsActive, walletUnavailableNotice,
 } from '../../src/components/wallet/offer';
+import { WalletNotice } from '../../src/components/wallet/WalletNotice';
 import {
   defaultEventWalletDeps, eventWalletForPass, eventWalletForTicket, type EventWalletDeps,
 } from '../../src/components/wallet/server';
-import { ClientExperience, ClosedPanel, DonePanel } from '../../src/app/e/[slug]/ClientExperience';
+import { ClientExperience, ClosedPanel, DonePanel, notificationFallback } from '../../src/app/e/[slug]/ClientExperience';
 import { WALLET_OFFER_COPY as COPY } from '../../src/lib/wallet-copy';
 import {
   computeWalletOffer, resetWalletStatusCache, type WalletOffer as Offer, type WalletOfferInput,
@@ -24,7 +25,8 @@ import type { EntryPoint, TicketState } from '../../src/lib/types';
  * (drops), pour le contrôle d'entrée. Ces tests verrouillent :
  *  - aucune offre hors billet d'événement, sans même une lecture en base ;
  *  - aucune offre tant que le Wallet n'est pas configuré ;
- *  - le navigateur intégré (indice Safari, jamais de badge) ;
+ *  - le navigateur intégré (une phrase honnête, jamais de badge ni de
+ *    consigne « ouvrez Safari », qui mène à une impasse) ;
  *  - l'encart ?wallet=indisponible, seulement dans un contexte d'événement ;
  *  - wallet_qr_enabled = false : une phrase, pas de badge ;
  *  - jamais rien dans l'écran de fin (DonePanel) ni de fermeture.
@@ -153,6 +155,23 @@ describe('offre null hors billet d’événement', () => {
     }));
   });
 
+  it('/e sans ?event= : l’événement du billet actif repris sur l’appareil', () => {
+    const other = '55555555-5555-4555-8555-555555555555';
+    expect(resumedEventId(other, ticket())).toBe(other);
+    expect(resumedEventId(undefined, ticket())).toBe(EVENT_ID);
+    expect(resumedEventId(undefined, ticket({ status: 'next' }))).toBe(EVENT_ID);
+    // Billet terminé, ticket de file, aucun ticket : la page de file.
+    expect(resumedEventId(undefined, ticket({ status: 'completed' }))).toBeNull();
+    expect(resumedEventId(undefined, ticket({ eventId: null }))).toBeNull();
+    expect(resumedEventId(undefined, null)).toBeNull();
+    const page = readFileSync(fileURLToPath(new URL('../../src/app/e/[slug]/page.tsx', import.meta.url)), 'utf8');
+    // Dans tous les cas, plus seulement au retour de ?wallet=indisponible,
+    // et seulement si l'événement est bien celui de la file du billet.
+    expect(page).toContain('resumedEventId(undefined, resumed.ticket)');
+    expect(page).not.toMatch(/query\.wallet === 'indisponible'/);
+    expect(page).toContain('fromTicket.queue.id === event.queue_id');
+  });
+
   it('aides pures', () => {
     expect(eventIdOfTicket(ticket())).toBe(EVENT_ID);
     expect(eventIdOfTicket(ticket({ eventId: null }))).toBeNull();
@@ -240,14 +259,23 @@ describe('badge officiel', () => {
 });
 
 describe('navigateur intégré', () => {
-  it('iPhone dans Instagram : l’indice Safari, sans badge ni lien', () => {
+  it('iPhone dans Instagram : une phrase honnête, sans badge ni lien', () => {
     const offer = computeWalletOffer(offerInput({ userAgent: UA.iphoneInstagram }));
     expect(offer).toEqual({ safariHint: true });
     const html = render(offer);
-    expect(html).toContain(COPY.eventSafariHint);
+    expect(html).toContain('data-wallet="safari"');
+    expect(html).toContain('Apple Wallet n’est pas disponible dans ce navigateur : votre billet reste suivi ici.');
     expect(html).not.toContain('<a');
     expect(html).not.toContain('<img');
-    expect(render(offer, 'pass')).toContain(COPY.passSafariHint);
+    expect(render(offer, 'pass'))
+      .toContain('Apple Wallet n’est pas disponible dans ce navigateur : ce laisser-passer reste valable ici.');
+  });
+
+  it('jamais de consigne d’ouvrir Safari : /pass y répond 404, /e y rouvre l’inscription', () => {
+    // Safari n'a ni le cookie rv_event_pass ni la session vts_<org>.
+    for (const text of [COPY.eventSafariHint, COPY.passSafariHint, ...Object.values(COPY)]) {
+      expect(text).not.toMatch(/Safari|Ouvrez cette page/);
+    }
   });
 
   it('Android dans Facebook : rien', () => {
@@ -271,6 +299,16 @@ describe('?wallet=indisponible', () => {
     expect(walletUnavailableNotice({ wallet: 'oui' }, { eventContext: true, where: 'pass' })).toBeNull();
   });
 
+  it('un seul dessin sur /e et /pass : la notice neutre de la page', () => {
+    const html = renderToStaticMarkup(createElement(WalletNotice, { text: 'Votre laisser-passer reste valable ici.' }));
+    expect(html).toContain('role="status"');
+    expect(html).toContain('data-wallet="indisponible"');
+    expect(html).toContain('Wallet indisponible');
+    const read = (p: string) => readFileSync(fileURLToPath(new URL(`../../src/app/${p}`, import.meta.url)), 'utf8');
+    expect(read('pass/EventPassCard.tsx')).toContain('<WalletNotice text={walletNotice}');
+    expect(read('e/[slug]/ClientExperience.tsx')).toContain('<WalletNotice text={walletNotice} />');
+  });
+
   it('rendu dans l’écran client seulement avec l’accueil de l’événement', () => {
     const notice = 'Apple Wallet ne répond pas pour l’instant. Votre billet reste suivi ici.';
     const withEvent = renderClient({ walletNotice: notice, eventTheme: THEME });
@@ -286,6 +324,11 @@ describe('wallet_qr_enabled = false', () => {
     const offer = computeWalletOffer(offerInput({ event: { walletQrEnabled: false, googleClass: 'ok' } }));
     expect(offer).toEqual({ qrNotAccepted: true });
     const html = render(offer);
+    // Pictogramme : un QR barré (masque détouré, identifiant sûr dans url(#…)).
+    expect(html).toMatch(/<mask id="qr-barre-[A-Za-z0-9_-]+"/);
+    // Même un pass Apple déjà inscrit : la phrase, pas « présentez l’un ou l’autre ».
+    expect(renderToStaticMarkup(createElement(WalletOffer, { offer, context: 'pass', appleSaved: true })))
+      .not.toContain(COPY.passAppleSaved);
     expect(html).toContain('Le QR Wallet n’est pas accepté pour cet événement : présentez cette page.');
     expect(html).not.toContain('<a');
     expect(html).not.toContain('<img');
@@ -375,6 +418,57 @@ describe('emplacements', () => {
   it('file classique : aucune mention Wallet, même avec une offre transmise par erreur', () => {
     const html = renderClient({ initialTicket: ticket({ eventId: null }), walletOffer: APPLE_OFFER });
     expect(html).not.toMatch(/Wallet/);
+  });
+});
+
+describe('notifications et Apple Wallet (§ 11.2)', () => {
+  it('pass Apple inscrit : « Alertes par Apple Wallet », sans ton d’échec', () => {
+    for (const state of ['unavailable', 'denied'] as const) {
+      const copy = notificationFallback({ state, reason: 'ios_needs_pwa', appClip: false, walletAlerts: true });
+      expect(copy).toEqual({
+        title: 'Alertes par Apple Wallet',
+        body: 'Apple Wallet vous préviendra sur l’écran verrouillé dès l’ouverture de votre vague.',
+        wallet: true,
+      });
+      expect(copy?.title).not.toMatch(/indisponible|refusée/);
+    }
+  });
+
+  it('sans pass inscrit (profils métier, file classique) : le texte d’avant', () => {
+    expect(notificationFallback({ state: 'unavailable', reason: 'ios_needs_pwa', appClip: false, walletAlerts: false }))
+      .toEqual({
+        title: 'Notifications indisponibles ici',
+        body: 'Gardez cette page ouverte : votre position se met à jour toute seule.',
+        wallet: false,
+      });
+    expect(notificationFallback({ state: 'denied', reason: null, appClip: false, walletAlerts: false })?.title)
+      .toBe('Notifications refusées');
+    expect(notificationFallback({ state: 'unavailable', reason: 'no_service_worker', appClip: false, walletAlerts: false })?.body)
+      .toBe('Gardez un œil sur cette page : votre position se met à jour toute seule.');
+    // Canal disponible : le bouton d'activation, pas un texte, même pass inscrit.
+    expect(notificationFallback({ state: 'idle', reason: null, appClip: false, walletAlerts: true })).toBeNull();
+  });
+
+  it('réservé au billet d’événement : l’écran ne le transmet que pour lui', () => {
+    const source = readFileSync(fileURLToPath(new URL('../../src/app/e/[slug]/ClientExperience.tsx', import.meta.url)), 'utf8');
+    expect(source).toContain('walletAlerts={appleSaved}');
+    expect(source).toMatch(/const appleSaved = Boolean\(eventTheme\) && eventIdOfTicket\(ticket\) !== null/);
+    // Profils métier : NotificationPanel sans la prop, donc faux par défaut.
+    expect(source).toContain('walletAlerts = false');
+    // Retour de la feuille d'ajout : relecture au retour au premier plan.
+    expect(source).toContain("document.addEventListener('visibilitychange', onVisible)");
+  });
+});
+
+describe('planche /design', () => {
+  it('avant l’ajout : la place du badge en pointillés, jamais un faux badge', () => {
+    const html = renderToStaticMarkup(createElement(WalletOffer, {
+      offer: { apple: { href: '#', badgeSrc: '' } }, context: 'event', badgePreview: true,
+    }));
+    expect(html).toContain('Badge officiel Apple — déposé tel quel');
+    expect(html).toContain(COPY.eventTitle);
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('<a');
   });
 });
 

@@ -47,11 +47,11 @@ export async function WalletPreview() {
               <code className={styles.phase}>{state.phase}</code>
             </div>
             <figure className={styles.fig}>
-              <ApplePass pass={state.apple} qr={state.apple.qr ? qrs.get(state.apple.qr.message) ?? null : null} />
+              <ApplePass pass={state.apple} stateLabel={state.label} qr={state.apple.qr ? qrs.get(state.apple.qr.message) ?? null : null} />
               <figcaption className={styles.caption}>Apple Wallet · billet</figcaption>
             </figure>
             <figure className={styles.fig}>
-              <GooglePass pass={state.google} qr={state.google.qr ? qrs.get(state.google.qr.value) ?? null : null} />
+              <GooglePass pass={state.google} stateLabel={state.label} qr={state.google.qr ? qrs.get(state.google.qr.value) ?? null : null} />
               <figcaption className={styles.caption}>Google Wallet · billet</figcaption>
             </figure>
           </li>
@@ -64,10 +64,23 @@ export async function WalletPreview() {
           <p className={styles.stateNote}>
             Sous l’accueil de l’événement (après l’inscription) et sous le QR tournant de /pass.
             Le badge officiel est affiché tel quel, depuis public/wallet/ ; sans lui, sans Wallet
-            configuré ou hors billet d’événement, rien n’est rendu.
+            configuré ou hors billet d’événement, rien n’est rendu. Ici, sa place est tracée en
+            pointillés : jamais de faux badge.
           </p>
         </div>
         <div className={styles.offers}>
+          <figure className={styles.offerFig}>
+            <div className={styles.offerFrame}>
+              <WalletOffer offer={{ apple: { href: '#', badgeSrc: '' } }} context="event" badgePreview />
+            </div>
+            <figcaption className={styles.caption}>Avant l’ajout : iPhone, après l’inscription</figcaption>
+          </figure>
+          <figure className={styles.offerFig}>
+            <div className={styles.offerFrame}>
+              <WalletOffer offer={{ google: { href: '#', badgeSrc: '' } }} context="pass" badgePreview />
+            </div>
+            <figcaption className={styles.caption}>Avant l’ajout : Android, sous le QR de /pass</figcaption>
+          </figure>
           <figure className={styles.offerFig}>
             <div className={styles.offerFrame}>
               <WalletOffer offer={{ apple: { href: '#', badgeSrc: '' } }} context="event" appleSaved />
@@ -84,7 +97,7 @@ export async function WalletPreview() {
             <div className={styles.offerFrame}>
               <WalletOffer offer={{ safariHint: true }} context="pass" />
             </div>
-            <figcaption className={styles.caption}>Navigateur intégré (Instagram…)</figcaption>
+            <figcaption className={styles.caption}>Navigateur intégré (Instagram…), sans consigne</figcaption>
           </figure>
         </div>
       </div>
@@ -105,14 +118,14 @@ function Field({ field, big = false }: { field: PreviewField; big?: boolean }) {
   );
 }
 
-function ApplePass({ pass, qr }: { pass: ApplePreview; qr: string | null }) {
+function ApplePass({ pass, qr, stateLabel }: { pass: ApplePreview; qr: string | null; stateLabel: string }) {
   const style = {
     '--pass-bg': pass.background,
     '--pass-fg': pass.foreground,
     '--pass-label': pass.label,
   } as CSSProperties;
   return (
-    <article className={styles.apple} style={style} data-voided={pass.voided || undefined} aria-label="Aperçu du pass Apple Wallet">
+    <article className={styles.apple} style={style} data-voided={pass.voided || undefined} aria-label={`Aperçu du pass Apple Wallet — ${stateLabel}`}>
       <header className={styles.appleHead}>
         <span className={styles.mark} aria-hidden="true">R</span>
         {pass.logoText && <span className={styles.logoText}>{pass.logoText}</span>}
@@ -131,7 +144,8 @@ function ApplePass({ pass, qr }: { pass: ApplePreview; qr: string | null }) {
       )}
       {qr && pass.qr && (
         <div className={styles.qrBlock}>
-          <span className={styles.qr} dangerouslySetInnerHTML={{ __html: qr }} />
+          {/* Décoratif : le texte sous le QR (altText) le décrit déjà. */}
+          <span className={styles.qr} aria-hidden="true" dangerouslySetInnerHTML={{ __html: qr }} />
           <span className={styles.qrAlt}>{pass.qr.altText}</span>
         </div>
       )}
@@ -147,11 +161,11 @@ function ApplePass({ pass, qr }: { pass: ApplePreview; qr: string | null }) {
 
 const GOOGLE_STATE: Record<string, string> = { EXPIRED: 'Expiré', COMPLETED: 'Terminé' };
 
-function GooglePass({ pass, qr }: { pass: GooglePreview; qr: string | null }) {
+function GooglePass({ pass, qr, stateLabel }: { pass: GooglePreview; qr: string | null; stateLabel: string }) {
   const style = { '--pass-bg': pass.background, '--pass-fg': pass.foreground } as CSSProperties;
   const ended = GOOGLE_STATE[pass.state];
   return (
-    <article className={styles.google} style={style} data-ended={ended ? true : undefined} aria-label="Aperçu du pass Google Wallet">
+    <article className={styles.google} style={style} data-ended={ended ? true : undefined} aria-label={`Aperçu du pass Google Wallet — ${stateLabel}`}>
       <header className={styles.googleHead}>
         <span className={`${styles.mark} ${styles.markRound}`} aria-hidden="true">R</span>
         <span className={styles.issuer}>{pass.issuerName}</span>
@@ -173,7 +187,8 @@ function GooglePass({ pass, qr }: { pass: GooglePreview; qr: string | null }) {
       )}
       {qr && pass.qr && (
         <div className={styles.qrBlock}>
-          <span className={styles.qr} dangerouslySetInnerHTML={{ __html: qr }} />
+          {/* Décoratif : le texte sous le QR (altText) le décrit déjà. */}
+          <span className={styles.qr} aria-hidden="true" dangerouslySetInnerHTML={{ __html: qr }} />
           <span className={styles.qrAlt}>{pass.qr.altText}</span>
         </div>
       )}

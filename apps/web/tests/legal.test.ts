@@ -62,8 +62,11 @@ describe('confidentialité : billets d’événement dans Wallet', () => {
     // Destinataires.
     expect(text).toContain('Google Ireland Limited');
     expect(text).toContain('nous ne recevons jamais votre adresse e-mail');
-    // Durée : 24 h après le passage, contenu Google effacé faute de suppression.
-    expect(text).toContain('24 heures après la fin de votre passage');
+    // Durée : un délai tenu même quand la purge passe tard (cron horaire,
+    // file d'envoi, filet de 2 h), contenu Google effacé faute de suppression.
+    expect(text).toContain('dans les 48 heures qui suivent la fin de votre passage');
+    expect(text).toContain('en pratique au bout d’environ 24 heures');
+    expect(text).not.toContain('au plus tard 24 heures');
     expect(text).toContain('7 jours plus tard');
     expect(text).toContain('Google ne permet pas de supprimer un billet à distance');
     // Base : geste volontaire du client, confirmé dans la feuille du système.

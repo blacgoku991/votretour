@@ -13,7 +13,7 @@ import { ProfileExperience, type ProfileEntryPoint, type ProfileTicketState } fr
 import { findUnassignedStockPlate } from '@/server/plate-stock';
 import { getSessionUser } from '@/server/auth';
 import { appClipPublished } from '@/lib/seo/site';
-import { eventIdOfTicket, walletUnavailableNotice } from '@/components/wallet/offer';
+import { resumedEventId, walletUnavailableNotice } from '@/components/wallet/offer';
 import { eventWalletForTicket } from '@/components/wallet/server';
 import styles from './client.module.css';
 
@@ -86,17 +86,17 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
     qrLabel: string | null;
   } | null = null;
 
-  // Retour d'un ajout au Wallet qui a échoué (?wallet=indisponible) : la
-  // route de distribution renvoie vers /e/<slug>, sans l'événement. On le
-  // retrouve dans le billet repris sur cet appareil, pour que l'encart
-  // s'affiche là où le badge avait été touché, dans l'accueil de
-  // l'événement. Sans ce paramètre, rien ne change.
+  // Sans ?event= : l'événement du billet repris sur cet appareil. Le
+  // client qui revient par la plaque, ou par le retour d'un ajout Wallet
+  // raté (la route de distribution renvoie vers /e/<slug>, sans
+  // l'événement), retrouve l'accueil de son événement et son offre. La
+  // session et le ticket sont lus de toute façon plus bas : on les garde.
   let resumed: { session: Awaited<ReturnType<typeof getClientSession>>; ticket: Awaited<ReturnType<typeof findActiveTicket>> } | null = null;
   let requestedEventId = typeof query.event === 'string' ? query.event : null;
-  if (!requestedEventId && query.wallet === 'indisponible' && entryPoint.status === 'ok') {
+  if (!requestedEventId && entryPoint.status === 'ok') {
     const session = await getClientSession(entryPoint.organization.id);
     resumed = { session, ticket: session ? await findActiveTicket(session.id) : null };
-    requestedEventId = eventIdOfTicket(resumed.ticket);
+    requestedEventId = resumedEventId(undefined, resumed.ticket);
   }
   if (
     requestedEventId
@@ -113,7 +113,10 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
       .in('status', ['live', 'paused'])
       .maybeSingle();
 
-    if (event) {
+    // Événement retrouvé par le billet : seulement si c'est bien sa file
+    // (un billet d'une autre file du lieu ne change pas la page).
+    const fromTicket = !(typeof query.event === 'string') && resumed?.ticket;
+    if (event && (!fromTicket || fromTicket.queue.id === event.queue_id)) {
       const [{ data: queue }, { count: waitingCount }] = await Promise.all([
         db.from('queues')
           .select('id, name, mode, status, ask_client_name, client_name_required, allow_staff_choice, allow_service_choice, pause_reason')
