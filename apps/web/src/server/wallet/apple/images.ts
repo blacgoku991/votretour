@@ -57,6 +57,16 @@ async function sharp(): Promise<SharpFactory> {
   return sharpPromise;
 }
 
+/**
+ * Décodage borné : 40 mégapixels suffisent largement à un logo ou à une
+ * photo de téléphone (48 Mpx en 4:3 recadrés par l'éditeur). Le défaut de
+ * sharp (268 Mpx) laisserait une image piégée occuper des centaines de
+ * mégaoctets, une fois par échelle et par tâche du vidage (20 en
+ * parallèle). Au-delà, sharp lève : le pass repart sur le signe Rangvia.
+ */
+export const MAX_INPUT_PIXELS = 40_000_000;
+const INPUT = { limitInputPixels: MAX_INPUT_PIXELS } as const;
+
 function digest(data: Buffer | string): string {
   return createHash('sha256').update(data).digest('hex').slice(0, 20);
 }
@@ -68,7 +78,7 @@ export function scaledName(base: string, scale: Scale): string {
 
 /** Logo téléversé, contenu dans 160 × 50 pt, transparence gardée. */
 async function brandLogo(source: Buffer, scale: Scale): Promise<Buffer> {
-  return once(`logo-${digest(source)}-${scale}`, async () => (await sharp())(source)
+  return once(`logo-${digest(source)}-${scale}`, async () => (await sharp())(source, INPUT)
     .resize({
       width: LOGO_BOX.width * scale,
       height: LOGO_BOX.height * scale,
@@ -85,7 +95,7 @@ async function brandIcon(source: Buffer, background: string, scale: Scale): Prom
   const inner = Math.round(px * 0.78);
   return once(`icon-${digest(source)}-${background}-${scale}`, async () => {
     const s = await sharp();
-    const logo = await s(source).resize({ width: inner, height: inner, fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+    const logo = await s(source, INPUT).resize({ width: inner, height: inner, fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
     return s({ create: { width: px, height: px, channels: 4, background } })
       .composite([{ input: logo, gravity: 'center' }])
       .png({ compressionLevel: 9, palette: true, effort: 8 })
@@ -99,7 +109,7 @@ async function coverStrip(source: Buffer, background: string, scale: Scale): Pro
   const height = STRIP_SIZE.height * scale;
   return once(`strip-${digest(source)}-${background}-${scale}`, async () => {
     const s = await sharp();
-    return s(source)
+    return s(source, INPUT)
       .rotate() // orientation EXIF des photos de téléphone
       .resize({ width, height, fit: 'cover', position: 'attention' })
       .composite([{ input: Buffer.from(stripVeilSvg(background, width, height), 'utf8') }])

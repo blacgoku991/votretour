@@ -27,7 +27,9 @@ import { DEAD_TOKEN_REASONS, RETRIABLE_REASONS } from '@/server/notifications/ap
  *
  * Classement des réponses : mêmes listes que les pushes de l'App Clip
  * (exportées par notifications/apns.ts) pour les jetons morts et les
- * échecs passagers ; un certificat refusé arrête le tour.
+ * échecs passagers ; un certificat refusé arrête le tour, qu'APNs le dise
+ * en HTTP (403 BadCertificate…) ou dès la poignée de main TLS (certificat
+ * révoqué ou expiré : alerte TLS, aucune réponse HTTP).
  */
 
 export const APNS_WALLET_HOST = 'https://api.push.apple.com';
@@ -46,6 +48,31 @@ export const HALT_REASONS: ReadonlySet<string> = new Set([
   'BadTopic',
   'MissingTopic',
 ]);
+
+/**
+ * Échec TLS qui tient au CERTIFICAT, pas au réseau : alerte reçue d'APNs
+ * (OpenSSL : ERR_SSL_SSLV3_ALERT_CERTIFICATE_REVOKED, …_BAD_CERTIFICATE,
+ * …_CERTIFICATE_EXPIRED, ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED…) ou
+ * certificat du serveur refusé (CERT_HAS_EXPIRED, UNABLE_TO_VERIFY_…,
+ * SELF_SIGNED_…, ERR_TLS_CERT_ALTNAME_INVALID). Réessayer toutes les 30 s
+ * n'y changerait rien. Une coupure pendant la poignée de main (ECONNRESET,
+ * « socket disconnected before secure TLS connection ») reste passagère.
+ * [à vérifier en recette : le code exact renvoyé pour un certificat révoqué.]
+ */
+const TLS_CERTIFICATE_FAILURE = new RegExp(
+  [
+    '^ERR_SSL_\\w*ALERT_\\w*(CERTIFICATE|UNKNOWN_CA|ACCESS_DENIED|HANDSHAKE_FAILURE)',
+    '^ERR_TLS_CERT',
+    '^CERT_',
+    '^(UNABLE_TO_(GET|VERIFY|DECRYPT)|SELF_SIGNED|DEPTH_ZERO_SELF_SIGNED)',
+    'alert (bad certificate|certificate (revoked|expired|unknown|required)|unknown ca)',
+  ].join('|'),
+  'i',
+);
+
+export function isTlsCertificateFailure(reason: string | null): boolean {
+  return reason !== null && TLS_CERTIFICATE_FAILURE.test(reason);
+}
 
 export type PushOutcome = 'ok' | 'dead' | 'retry' | 'halt' | 'fail' | 'aborted';
 
@@ -90,6 +117,7 @@ export function classifyPush(response: PushResponse): PushOutcome {
   if (reason === 'Aborted') return 'aborted';
   if (status === 410 || (reason !== null && DEAD_TOKEN_REASONS.has(reason))) return 'dead';
   if (status === 403 || (reason !== null && HALT_REASONS.has(reason))) return 'halt';
+  if (status === 0 && isTlsCertificateFailure(reason)) return 'halt';
   if (status === 0 || status === 429 || status >= 500 || (reason !== null && RETRIABLE_REASONS.has(reason))) return 'retry';
   // 400 (BadPath, PayloadEmpty…) : défaut de notre côté, un nouvel essai
   // enverrait la même requête.
@@ -169,7 +197,9 @@ export function http2Transport(
       status = Number(headers[':status'] ?? 0);
     });
     stream.on('data', (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-    stream.on('error', (error) => finish({ status: 0, reason: error.message }));
+    // Une poignée de main refusée détruit la session : le flux reçoit
+    // ERR_HTTP2_STREAM_CANCEL, la vraie raison (alerte TLS) en `cause`.
+    stream.on('error', (error) => finish({ status: 0, reason: streamFailure(error) }));
     stream.on('end', () => {
       let reason: string | null = null;
       if (status !== 200) {
@@ -181,12 +211,29 @@ export function http2Transport(
       }
       finish({ status, reason });
     });
+    // Flux fermé sans réponse ni erreur (TLS 1.3 : le serveur rejette le
+    // certificat client APRÈS la poignée de main, la session se ferme) :
+    // sans ce filet, la promesse attendrait le signal du vidage.
+    stream.on('close', () => {
+      if (status === 0) finish({ status: 0, reason: 'StreamClosed' });
+      else finish({ status, reason: status === 200 ? null : `HTTP ${status}` });
+    });
     stream.setTimeout(REQUEST_TIMEOUT_MS, () => {
       stream?.close(http2.constants.NGHTTP2_CANCEL);
       finish({ status: 0, reason: 'Timeout' });
     });
     stream.end(request.body);
   });
+}
+
+/** Raison lisible d'une erreur de flux : le code de la cause (TLS) d'abord. */
+export function streamFailure(error: Error & { code?: unknown; cause?: unknown }): string {
+  const cause = error.cause as (Error & { code?: unknown }) | undefined;
+  if (cause && typeof cause.code === 'string') return cause.code;
+  if (typeof error.code === 'string' && error.code !== 'ERR_HTTP2_STREAM_CANCEL' && error.code !== 'ERR_HTTP2_STREAM_ERROR') {
+    return error.code;
+  }
+  return cause?.message ?? error.message;
 }
 
 /**

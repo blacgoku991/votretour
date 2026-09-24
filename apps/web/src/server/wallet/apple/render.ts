@@ -109,9 +109,13 @@ const POSITION_PHASES: ReadonlySet<WalletPhase> = new Set<WalletPhase>([
   'waiting', 'soon', 'one', 'paused', 'closed', 'event_waiting',
 ]);
 
-/** Libellés Apple en petites capitales ; toLocaleUpperCase garde les accents (« ARRIVÉE »). */
+/**
+ * Libellés Apple en petites capitales ; toLocaleUpperCase garde les
+ * accents (« ARRIVÉE »). Bornés : un nom de lieu servant de libellé peut
+ * être long (clipLabel, plus bas).
+ */
 export function upper(label: string): string {
-  return label.toLocaleUpperCase('fr-FR');
+  return clipLabel(label.toLocaleUpperCase('fr-FR'));
 }
 
 /** Date Wallet : ISO 8601 à la seconde, en UTC (Wallet l'affiche dans le fuseau de l'appareil). */
@@ -143,6 +147,19 @@ function toleranceMinutes(view: WalletView): number | null {
   return Number.isFinite(minutes) && minutes > 0 ? minutes : null;
 }
 
+/**
+ * Fenêtre de pertinence d'une attente : au plus 4 h. Au-delà (profils
+ * véhicule ou appareil, où un ticket reste actif des jours entre deux
+ * étapes), le pass n'a rien à faire sur l'écran verrouillé : il y revient
+ * à chaque changement, qui produit une nouvelle version.
+ */
+export const RELEVANCE_MAX_MINUTES = 240;
+
+/** Le plus récent de deux horodatages ISO (un horodatage absent est ignoré). */
+function latest(a: string | null | undefined, b: string): string {
+  return a && Date.parse(a) > Date.parse(b) ? a : b;
+}
+
 /** Fenêtre de pertinence (écran verrouillé) : l'attente, resserrée quand c'est le tour. */
 function relevance(view: WalletView, snap: WalletSnapshot): { startDate: string; endDate: string } | null {
   if (!ACTIVE_PHASES.has(view.phase)) return null;
@@ -153,18 +170,37 @@ function relevance(view: WalletView, snap: WalletSnapshot): { startDate: string;
     const since = snap.entry.calledAt ?? snap.entry.statusChangedAt ?? view.times.joinedAt;
     return { startDate: appleDate(since), endDate: addMinutes(since, 30) };
   }
-  const ttl = snap.queue.entryTtlMinutes && snap.queue.entryTtlMinutes > 0 ? snap.queue.entryTtlMinutes : 240;
-  return { startDate: appleDate(view.times.joinedAt), endDate: addMinutes(view.times.joinedAt, ttl) };
+  // Depuis le dernier changement de statut, pas depuis l'arrivée : un
+  // ticket d'atelier déposé lundi redevient pertinent quand il bouge.
+  const since = latest(snap.entry.statusChangedAt, view.times.joinedAt);
+  const ttl = snap.queue.entryTtlMinutes && snap.queue.entryTtlMinutes > 0 ? snap.queue.entryTtlMinutes : RELEVANCE_MAX_MINUTES;
+  return { startDate: appleDate(since), endDate: addMinutes(since, Math.min(ttl, RELEVANCE_MAX_MINUTES)) };
 }
 
-/** Date à laquelle Wallet range le pass parmi les passes expirés, même sans mise à jour. */
-function expiration(view: WalletView, snap: WalletSnapshot): string | null {
+/**
+ * Date à laquelle Wallet range le pass parmi les passes expirés, même sans
+ * mise à jour. JAMAIS sur un ticket actif : depuis la migration 0034, le
+ * moteur compte le délai d'expiration depuis le dernier changement
+ * d'étape (coalesce(stage_changed_at, joined_at) + TTL), que l'instantané
+ * ne porte pas, et un changement d'étape ne met pas le pass en file. Une
+ * date calculée ici classerait « expiré » le ticket d'une voiture encore
+ * à l'atelier. Quand le moteur expire vraiment le ticket, la file d'envoi
+ * pousse une version annulée (voided) : c'est elle qui fait foi.
+ */
+function expiration(view: WalletView): string | null {
   if (view.phase === 'done' && view.archiveAt) return appleDate(view.archiveAt);
   if (view.phase === 'event_access' && view.times.graceUntil) return appleDate(view.times.graceUntil);
-  if (ACTIVE_PHASES.has(view.phase) && snap.queue.entryTtlMinutes && snap.queue.entryTtlMinutes > 0) {
-    return addMinutes(view.times.joinedAt, snap.queue.entryTtlMinutes);
-  }
   return null;
+}
+
+/**
+ * Libellé du recto borné : au-delà, Wallet coupe sans prévenir. Un nom de
+ * lieu ou d'événement très long finit par « … » plutôt qu'au milieu d'un mot.
+ */
+export function clipLabel(label: string, max: number = FRONT_LIMITS.labelChars): string {
+  const chars = [...label];
+  if (chars.length <= max) return label;
+  return `${chars.slice(0, max - 1).join('').trimEnd()}…`;
 }
 
 function statusField(view: WalletView, ctx: ApplePassContext): AppleField {
@@ -184,15 +220,18 @@ function statusField(view: WalletView, ctx: ApplePassContext): AppleField {
 
 function primaryField(view: WalletView): AppleField {
   const positional = POSITION_PHASES.has(view.phase) && view.position !== null;
-  const label = view.kind === 'event' && view.event
-    ? view.event.name
-    : positional ? WALLET_LABEL.ahead : view.brand.placeName;
   // Le chiffre en nombre : Wallet l'affiche en très grand, comme le
   // compteur de la page client. « Plus de 20 » reste un texte.
   const value = positional && view.position?.value !== null && view.position?.value !== undefined
     ? view.position.value
     : walletPrimaryValue(view);
-  return { key: 'devant', label: upper(label), value };
+  // Un chiffre se lit toujours avec « Devant vous » : sous le nom d'un
+  // drop, « 12 » ne dirait plus rien. Sur un billet, le nom de l'événement
+  // est écrit en haut (logoText) ; un mot (« Accès ouvert », « Utilisé »)
+  // se suffit, sans étiquette. Sur un ticket de file, le lieu coiffe le mot.
+  if (positional) return { key: 'devant', label: upper(WALLET_LABEL.ahead), value };
+  if (view.kind === 'event' && view.event) return { key: 'devant', value };
+  return { key: 'devant', label: upper(view.brand.placeName), value };
 }
 
 function backFields(view: WalletView): AppleField[] {
@@ -250,21 +289,21 @@ function eventFields(view: WalletView, ctx: ApplePassContext): AppleFieldSet {
   if (view.event?.ticketNumber) {
     header.push({ key: 'numero', label: WALLET_LABEL.ticket, value: view.event.ticketNumber, textAlignment: 'PKTextAlignmentRight' });
   }
+  // Accès ouvert : l'heure limite est déjà dans la consigne (« Présentez-
+  // vous avant 14:32 »), une seule fois. À côté, la tolérance, qui n'est
+  // écrite nulle part ailleurs au recto.
   const secondary: AppleField[] = [statusField(view, ctx)];
-  if (view.phase === 'event_access' && view.times.limitAt) {
+  const tolerance = view.phase === 'event_access' ? toleranceMinutes(view) : null;
+  if (tolerance) {
     secondary.push({
-      key: 'limite',
-      label: upper(WALLET_LABEL.until),
-      value: appleDate(view.times.limitAt),
-      dateStyle: 'PKDateStyleNone',
-      timeStyle: 'PKDateStyleShort',
+      key: 'tolerance',
+      label: upper(WALLET_LABEL.grace),
+      value: `+${tolerance} min`,
       textAlignment: 'PKTextAlignmentRight',
     });
   }
   const auxiliary: AppleField[] = [];
   if (view.event?.wave) auxiliary.push({ key: 'vague', label: upper(WALLET_LABEL.wave), value: String(view.event.wave) });
-  const tolerance = view.phase === 'event_access' ? toleranceMinutes(view) : null;
-  if (tolerance) auxiliary.push({ key: 'tolerance', label: upper(WALLET_LABEL.grace), value: `+${tolerance} min` });
   auxiliary.push({ key: 'lieu', label: upper(WALLET_LABEL.place), value: view.brand.placeName });
   return {
     headerFields: header,
@@ -295,12 +334,16 @@ export function renderApplePassJson(view: WalletView, snap: WalletSnapshot, ctx:
     labelColor: palette.apple.labelColor,
     sharingProhibited: true,
   };
-  // Sans logo téléversé, le signe Rangvia et, à côté, le nom du commerce
-  // (le lieu précis est écrit plus bas, champ « Lieu »).
-  if (!ctx.hasBrandLogo) pass.logoText = view.brand.orgName;
+  // Billet de drop : le nom de l'événement en haut, à côté du logo de la
+  // marque (ou du signe Rangvia), comme sur un billet imprimé ; le
+  // commerce reste le nom de l'écran verrouillé (organizationName) et le
+  // lieu est écrit plus bas. Ticket de file : sans logo téléversé, le nom
+  // du commerce à côté du signe (le lieu précis : champ « Lieu »).
+  if (isEvent && view.event) pass.logoText = clipLabel(view.event.name);
+  else if (!ctx.hasBrandLogo) pass.logoText = clipLabel(view.brand.orgName);
   if (view.voided) pass.voided = true;
 
-  const expires = expiration(view, snap);
+  const expires = expiration(view);
   if (expires) pass.expirationDate = expires;
 
   const window = relevance(view, snap);

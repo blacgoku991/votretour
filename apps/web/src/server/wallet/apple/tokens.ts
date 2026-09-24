@@ -61,3 +61,28 @@ export function verifyApplePassToken(serial: string, header: string | null | und
 export function redactApplePass(text: string): string {
   return text.replace(/ApplePass\s+\S+/gi, 'ApplePass ***');
 }
+
+/**
+ * Ligne du journal envoyé par Wallet (/v1/log) → texte publiable dans les
+ * journaux applicatifs. Wallet y écrit ce qu'il a sous la main :
+ *   « Register task (for device 6b8a…, pass type pass.x, serial number
+ *   q7Kx…; with web service url https://…/v1/devices/6b8a…/registrations/
+ *   pass.x/q7Kx…) encountered error: … »
+ * L'identifiant d'appareil EST le secret de la liste des mises à jour
+ * (GET …/registrations/{type}) ; le numéro de série désigne un client. On
+ * masque donc, en plus des jetons ApplePass : les identifiants après
+ * « device » et « serial number(s) », les segments d'URL qui les portent,
+ * tout numéro de série de notre forme (22 caractères) et toute longue
+ * chaîne hexadécimale (identifiant d'appareil, jeton push). Le type de pass
+ * et le message d'erreur restent : c'est ce qui sert au diagnostic.
+ */
+export function redactWalletLog(text: string): string {
+  return redactApplePass(text)
+    .replace(/(authentication\s+token\s*[:=]?\s*)[^\s,;)]+/gi, '$1***')
+    .replace(/(\bdevice(?:\s+library\s+identifier)?\s*[:=]?\s*)[A-Za-z0-9._-]{8,}/gi, '$1***')
+    .replace(/(\bserial\s+numbers?\s*[:=]?\s*)[A-Za-z0-9._-]+/gi, '$1***')
+    .replace(/(\/devices\/)[^/\s?#]+/g, '$1***')
+    .replace(/(\/(?:registrations|passes)\/[^/\s?#]+\/)[^/\s?#)]+/g, '$1***')
+    .replace(/\b[0-9A-Za-z]{22}\b/g, '***')
+    .replace(/\b[0-9a-fA-F]{32,}\b/g, '***');
+}

@@ -1,5 +1,6 @@
 import { X509Certificate, createHash, createPrivateKey, type KeyObject } from 'node:crypto';
 import forge from 'node-forge';
+import { appleRootCa } from './apple-root';
 
 /**
  * Configuration Apple Wallet : lecture ET contrôles.
@@ -18,8 +19,13 @@ import forge from 'node-forge';
  *  4. clé privée : déchiffrée par sa phrase de passe, RSA, et c'est bien
  *     celle du certificat ;
  *  5. chaîne : le certificat est émis ET signé par le WWDR fourni, et ce
- *     WWDR est un certificat d'autorité émis par « Apple Root CA ». Le
- *     code ne suppose pas G4 : il vérifie la relation, pas un nom figé ;
+ *     WWDR est un certificat d'autorité SIGNÉ par la vraie « Apple Root
+ *     CA », dont la clé publique est embarquée (apple-root.ts, empreinte
+ *     contrôlée). Le code ne suppose pas G4 : il vérifie la relation, pas
+ *     un nom figé. Un nom ne prouve rien : hors production seulement, une
+ *     chaîne de TEST (scripts/wallet-dev-certs.sh, racine qui se contente
+ *     de s'appeler « Apple Root CA ») est acceptée pour le banc local,
+ *     et signalée comme telle (details.chain = 'test') ;
  *  6. validité dans le temps (certificat et WWDR), avec l'échéance en
  *     clair pour la carte du super-admin (alerte à J-30 : le certificat
  *     Pass Type ID se renouvelle chaque année).
@@ -62,6 +68,13 @@ export interface AppleConfigInput {
   production: boolean;
   /** Variables renseignées mais illisibles (ni PEM ni base64 d'un PEM). */
   unreadable?: readonly string[];
+  /**
+   * Racine de confiance à la place d'Apple Root CA : TESTS SEULEMENT
+   * (l'AC générée à la volée joue la racine, pour vérifier le chemin de
+   * production). runtime.ts ne la renseigne jamais, aucune variable
+   * d'environnement n'y mène.
+   */
+  trustAnchorPem?: string | null;
 }
 
 /** Ce que les autres modules Apple utilisent : jamais sérialisé, jamais journalisé. */
@@ -84,6 +97,8 @@ export interface AppleWalletConfig {
   wwdrNotAfter: Date;
   /** Empreinte SHA-256 courte du certificat (publique), pour reconnaître un renouvellement. */
   certFingerprint: string;
+  /** 'apple' : WWDR signé par la racine épinglée ; 'test' : chaîne de test, hors production seulement. */
+  chain: 'apple' | 'test';
 }
 
 export type AppleConfigIssue =
@@ -234,11 +249,7 @@ export function parseAppleConfig(input: AppleConfigInput): AppleConfigParse {
     if (!cert.x509.checkIssued(wwdr.x509) || !cert.x509.verify(wwdr.x509.publicKey)) {
       throw new ConfigError('chain', 'Certificat intermédiaire incohérent : le certificat Pass Type ID n’est pas émis par ce WWDR');
     }
-    const rootCn = attribute(wwdr.forge.issuer, OID_CN);
-    const rootO = attribute(wwdr.forge.issuer, OID_O);
-    if (rootCn !== 'Apple Root CA' || rootO !== 'Apple Inc.') {
-      throw new ConfigError('wwdr_root', 'Le WWDR fourni n’est pas émis par Apple Root CA');
-    }
+    const chain = wwdrTrust(wwdr, input);
 
     return {
       ok: true,
@@ -254,12 +265,45 @@ export function parseAppleConfig(input: AppleConfigInput): AppleConfigParse {
         certNotAfter: partial.certNotAfter,
         wwdrNotAfter: partial.wwdrNotAfter,
         certFingerprint: partial.certFingerprint,
+        chain,
       },
     };
   } catch (error) {
     if (error instanceof ConfigError) return { ok: false, issue: error.issue, reason: error.message, partial };
     return { ok: false, issue: 'cert', reason: 'Configuration Apple Wallet illisible', partial };
   }
+}
+
+/**
+ * Le WWDR est-il signé par la racine épinglée (Apple Root CA, ou l'ancre
+ * d'un test) ? Nom d'émetteur ET identifiant de clé (checkIssued), puis
+ * la signature elle-même (verify). En production, rien d'autre ne passe.
+ */
+function wwdrTrust(wwdr: { forge: forge.pki.Certificate; x509: X509Certificate }, input: AppleConfigInput): 'apple' | 'test' {
+  let anchor: X509Certificate;
+  try {
+    anchor = input.trustAnchorPem ? new X509Certificate(input.trustAnchorPem) : appleRootCa();
+  } catch (cause) {
+    throw new ConfigError('wwdr_root', cause instanceof Error ? cause.message : 'Racine Apple Root CA illisible');
+  }
+  if (wwdr.x509.checkIssued(anchor) && wwdr.x509.verify(anchor.publicKey)) return 'apple';
+
+  const rootCn = attribute(wwdr.forge.issuer, OID_CN);
+  const rootO = attribute(wwdr.forge.issuer, OID_O);
+  if (input.production) {
+    throw new ConfigError(
+      'wwdr_root',
+      rootCn === 'Apple Root CA'
+        ? 'Le WWDR se dit émis par Apple Root CA mais n’est pas signé par la vraie racine d’Apple : chaîne de test ? Aucun iPhone n’accepterait ces passes'
+        : 'Le WWDR fourni n’est pas émis par Apple Root CA',
+    );
+  }
+  if (rootCn !== 'Apple Root CA' || rootO !== 'Apple Inc.') {
+    throw new ConfigError('wwdr_root', 'Le WWDR fourni n’est pas émis par Apple Root CA');
+  }
+  // Banc local : la chaîne de scripts/wallet-dev-certs.sh. Elle se construit
+  // et se vérifie avec OpenSSL, aucun iPhone ne l'acceptera.
+  return 'test';
 }
 
 function detailsOf(
@@ -278,6 +322,7 @@ function detailsOf(
   if (source.wwdrNotAfter) details.wwdrExpiresAt = source.wwdrNotAfter.toISOString();
   if (source.certFingerprint) details.certFingerprint = source.certFingerprint;
   if ('webServiceUrl' in source) details.webServiceURL = source.webServiceUrl;
+  if ('chain' in source) details.chain = source.chain;
   return details;
 }
 

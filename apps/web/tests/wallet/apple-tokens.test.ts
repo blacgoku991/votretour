@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
-  applePassToken, parseApplePassAuthorization, redactApplePass, verifyApplePassToken,
+  applePassToken, parseApplePassAuthorization, redactApplePass, redactWalletLog, verifyApplePassToken,
 } from '../../src/server/wallet/apple/tokens';
 
 /**
@@ -70,5 +70,23 @@ describe('vérification', () => {
 describe('journaux', () => {
   it('masque les jetons', () => {
     expect(redactApplePass('Authorization: ApplePass abcdefghijklmnopqrstu refusé')).toBe('Authorization: ApplePass *** refusé');
+  });
+
+  it('journal de Wallet : jetons, identifiants d’appareil, séries et jetons push masqués', () => {
+    const device = '6b8a2c4e1f0d9a7b3c5e';
+    const push = 'ab'.repeat(32);
+    const line = `Register task (for device ${device}, pass type pass.fr.rangvia.ticket, serial number ${SERIAL}; `
+      + `with web service url https://rangvia.fr/api/wallet/apple/v1/devices/${device}/registrations/pass.fr.rangvia.ticket/${SERIAL}) `
+      + `encountered error: Authentication failure (ApplePass ${applePassToken(SERIAL, SECRET)}) push ${push}`;
+    const out = redactWalletLog(line);
+    for (const secret of [device, SERIAL, push, applePassToken(SERIAL, SECRET)]) expect(out).not.toContain(secret);
+    expect(out).toContain('pass.fr.rangvia.ticket');
+    expect(out).toContain('encountered error: Authentication failure');
+    expect(out).toContain('/devices/***/registrations/pass.fr.rangvia.ticket/***');
+  });
+
+  it('journal de Wallet : un message sans identifiant reste intact', () => {
+    const plain = 'Web service at https://rangvia.fr/api/wallet/apple returned 503';
+    expect(redactWalletLog(plain)).toBe(plain);
   });
 });

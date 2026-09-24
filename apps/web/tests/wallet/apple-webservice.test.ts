@@ -3,7 +3,8 @@ import { checkAppleConfig, type AppleWalletConfig } from '../../src/server/walle
 import type { AppleStore, PassLookup, RegisterResult } from '../../src/server/wallet/apple/store';
 import { applePassToken } from '../../src/server/wallet/apple/tokens';
 import {
-  LIMITS, PkpassCache, getLatestPass, listUpdatedSerials, receiveLog, registerDevice, unregisterDevice,
+  LIMITS, LOG_MAX_BYTES, PkpassCache, deviceKey, getLatestPass, listUpdatedSerials, readJsonBounded, receiveLog, registerDevice,
+  unregisterDevice,
   type RenderedPass, type WebServiceDeps,
 } from '../../src/server/wallet/apple/webservice';
 import { TEST_PASS_TYPE, TEST_SECRET, configInput, makePki } from './apple-fixtures';
@@ -175,7 +176,18 @@ describe('inscription', () => {
     h.denied.clear();
     h.denied.add('wallet-ws:ip');
     expect((await getLatestPass(new Request(BASE, { headers: auth() }), reg(), h.deps)).status).toBe(429);
-    expect(LIMITS).toMatchObject({ ip: { max: 300, window: 300 }, serial: { max: 60, window: 300 }, log: { max: 20, window: 300 } });
+    // Plafond par adresse LARGE : un drop, c'est des centaines d'iPhones
+    // derrière le même Wi-Fi ; la vraie borne est par pass et par appareil.
+    expect(LIMITS).toMatchObject({
+      ip: { max: 3000, window: 300 }, serial: { max: 60, window: 300 }, device: { max: 120, window: 300 }, log: { max: 20, window: 300 },
+    });
+  });
+
+  it('corps démesuré : 400 sans le lire en entier, rien en base', async () => {
+    const h = harness();
+    const big = JSON.stringify({ pushToken: PUSH, pad: 'x'.repeat(4096) });
+    expect((await registerDevice(post(big), reg(), h.deps)).status).toBe(400);
+    expect(h.calls).toEqual([]);
   });
 });
 
@@ -207,11 +219,26 @@ describe('liste des passes mis à jour', () => {
     expect(h.calls).toContain(`serials ${DEVICE} ${TEST_PASS_TYPE} 42`);
   });
 
-  it('étiquette illisible : 400, sans SQL', async () => {
+  it('étiquette illisible ou hors de la plage exacte d’un nombre : 400, sans SQL', async () => {
     const h = harness();
     expect((await listUpdatedSerials(list('abc'), reg(), h.deps)).status).toBe(400);
     expect((await listUpdatedSerials(list('1;drop'), reg(), h.deps)).status).toBe(400);
+    // 16 chiffres et plus : Number() perdrait des unités (au-delà de 2^53).
+    expect((await listUpdatedSerials(list('9007199254740993'), reg(), h.deps)).status).toBe(400);
+    expect((await listUpdatedSerials(list('9'.repeat(19)), reg(), h.deps)).status).toBe(400);
     expect(h.calls).toEqual([]);
+    expect((await listUpdatedSerials(list('999999999999999'), reg(), h.deps)).status).toBe(204);
+    expect(h.calls).toEqual([`serials ${DEVICE} ${TEST_PASS_TYPE} 999999999999999`]);
+  });
+
+  it('limite par appareil, sous une clé condensée (jamais l’identifiant en base)', async () => {
+    const h = harness();
+    await listUpdatedSerials(list(), reg(), h.deps);
+    expect(h.limits).toEqual(['wallet-ws:ip:iphash', `wallet-ws:device:${deviceKey(DEVICE)}`]);
+    expect(h.limits.join(' ')).not.toContain(DEVICE);
+    expect(deviceKey(DEVICE)).toMatch(/^[0-9a-f]{32}$/);
+    h.denied.add('wallet-ws:device');
+    expect((await listUpdatedSerials(list(), reg(), h.deps)).status).toBe(429);
   });
 });
 
@@ -282,6 +309,53 @@ describe('journal de l’iPhone', () => {
     const h = harness();
     expect((await receiveLog(new Request(`${BASE}/log`, { method: 'POST', body: 'nope' }), h.deps)).status).toBe(200);
     expect(h.logs).toEqual([]);
+  });
+
+  it('identifiants d’appareil et numéros de série masqués, pas seulement les jetons', async () => {
+    const h = harness();
+    const line = `Register task (for device ${DEVICE}, pass type ${TEST_PASS_TYPE}, serial number ${SERIAL}; with web service url `
+      + `${BASE}/devices/${DEVICE}/registrations/${TEST_PASS_TYPE}/${SERIAL}) encountered error: Unexpected response code 401`;
+    await receiveLog(new Request(`${BASE}/log`, { method: 'POST', body: JSON.stringify({ logs: [line] }) }), h.deps);
+    const [logged] = h.logs[0]!;
+    expect(logged).not.toContain(DEVICE);
+    expect(logged).not.toContain(SERIAL);
+    // Ce qui sert au diagnostic reste.
+    expect(logged).toContain(TEST_PASS_TYPE);
+    expect(logged).toContain('Unexpected response code 401');
+  });
+
+  it('corps de plus de 16 ko : ignoré sans être lu, 200', async () => {
+    const h = harness();
+    const logs = Array.from({ length: 100 }, () => 'y'.repeat(200));
+    const res = await receiveLog(new Request(`${BASE}/log`, { method: 'POST', body: JSON.stringify({ logs }) }), h.deps);
+    expect(res.status).toBe(200);
+    expect(h.logs).toEqual([]);
+  });
+});
+
+describe('lecture bornée d’un corps JSON', () => {
+  const stream = (parts: string[]) => new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const part of parts) controller.enqueue(new TextEncoder().encode(part));
+      controller.close();
+    },
+  });
+  const chunked = (parts: string[]) =>
+    new Request(`${BASE}/log`, { method: 'POST', body: stream(parts), duplex: 'half' } as RequestInit & { duplex: 'half' });
+
+  it('Content-Length annoncé au-delà de la borne : refus sans lecture', async () => {
+    const req = new Request(`${BASE}/log`, { method: 'POST', body: '{"logs":[]}', headers: { 'Content-Length': String(LOG_MAX_BYTES + 1) } });
+    expect(await readJsonBounded(req, LOG_MAX_BYTES)).toBeNull();
+  });
+
+  it('corps sans taille annoncée (chunked) : lecture arrêtée à la borne', async () => {
+    expect(await readJsonBounded(chunked(['{"logs":["', 'z'.repeat(2000), '"]}']), 1024)).toBeNull();
+    expect(await readJsonBounded(chunked(['{"logs":', '["ok"]}']), 1024)).toEqual({ logs: ['ok'] });
+  });
+
+  it('JSON invalide ou corps absent : null', async () => {
+    expect(await readJsonBounded(chunked(['{pas']), 1024)).toBeNull();
+    expect(await readJsonBounded(new Request(`${BASE}/log`, { method: 'POST' }), 1024)).toBeNull();
   });
 });
 

@@ -20,8 +20,10 @@
 #      (Team ID), clé ↔ certificat, dates ;
 #   3. télécharge le WWDR de la génération qui a émis le certificat (G4
 #      pour tout certificat émis depuis 2022), vérifie qu'il est bien
-#      l'émetteur, qu'il est émis par « Apple Root CA » (racine lue dans le
-#      trousseau système du Mac), et que toute la chaîne se vérifie ;
+#      l'émetteur, qu'il est signé par « Apple Root CA » (racine lue dans
+#      le trousseau système du Mac, ou fournie), dont l'EMPREINTE doit être
+#      celle publiée par Apple : un nom ne prouve rien, n'importe qui peut
+#      fabriquer une racine qui s'appelle « Apple Root CA » ;
 #   4. RECHIFFRE la clé (PKCS#8, AES-256) avec une phrase de passe neuve,
 #      tirée au hasard (hexadécimal : sans caractère qui gênerait un
 #      .env), au lieu de réutiliser le mot de passe du .p12 ;
@@ -29,10 +31,18 @@
 #
 # Variables facultatives (poste sans accès à apple.com, vérification
 # manuelle) : WWDR_PEM_FILE (WWDR déjà téléchargé, PEM ou DER),
-# APPLE_ROOT_PEM_FILE (racine Apple Root CA, PEM ou DER), P12_PASSWORD
-# (sinon demandé sans écho).
+# APPLE_ROOT_PEM_FILE (racine Apple Root CA, PEM ou DER ; son empreinte
+# est comparée à celle d'Apple), P12_PASSWORD (sinon demandé sans écho).
+# ALLOW_TEST_ROOT=1 accepte une autre racine (AC de scripts/wallet-dev-
+# certs.sh, essais locaux) : les lignes produites sont alors refusées par
+# un serveur de production, qui épingle la vraie racine.
 # ---------------------------------------------------------------------------
 set -eu
+
+# Empreinte SHA-256 de « Apple Root CA » (AppleIncRootCertificate.cer,
+# https://www.apple.com/certificateauthority/), la même que celle épinglée
+# par le serveur (apps/web/src/server/wallet/apple/apple-root.ts).
+APPLE_ROOT_SHA256="B0:B1:73:0E:CB:C7:FF:45:05:14:2C:49:F1:29:5E:6E:DA:6B:CA:ED:7E:2C:68:C5:BE:91:B5:A1:10:01:F0:24"
 
 say() { printf '%s\n' "$*" >&2; }
 fail() { say ""; say "ÉCHEC : $*"; exit 1; }
@@ -46,15 +56,23 @@ command -v openssl >/dev/null 2>&1 || fail "openssl introuvable."
 
 umask 077
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/rangvia-wallet.XXXXXX")
-cleanup() { rm -rf "$WORK"; }
-trap cleanup EXIT INT TERM
+ECHO_OFF=""
+cleanup() {
+  # Interrompu (Ctrl-C) pendant la saisie du mot de passe : le terminal
+  # retrouve son écho.
+  if [ -n "$ECHO_OFF" ] && [ -t 0 ]; then stty echo 2>/dev/null || true; fi
+  rm -rf "$WORK"
+}
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 # --- 1. Mot de passe du .p12 -------------------------------------------------
 if [ -z "${P12_PASSWORD:-}" ]; then
   printf 'Mot de passe du fichier %s : ' "$P12" >&2
-  if [ -t 0 ]; then stty -echo; fi
+  if [ -t 0 ]; then ECHO_OFF=1; stty -echo; fi
   IFS= read -r P12_PASSWORD || true
-  if [ -t 0 ]; then stty echo; fi
+  if [ -t 0 ]; then stty echo; ECHO_OFF=""; fi
   say ""
 fi
 export P12_PASSWORD
@@ -88,7 +106,7 @@ PASS_TYPE_ID=$(field "$SUBJECT" 'UID|userId|0\.9\.2342\.19200300\.100\.1\.1')
 TEAM_ID=$(field "$SUBJECT" 'OU')
 case "$PASS_TYPE_ID" in
   pass.*) ;;
-  *) fail "ce n'est pas un certificat Pass Type ID (UID absent ou inattendu : « $PASS_TYPE_ID »)." ;;
+  *) fail "ce n’est pas un certificat Pass Type ID (UID absent ou inattendu : « $PASS_TYPE_ID »)." ;;
 esac
 printf '%s' "$TEAM_ID" | grep -Eq '^[A-Z0-9]{10}$' || fail "Team ID (OU=) introuvable dans le certificat."
 
@@ -130,8 +148,8 @@ WWDR_SUBJECT=$(openssl x509 -in "$WORK/wwdr.pem" -noout -subject -nameopt RFC225
   || openssl x509 -in "$WORK/wwdr.pem" -noout -subject)
 WWDR_ISSUER=$(openssl x509 -in "$WORK/wwdr.pem" -noout -issuer -nameopt RFC2253 2>/dev/null \
   || openssl x509 -in "$WORK/wwdr.pem" -noout -issuer)
-[ "${WWDR_SUBJECT#*=}" = "${ISSUER#*=}" ] || fail "le WWDR ($WWDR_SUBJECT) n'est pas l'émetteur du certificat ($ISSUER)."
-[ "$(field "$WWDR_ISSUER" 'CN')" = "Apple Root CA" ] || fail "le WWDR n'est pas émis par Apple Root CA."
+[ "${WWDR_SUBJECT#*=}" = "${ISSUER#*=}" ] || fail "le WWDR ($WWDR_SUBJECT) n’est pas l’émetteur du certificat ($ISSUER)."
+[ "$(field "$WWDR_ISSUER" 'CN')" = "Apple Root CA" ] || fail "le WWDR n’est pas émis par Apple Root CA."
 openssl x509 -in "$WORK/wwdr.pem" -noout -checkend 0 >/dev/null || fail "WWDR expiré."
 
 # Racine : trousseau système du Mac (source de confiance locale), sinon
@@ -142,12 +160,12 @@ if [ -n "${APPLE_ROOT_PEM_FILE:-}" ]; then
   ROOT_SOURCE="fichier $APPLE_ROOT_PEM_FILE"
 elif command -v security >/dev/null 2>&1 \
   && security find-certificate -a -c "Apple Root CA" -p /System/Library/Keychains/SystemRootCertificates.keychain > "$WORK/root.all" 2>/dev/null; then
-  # Le trousseau peut renvoyer plusieurs « Apple Root CA… » : on garde celui
-  # dont le nom est EXACTEMENT « Apple Root CA ».
+  # Le trousseau peut renvoyer plusieurs « Apple Root CA… » (G2, G3) : on
+  # garde celui dont l'EMPREINTE est celle d'Apple Root CA.
   awk -v dir="$WORK" '/BEGIN CERTIFICATE/{n++} {print > (dir "/root." n ".pem")}' "$WORK/root.all"
   for candidate in "$WORK"/root.[0-9]*.pem; do
-    CN=$(field "$(openssl x509 -in "$candidate" -noout -subject -nameopt RFC2253 2>/dev/null || true)" 'CN')
-    if [ "$CN" = "Apple Root CA" ]; then cp "$candidate" "$WORK/root.pem"; fi
+    FP=$(openssl x509 -in "$candidate" -noout -fingerprint -sha256 2>/dev/null | sed 's/^.*=//' | tr 'a-f' 'A-F' || true)
+    if [ "$FP" = "$APPLE_ROOT_SHA256" ]; then cp "$candidate" "$WORK/root.pem"; fi
   done
   [ -f "$WORK/root.pem" ] || fail "Apple Root CA introuvable dans le trousseau système."
   ROOT_SOURCE="trousseau système de macOS"
@@ -155,8 +173,19 @@ else
   fail "impossible de lire Apple Root CA (trousseau macOS absent) : fournissez APPLE_ROOT_PEM_FILE."
 fi
 
+ROOT_SHA256=$(openssl x509 -in "$WORK/root.pem" -noout -fingerprint -sha256 | sed 's/^.*=//' | tr 'a-f' 'A-F')
+ROOT_LABEL="Apple Root CA"
+if [ "$ROOT_SHA256" != "$APPLE_ROOT_SHA256" ]; then
+  if [ "${ALLOW_TEST_ROOT:-}" = "1" ]; then
+    ROOT_LABEL="RACINE DE TEST (ALLOW_TEST_ROOT=1), refusée par un serveur de production"
+    say "ATTENTION : la racine ($ROOT_SOURCE) n’est pas Apple Root CA (empreinte $ROOT_SHA256)."
+  else
+    fail "la racine ($ROOT_SOURCE) n’est pas Apple Root CA : empreinte $ROOT_SHA256, attendue $APPLE_ROOT_SHA256."
+  fi
+fi
+
 openssl verify -CAfile "$WORK/root.pem" "$WORK/wwdr.pem" >/dev/null 2>&1 \
-  || fail "le WWDR ne se vérifie pas avec Apple Root CA ($ROOT_SOURCE)."
+  || fail "le WWDR ne se vérifie pas avec la racine $ROOT_LABEL ($ROOT_SOURCE)."
 openssl verify -CAfile "$WORK/root.pem" -untrusted "$WORK/wwdr.pem" "$WORK/cert.pem" >/dev/null 2>&1 \
   || fail "la chaîne certificat → WWDR → Apple Root CA ne se vérifie pas."
 
@@ -176,8 +205,8 @@ say "Team ID (OU=)           : $TEAM_ID (APPLE_WALLET_TEAM_ID peut rester vide)"
 say "Expire le               : $END_DATE$SOON"
 say "Intermédiaire           : $(field "$WWDR_SUBJECT" 'CN') ($GENERATION), expire le $(openssl x509 -in "$WORK/wwdr.pem" -noout -enddate | sed 's/^notAfter=//')"
 say "  empreinte SHA-256     : $(openssl x509 -in "$WORK/wwdr.pem" -noout -fingerprint -sha256 | sed 's/^.*=//')"
-say "Racine                  : Apple Root CA ($ROOT_SOURCE)"
-say "  empreinte SHA-256     : $(openssl x509 -in "$WORK/root.pem" -noout -fingerprint -sha256 | sed 's/^.*=//')"
+say "Racine                  : $ROOT_LABEL ($ROOT_SOURCE)"
+say "  empreinte SHA-256     : $ROOT_SHA256"
 say ""
 say "Lignes à coller dans deploy/.env (puis : docker compose up -d app) :"
 say ""

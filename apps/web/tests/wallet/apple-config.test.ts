@@ -1,8 +1,14 @@
+import { execFileSync } from 'node:child_process';
+import { X509Certificate } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { APPLE_ROOT_CA_SHA256, appleRootCa } from '../../src/server/wallet/apple/apple-root';
 import {
   checkAppleConfig, evaluateAppleConfig, parseAppleConfig, parseAppleConfigCached, resetAppleConfigCache,
 } from '../../src/server/wallet/apple/config';
-import { appleProvider, appleStatus } from '../../src/server/wallet/apple/provider';
+import { appleProvider, appleStatus, appleStatusOf } from '../../src/server/wallet/apple/provider';
 import {
   ROOT_SUBJECT, TEST_PASS_TYPE, TEST_TEAM, WWDR_SUBJECT, configInput, encrypt, issue, makePki, passSubject, type TestPki,
 } from './apple-fixtures';
@@ -32,7 +38,7 @@ describe('configuration complète et cohérente', () => {
     expect(check.details.certExpiresAt).toBe(pki.leaf.cert.validity.notAfter.toISOString().replace(/\.\d{3}Z$/, '.000Z'));
     expect(typeof check.details.certExpiresAt).toBe('string');
     expect(new Date(check.details.certExpiresAt as string).toISOString()).toBe(check.details.certExpiresAt);
-    expect(check.details).toMatchObject({ passTypeId: TEST_PASS_TYPE, teamId: TEST_TEAM, expiresSoon: false });
+    expect(check.details).toMatchObject({ passTypeId: TEST_PASS_TYPE, teamId: TEST_TEAM, expiresSoon: false, chain: 'apple' });
     expect(check.details.daysLeft).toBeGreaterThan(300);
     // Aucun secret dans les détails affichés.
     const shown = JSON.stringify(check.details);
@@ -215,5 +221,137 @@ describe('sans configuration (cas actuel du propriétaire)', () => {
 
   it('la sous-racine de la fausse AC a bien le nom attendu (garde-fou du test)', () => {
     expect(ROOT_SUBJECT[0]?.value).toBe('Apple Root CA');
+  });
+});
+
+/* ====================================================================
+   Racine épinglée : un NOM ne prouve rien
+   ==================================================================== */
+
+/**
+ * WWDR G4 d'Apple, certificat PUBLIC (https://www.apple.com/certificateauthority/,
+ * AppleWWDRCAG4.cer, empreinte SHA-256 EA:47:57:88:…:E1:4C) : la vraie
+ * chaîne, vérifiée contre la racine embarquée.
+ */
+const APPLE_WWDR_G4 = `-----BEGIN CERTIFICATE-----
+MIIEVTCCAz2gAwIBAgIUE9x3lVJx5T3GMujM/+Uh88zFztIwDQYJKoZIhvcNAQEL
+BQAwYjELMAkGA1UEBhMCVVMxEzARBgNVBAoTCkFwcGxlIEluYy4xJjAkBgNVBAsT
+HUFwcGxlIENlcnRpZmljYXRpb24gQXV0aG9yaXR5MRYwFAYDVQQDEw1BcHBsZSBS
+b290IENBMB4XDTIwMTIxNjE5MzYwNFoXDTMwMTIxMDAwMDAwMFowdTFEMEIGA1UE
+Aww7QXBwbGUgV29ybGR3aWRlIERldmVsb3BlciBSZWxhdGlvbnMgQ2VydGlmaWNh
+dGlvbiBBdXRob3JpdHkxCzAJBgNVBAsMAkc0MRMwEQYDVQQKDApBcHBsZSBJbmMu
+MQswCQYDVQQGEwJVUzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANAf
+eKp6JzKwRl/nF3bYoJ0OKY6tPTKlxGs3yeRBkWq3eXFdDDQEYHX3rkOPR8SGHgjo
+v9Y5Ui8eZ/xx8YJtPH4GUnadLLzVQ+mxtLxAOnhRXVGhJeG+bJGdayFZGEHVD41t
+QSo5SiHgkJ9OE0/QjJoyuNdqkh4laqQyziIZhQVg3AJK8lrrd3kCfcCXVGySjnYB
+5kaP5eYq+6KwrRitbTOFOCOL6oqW7Z+uZk+jDEAnbZXQYojZQykn/e2kv1MukBVl
+PNkuYmQzHWxq3Y4hqqRfFcYw7V/mjDaSlLfcOQIA+2SM1AyB8j/VNJeHdSbCb64D
+YyEMe9QbsWLFApy9/a8CAwEAAaOB7zCB7DASBgNVHRMBAf8ECDAGAQH/AgEAMB8G
+A1UdIwQYMBaAFCvQaUeUdgn+9GuNLkCm90dNfwheMEQGCCsGAQUFBwEBBDgwNjA0
+BggrBgEFBQcwAYYoaHR0cDovL29jc3AuYXBwbGUuY29tL29jc3AwMy1hcHBsZXJv
+b3RjYTAuBgNVHR8EJzAlMCOgIaAfhh1odHRwOi8vY3JsLmFwcGxlLmNvbS9yb290
+LmNybDAdBgNVHQ4EFgQUW9n6HeeaGgujmXYiUIY+kchbd6gwDgYDVR0PAQH/BAQD
+AgEGMBAGCiqGSIb3Y2QGAgEEAgUAMA0GCSqGSIb3DQEBCwUAA4IBAQA/Vj2e5bbD
+eeZFIGi9v3OLLBKeAuOugCKMBB7DUshwgKj7zqew1UJEggOCTwb8O0kU+9h0UoWv
+p50h5wESA5/NQFjQAde/MoMrU1goPO6cn1R2PWQnxn6NHThNLa6B5rmluJyJlPef
+x4elUWY0GzlxOSTjh2fvpbFoe4zuPfeutnvi0v/fYcZqdUmVIkSoBPyUuAsuORFJ
+EtHlgepZAE9bPFo22noicwkJac3AfOriJP6YRLj477JxPxpd1F1+M02cHSS+APCQ
+A1iZQT0xWmJArzmoUUOSqwSonMJNsUvSq3xKX+udO7xPiEAGE/+QF4oIRynoYpgp
+pU8RBWk6z/Kf
+-----END CERTIFICATE-----
+`;
+
+describe('racine Apple Root CA épinglée', () => {
+  it('la racine embarquée a l’empreinte publiée par Apple', () => {
+    const root = appleRootCa();
+    expect(root.fingerprint256).toBe(APPLE_ROOT_CA_SHA256);
+    expect(root.subject).toContain('CN=Apple Root CA');
+    expect(root.ca).toBe(true);
+  });
+
+  it('le vrai WWDR G4 est signé par elle', () => {
+    const g4 = new X509Certificate(APPLE_WWDR_G4);
+    expect(g4.fingerprint256.startsWith('EA:47:57:88')).toBe(true);
+    expect(g4.checkIssued(appleRootCa())).toBe(true);
+    expect(g4.verify(appleRootCa().publicKey)).toBe(true);
+  });
+
+  it('production : une fausse « Apple Root CA » (même nom, même organisation) est refusée', () => {
+    // Chaîne de test SANS ancre déclarée : exactement ce que verrait un
+    // serveur de production à qui l'on donnerait les certificats de test.
+    const check = checkAppleConfig(configInput(pki, { trustAnchorPem: null, production: true }), NOW);
+    expect(check.ok).toBe(false);
+    if (check.ok) return;
+    expect(check.issue).toBe('wwdr_root');
+    expect(check.reason).toMatch(/pas signé par la vraie racine d’Apple/);
+    expect(appleStatusOf(check).ready).toBe(false);
+  });
+
+  it('hors production : acceptée pour le banc local, marquée « test »', () => {
+    const check = checkAppleConfig(configInput(pki, { trustAnchorPem: null, production: false }), NOW);
+    expect(check.ok).toBe(true);
+    if (check.ok) expect(check.config.chain).toBe('test');
+    expect(check.details.chain).toBe('test');
+  });
+
+  it('hors production : une racine qui ne se dit même pas Apple reste refusée', () => {
+    const fakeRoot = issue({ subject: [{ shortName: 'CN', value: 'Autre Root CA' }, { shortName: 'O', value: 'Ailleurs' }], ca: true });
+    const wwdr = issue({ subject: WWDR_SUBJECT, issuer: fakeRoot, ca: true });
+    const leaf = issue({ subject: passSubject(), issuer: wwdr });
+    const check = checkAppleConfig(configInput(pki, {
+      certPem: leaf.certPem, keyPem: encrypt(leaf.keyPem), wwdrPem: wwdr.certPem, trustAnchorPem: null, production: false,
+    }), NOW);
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(check.issue).toBe('wwdr_root');
+  });
+
+  const hasOpenssl = (process.env.PATH ?? '').split(path.delimiter).some((d) => existsSync(path.join(d, 'openssl')));
+  it.skipIf(!hasOpenssl)('les certificats de scripts/wallet-dev-certs.sh : refusés en production, « test » sur le banc', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'rangvia-devcerts-'));
+    try {
+      const script = path.resolve(__dirname, '../../../../scripts/wallet-dev-certs.sh');
+      execFileSync('sh', [script, path.join(dir, 'out')], { stdio: 'pipe', timeout: 60_000 });
+      const vars = Object.fromEntries(readFileSync(path.join(dir, 'out', 'wallet-dev.env'), 'utf8').split('\n')
+        .filter((line) => line.startsWith('APPLE_WALLET_'))
+        .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
+      const pem = (name: string) => Buffer.from(vars[name] ?? '', 'base64').toString('utf8');
+      const input = {
+        passTypeId: vars.APPLE_WALLET_PASS_TYPE_ID ?? null,
+        certPem: pem('APPLE_WALLET_CERT_PEM'),
+        keyPem: pem('APPLE_WALLET_KEY_PEM'),
+        keyPassphrase: vars.APPLE_WALLET_KEY_PASSPHRASE ?? null,
+        wwdrPem: pem('APPLE_WALLET_WWDR_PEM'),
+        teamId: null,
+        siteUrl: 'https://rangvia.fr',
+        authSecret: 'z'.repeat(40),
+      };
+      // Certificats tout juste émis : l'heure d'APRÈS leur création.
+      const now = new Date();
+      const prod = checkAppleConfig({ ...input, production: true }, now);
+      expect(prod.ok).toBe(false);
+      if (!prod.ok) expect(prod.issue).toBe('wwdr_root');
+      const bench = checkAppleConfig({ ...input, production: false }, now);
+      expect(bench.ok ? 'ok' : `${bench.issue} ${bench.reason}`).toBe('ok');
+      expect(bench.details.chain).toBe('test');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 90_000);
+});
+
+describe('statut du fournisseur, configuration valide', () => {
+  it('prêt, signature d’essai réussie, détails de la carte', () => {
+    const status = appleStatusOf(checkAppleConfig(configInput(pki), NOW));
+    expect(status).toMatchObject({ ready: true, reason: null });
+    expect(status.details).toMatchObject({ passTypeId: TEST_PASS_TYPE, chain: 'apple' });
+    expect(typeof status.details?.certExpiresAt).toBe('string');
+  });
+
+  it('certificat expiré : non prêt, raison et échéance', () => {
+    const expired = makePki({ notBefore: new Date(Date.now() - 400 * 86400_000), notAfter: new Date(Date.now() - 86400_000) });
+    const status = appleStatusOf(checkAppleConfig(configInput(expired), NOW));
+    expect(status.ready).toBe(false);
+    expect(status.reason).toMatch(/expiré/);
+    expect(status.details?.certExpiresAt).toBeTruthy();
   });
 });

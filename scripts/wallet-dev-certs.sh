@@ -16,7 +16,11 @@
 #
 # Ces passes se construisent, se signent et se vérifient avec OpenSSL,
 # mais AUCUN iPhone ne les acceptera : seule une chaîne émise par Apple
-# l'est. Ne mettez JAMAIS ces valeurs en production.
+# l'est. Un serveur de PRODUCTION (NODE_ENV=production) les refuse
+# d'ailleurs : il épingle la vraie Apple Root CA et vérifie la signature
+# du WWDR, pas seulement son nom (apps/web/src/server/wallet/apple/
+# apple-root.ts). Hors production, la carte du super-admin les signale
+# comme chaîne de test.
 #
 # Variables : PASS_TYPE_ID (défaut pass.test.rangvia), TEAM_ID (défaut
 # TESTTEAM01), DAYS (validité du certificat, défaut 365).
@@ -107,5 +111,5 @@ say ""
 say "Prêt : $OUT"
 say "  wallet-dev.env : variables à charger dans un serveur de DÉVELOPPEMENT"
 say "  root.pem       : racine de test (openssl cms -verify -CAfile root.pem …)"
-say "Aucun iPhone n'acceptera ces passes : seule la chaîne d'Apple l'est."
+say "Aucun iPhone n’acceptera ces passes : seule la chaîne d’Apple l’est."
 printf '%s\n' "$OUT"

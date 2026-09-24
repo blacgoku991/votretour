@@ -4,7 +4,7 @@ import { buildWalletView, passLifecycle } from '../view';
 import type {
   ClaimedJob, DistributeContext, JobResult, ProviderStatus, WalletProvider, WalletSnapshot, WalletView,
 } from '../types';
-import type { AppleWalletConfig } from './config';
+import type { AppleConfigCheck, AppleWalletConfig } from './config';
 import { http2Transport, pushPassUpdate, tokenHint, type PushResult, type PushTransport } from './apns';
 import { PKPASS_TYPE, buildApplePass, httpDate, packApplePass } from './pass';
 import { appleConfigCheck } from './runtime';
@@ -47,12 +47,16 @@ function signingSelfTest(config: AppleWalletConfig): string | null {
   return error;
 }
 
-export async function appleStatus(now = new Date()): Promise<ProviderStatus> {
-  const check = await appleConfigCheck(now);
+/** Statut du fournisseur pour un contrôle de configuration donné (pur, hors signature d'essai mémorisée). */
+export function appleStatusOf(check: AppleConfigCheck): ProviderStatus {
   if (!check.ok) return { ready: false, reason: check.reason, details: check.details };
   const failure = signingSelfTest(check.config);
   if (failure) return { ready: false, reason: failure, details: check.details };
   return { ready: true, reason: null, details: check.details };
+}
+
+export async function appleStatus(now = new Date()): Promise<ProviderStatus> {
+  return appleStatusOf(await appleConfigCheck(now));
 }
 
 /* ====================================================================
@@ -135,12 +139,41 @@ export async function processAppleJob(
     return { ok: false, error: `APNs a refusé la requête : ${summarize(results, 'fail')}`, retryAfterSeconds: 300, dead: true };
   }
 
-  // « Envoyée » = acceptée par APNs, pour au moins un appareil, et pas
-  // déjà comptée : Wallet ne resonne pas tant que `etat` garde sa valeur,
-  // le journal (notification_deliveries) ne doit pas compter deux fois.
+  // « Envoyée » = acceptée par APNs, pour au moins un appareil, pour une
+  // version que les appareils n'ont PAS encore, et pas déjà comptée :
+  // Wallet ne sonne que si `etat` change entre ce que l'iPhone tient et ce
+  // qu'il télécharge, et le journal (notification_deliveries) ne doit pas
+  // compter deux fois.
   const ledger = liveLedger(snap.pass.alerts ?? {}, snap.entry.rankResetAt ?? null);
-  const alertNotified = Boolean(built.alert?.notify && delivered > 0 && alertKind && !ledger[alertKind]);
+  const alertNotified = Boolean(
+    built.alert?.notify && delivered > 0 && alertKind && !ledger[alertKind] && !alreadyHeld(job, snap, built.hash),
+  );
   return { ok: true, syncedHash: built.hash, alertKind, alertNotified, ...lifecycle };
+}
+
+/**
+ * Vrai si les appareils tiennent déjà la version rendue ici : c'est la
+ * synchronisation qui suit la première inscription (wallet_apple_register
+ * met en file une raison 'register'). distribute() a enregistré ce rendu
+ * (content_hash) sans rien livrer (synced_hash reste vide) : l'iPhone qui
+ * vient de s'inscrire a téléchargé CETTE version, le push ne lui apporte
+ * rien (304), Wallet ne sonne pas, et rien ne doit être compté — ni dans
+ * notification_deliveries, ni dans le registre, que Google lit
+ * (deliveredByOthers) pour décider de prévenir à son tour.
+ *
+ * Les autres cas comptent :
+ *  - rendu différent de content_hash : cette tâche crée la version ;
+ *  - synced_hash renseigné et différent (early return plus haut sinon) :
+ *    au moins un appareil tient une version livrée plus ancienne ;
+ *  - une autre raison que 'register' avec synced_hash vide : nouvel essai
+ *    d'une mise à jour dont le premier push a échoué après
+ *    wallet_record_render (content_hash avait déjà avancé).
+ */
+export function alreadyHeld(job: Pick<ClaimedJob, 'reasons'>, snap: WalletSnapshot, hash: string): boolean {
+  return hash === snap.pass.contentHash
+    && snap.pass.syncedHash === null
+    && job.reasons.length > 0
+    && job.reasons.every((reason) => reason === 'register');
 }
 
 /* ====================================================================

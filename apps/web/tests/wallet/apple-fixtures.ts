@@ -6,7 +6,9 @@ import type { AppleConfigInput } from '../../src/server/wallet/apple/config';
  * AC de TEST, générée à la volée (jamais versionnée, jamais écrite hors du
  * dossier temporaire d'un test) : une fausse « Apple Root CA », un faux
  * WWDR et un certificat feuille qui imite un Pass Type ID
- * (UID=pass.test.rangvia, OU=TESTTEAM01). Elle valide la structure
+ * (UID=pass.test.rangvia, OU=TESTTEAM01). configInput() la déclare
+ * comme racine de confiance (trustAnchorPem), à la place de la vraie
+ * Apple Root CA épinglée par config.ts. Elle valide la structure
  * complète (contrôles, manifest, CMS, zip) ; seul un iPhone réel, avec le
  * vrai certificat d'Apple, valide l'acceptation par Wallet (recette).
  *
@@ -129,6 +131,9 @@ export function configInput(pki: TestPki, overrides: Partial<AppleConfigInput> =
     authSecret: TEST_SECRET,
     production: true,
     unreadable: [],
+    // La fausse racine joue Apple Root CA : le chemin de PRODUCTION
+    // (signature du WWDR vérifiée contre la racine épinglée) est exercé.
+    trustAnchorPem: pki.root.certPem,
     ...overrides,
   };
 }

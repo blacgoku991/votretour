@@ -4,12 +4,13 @@ import type { TLSSocket } from 'node:tls';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEAD_TOKEN_REASONS, RETRIABLE_REASONS } from '../../src/server/notifications/apns';
 import {
-  PUSH_TTL_SECONDS, buildWalletPushRequest, classifyPush, closeWalletApnsSessions, http2Transport, pushPassUpdate,
+  PUSH_TTL_SECONDS, buildWalletPushRequest, classifyPush, closeWalletApnsSessions, http2Transport, isTlsCertificateFailure,
+  pushPassUpdate, streamFailure,
   type PushRequest, type PushResponse, type PushTransport,
 } from '../../src/server/wallet/apple/apns';
 import { checkAppleConfig, type AppleWalletConfig } from '../../src/server/wallet/apple/config';
 import { buildApplePass } from '../../src/server/wallet/apple/pass';
-import { processAppleJob, type AppleProcessDeps } from '../../src/server/wallet/apple/provider';
+import { alreadyHeld, processAppleJob, type AppleProcessDeps } from '../../src/server/wallet/apple/provider';
 import type { AppleStore } from '../../src/server/wallet/apple/store';
 import { buildWalletView } from '../../src/server/wallet/view';
 import type { ClaimedJob, WalletSnapshot } from '../../src/server/wallet/types';
@@ -77,10 +78,35 @@ describe('classement des réponses', () => {
     [{ status: 0, reason: 'Timeout' }, 'retry'],
     [{ status: 0, reason: 'Aborted' }, 'aborted'],
     [{ status: 400, reason: 'BadExpirationDate' }, 'fail'],
+    // Certificat refusé dès la poignée de main TLS (révoqué, expiré) :
+    // aucune réponse HTTP, mais réessayer n'y changerait rien.
+    [{ status: 0, reason: 'ERR_SSL_SSLV3_ALERT_CERTIFICATE_REVOKED' }, 'halt'],
+    [{ status: 0, reason: 'ERR_SSL_SSLV3_ALERT_BAD_CERTIFICATE' }, 'halt'],
+    [{ status: 0, reason: 'ERR_SSL_SSLV3_ALERT_CERTIFICATE_EXPIRED' }, 'halt'],
+    [{ status: 0, reason: 'ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED' }, 'halt'],
+    [{ status: 0, reason: 'CERT_HAS_EXPIRED' }, 'halt'],
+    [{ status: 0, reason: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' }, 'halt'],
+    [{ status: 0, reason: 'SELF_SIGNED_CERT_IN_CHAIN' }, 'halt'],
+    // Coupures réseau : passagères.
+    [{ status: 0, reason: 'ECONNRESET' }, 'retry'],
+    [{ status: 0, reason: 'Client network socket disconnected before secure TLS connection was established' }, 'retry'],
+    [{ status: 0, reason: 'StreamClosed' }, 'retry'],
+    [{ status: 0, reason: 'ETIMEDOUT' }, 'retry'],
   ];
   for (const [response, outcome] of table) {
     it(`${response.status} ${response.reason} → ${outcome}`, () => expect(classifyPush(response)).toBe(outcome));
   }
+
+  it('raison d’un flux coupé : le code TLS de la cause d’abord', () => {
+    const tlsCause = Object.assign(new Error('sslv3 alert certificate revoked'), { code: 'ERR_SSL_SSLV3_ALERT_CERTIFICATE_REVOKED' });
+    const cancelled = Object.assign(new Error('The pending stream has been canceled'), { code: 'ERR_HTTP2_STREAM_CANCEL', cause: tlsCause });
+    expect(streamFailure(cancelled)).toBe('ERR_SSL_SSLV3_ALERT_CERTIFICATE_REVOKED');
+    expect(classifyPush({ status: 0, reason: streamFailure(cancelled) })).toBe('halt');
+    const reset = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+    expect(streamFailure(reset)).toBe('ECONNRESET');
+    expect(streamFailure(Object.assign(new Error('annulé'), { code: 'ERR_HTTP2_STREAM_CANCEL' }))).toBe('annulé');
+    expect(isTlsCertificateFailure(null)).toBe(false);
+  });
 
   it('listes partagées avec les pushes de l’App Clip', () => {
     for (const reason of ['BadDeviceToken', 'Unregistered', 'DeviceTokenNotForTopic', 'ExpiredToken']) {
@@ -125,10 +151,10 @@ describe('envoi à plusieurs appareils', () => {
    Traitement d'une ligne de la file d'envoi
    ==================================================================== */
 
-function job(kind: 'sync' | 'scrub' = 'sync'): ClaimedJob {
+function job(kind: 'sync' | 'scrub' = 'sync', reasons: string[] = ['position']): ClaimedJob {
   return {
     id: 7, walletPassId: '7b0f3c1e-2a44-4c1b-9d0e-5f6a7b8c9d01', provider: 'apple', queueId: 'q', job: kind,
-    reasons: ['position'], priority: 1, attempts: 1, runAfter: NOW.toISOString(), createdAt: NOW.toISOString(),
+    reasons, priority: 1, attempts: 1, runAfter: NOW.toISOString(), createdAt: NOW.toISOString(),
   };
 }
 
@@ -165,9 +191,17 @@ function rig(tokens: string[], respond: (token: string) => PushResponse = () => 
   return r;
 }
 
-async function run(snap: WalletSnapshot, r: Rig, signal = new AbortController().signal, kind: 'sync' | 'scrub' = 'sync') {
+async function run(
+  snap: WalletSnapshot, r: Rig, signal = new AbortController().signal, kind: 'sync' | 'scrub' = 'sync', reasons?: string[],
+) {
   const view = buildWalletView(snap, NOW, { siteUrl: SITE });
-  return processAppleJob(job(kind), snap, NOW, view, signal, r.deps);
+  return processAppleJob(job(kind, reasons), snap, NOW, view, signal, r.deps);
+}
+
+/** Empreinte du rendu d'un état : ce que distribute() aurait inscrit en content_hash. */
+async function hashOf(snap: WalletSnapshot): Promise<string> {
+  const view = buildWalletView(snap, NOW, { siteUrl: SITE });
+  return (await buildApplePass({ snap, view, now: NOW, config, sources: { logo: null, cover: null } })).hash;
 }
 
 describe('traitement Apple', () => {
@@ -197,6 +231,46 @@ describe('traitement Apple', () => {
     const result = await run(snapshot({ entry: { peopleAhead: 2 }, pass: { alerts: { ahead_two: '2026-09-24T12:20:00Z' } } }), r);
     expect(result).toMatchObject({ ok: true, alertKind: 'ahead_two', alertNotified: false });
     expect(r.requests).toHaveLength(1);
+  });
+
+  it('synchronisation d’inscription, version déjà tenue par l’iPhone : push silencieux, aucune alerte comptée', async () => {
+    // « C’est votre tour » au moment du clic : distribute() a servi cette
+    // version (content_hash), rien n'a encore été livré (synced_hash vide).
+    const turn = { entry: { status: 'next' as const, peopleAhead: 0, calledAt: '2026-09-24T12:25:00Z' } };
+    const served = await hashOf(snapshot(turn));
+    const r = rig([T1]);
+    const result = await run(snapshot({ ...turn, pass: { contentHash: served, syncedHash: null } }), r, undefined, 'sync', ['register']);
+    expect(result).toMatchObject({ ok: true, alertKind: 'your_turn', alertNotified: false, syncedHash: served });
+    // Le push part quand même (l'appareil répondra 304) : rien ne sonne.
+    expect(r.requests).toHaveLength(1);
+  });
+
+  it('inscription arrivée APRÈS un changement : la version est nouvelle pour l’iPhone, l’alerte compte', async () => {
+    const before = await hashOf(snapshot({ entry: { peopleAhead: 3 } }));
+    const r = rig([T1]);
+    const result = await run(
+      snapshot({ entry: { peopleAhead: 2 }, pass: { contentHash: before, syncedHash: null } }), r, undefined, 'sync', ['register'],
+    );
+    expect(result).toMatchObject({ ok: true, alertKind: 'ahead_two', alertNotified: true });
+  });
+
+  it('nouvel essai d’une mise à jour dont le premier push a échoué : l’alerte compte', async () => {
+    // wallet_record_render avait déjà avancé content_hash au premier essai.
+    const snap = snapshot({ entry: { peopleAhead: 2 } });
+    const rendered = await hashOf(snap);
+    const r = rig([T1]);
+    const result = await run(snapshot({ entry: { peopleAhead: 2 }, pass: { contentHash: rendered, syncedHash: null } }), r);
+    expect(result).toMatchObject({ ok: true, alertKind: 'ahead_two', alertNotified: true });
+  });
+
+  it('alreadyHeld : seulement la version servie, jamais livrée, pour une inscription seule', () => {
+    const snap = snapshot({ pass: { contentHash: 'h1', syncedHash: null } });
+    expect(alreadyHeld({ reasons: ['register'] }, snap, 'h1')).toBe(true);
+    expect(alreadyHeld({ reasons: ['register', 'register'] }, snap, 'h1')).toBe(true);
+    expect(alreadyHeld({ reasons: ['register', 'status'] }, snap, 'h1')).toBe(false);
+    expect(alreadyHeld({ reasons: [] }, snap, 'h1')).toBe(false);
+    expect(alreadyHeld({ reasons: ['register'] }, snap, 'h2')).toBe(false);
+    expect(alreadyHeld({ reasons: ['register'] }, snapshot({ pass: { contentHash: 'h1', syncedHash: 'h0' } }), 'h1')).toBe(false);
   });
 
   it('jetons morts supprimés ; les autres appareils servis', async () => {
@@ -329,6 +403,20 @@ describe('transport HTTP/2 avec certificat client', () => {
       expect(r.clientUid).toBe(TEST_PASS_TYPE);
       expect(r.pushType).toBeNull();
     }
+  });
+
+  it('serveur dont le certificat ne se vérifie pas : échec TLS classé « halt », sans attendre le délai', async () => {
+    // Sans l'autorité de test, le certificat du faux APNs est inconnu :
+    // l'erreur TLS remonte par la cause du flux annulé (streamFailure).
+    closeWalletApnsSessions();
+    const transport = http2Transport(config.tls, { host });
+    const started = Date.now();
+    const [result] = await pushPassUpdate([T1], { topic: TEST_PASS_TYPE, transport, signal: new AbortController().signal, now: NOW });
+    expect(result?.status).toBe(0);
+    expect(isTlsCertificateFailure(result?.reason ?? null)).toBe(true);
+    expect(result?.outcome).toBe('halt');
+    expect(Date.now() - started).toBeLessThan(5_000);
+    closeWalletApnsSessions();
   });
 
   it('annulation en cours de flux : issue « aborted », sans attendre APNs', async () => {

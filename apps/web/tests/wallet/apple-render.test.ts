@@ -8,10 +8,11 @@ import { WALLET_OFFER_COPY } from '../../src/lib/wallet-copy';
 import { signWalletQrCode } from '../../src/lib/wallet/scan-proof';
 import { decideAlertFor } from '../../src/server/wallet/alerts';
 import { checkAppleConfig, type AppleWalletConfig } from '../../src/server/wallet/apple/config';
+import { MAX_INPUT_PIXELS } from '../../src/server/wallet/apple/images';
 import { buildApplePass, packApplePass } from '../../src/server/wallet/apple/pass';
 import { readZip, sha1Hex } from '../../src/server/wallet/apple/pkpass';
 import {
-  FRONT_LIMITS, renderApplePassJson, type AppleField, type ApplePassContext, type ApplePassJson,
+  FRONT_LIMITS, RELEVANCE_MAX_MINUTES, clipLabel, renderApplePassJson, type AppleField, type ApplePassContext, type ApplePassJson,
 } from '../../src/server/wallet/apple/render';
 import { applePassToken } from '../../src/server/wallet/apple/tokens';
 import { buildWalletView } from '../../src/server/wallet/view';
@@ -162,13 +163,50 @@ describe('ticket de file (generic)', () => {
     expect(field(pass, 'avis')).toBeUndefined();
   });
 
-  it('pertinence : fenêtre d’attente, position du lieu, 200 m', () => {
+  it('pertinence : fenêtre d’attente, position du lieu, 200 m ; aucune date d’expiration sur un ticket actif', () => {
     const pass = render(queue());
     expect(pass.relevantDates).toEqual([{ startDate: '2026-09-24T12:05:00Z', endDate: '2026-09-24T16:05:00Z' }]);
     expect(pass.relevantDate).toBe('2026-09-24T12:05:00Z');
     expect(pass.locations).toEqual([{ latitude: 48.853, longitude: 2.369, relevantText: 'Votre place chez Barber House Bastille' }]);
     expect(pass.maxDistance).toBe(200);
-    expect(pass.expirationDate).toBe('2026-09-24T16:05:00Z');
+    // Le moteur expire le ticket (version annulée poussée) : Wallet ne
+    // doit pas le ranger de lui-même parmi les passes expirés.
+    expect(pass.expirationDate).toBeUndefined();
+  });
+
+  it('atelier véhicule (délai de 7 jours) : jamais « expiré » tant que le moteur garde le ticket, pertinence bornée à 4 h', () => {
+    // Déposée lundi, dernière étape jeudi, regardée le vendredi suivant :
+    // plus de 7 jours après le dépôt, le ticket est toujours actif
+    // (le moteur compte depuis le dernier changement d'étape).
+    const later = new Date('2026-10-02T12:00:00Z');
+    const snap = queue({
+      entry: { status: 'waiting', peopleAhead: 3, joinedAt: '2026-09-24T08:00:00Z', statusChangedAt: '2026-10-01T09:30:00Z' },
+      queue: { entryTtlMinutes: 10_080 },
+    });
+    const pass = render(snap, {}, later);
+    expect(viewOf(snap, later).phase).toBe('waiting');
+    expect(pass.expirationDate).toBeUndefined();
+    expect(pass.voided).toBeUndefined();
+    // Depuis le dernier changement, pas depuis le dépôt, et 4 h au plus.
+    expect(pass.relevantDates).toEqual([{ startDate: '2026-10-01T09:30:00Z', endDate: '2026-10-01T13:30:00Z' }]);
+    expect(RELEVANCE_MAX_MINUTES).toBe(240);
+  });
+
+  it('délai court : la pertinence suit le délai de la file', () => {
+    const pass = render(queue({ queue: { entryTtlMinutes: 90 } }));
+    expect(pass.relevantDates).toEqual([{ startDate: '2026-09-24T12:05:00Z', endDate: '2026-09-24T13:35:00Z' }]);
+  });
+
+  it('nom de lieu très long : libellé borné, coupé proprement', () => {
+    const long = 'Barber House Bastille — Faubourg Saint-Antoine, rez-de-chaussée';
+    const pass = render(queue({ entry: { peopleAhead: 0, status: 'next' }, location: { name: long } }));
+    const primary = fieldsOf(pass).primaryFields[0]!;
+    expect([...(primary.label ?? '')].length).toBeLessThanOrEqual(FRONT_LIMITS.labelChars);
+    expect(primary.label?.endsWith('…')).toBe(true);
+    expect(primary.label?.startsWith('BARBER HOUSE BASTILLE')).toBe(true);
+    expect(clipLabel('Court')).toBe('Court');
+    expect(clipLabel('abcdefghij', 5)).toBe('abcd…');
+    expect(clipLabel('abc   defgh', 5)).toBe('abc…');
   });
 
   it('en-tête : heure d’arrivée ; le pro assigné (déjà public) ; jamais le prénom du client', () => {
@@ -196,22 +234,29 @@ describe('billet de drop (eventTicket)', () => {
     const pass = render(eventSnapshot({ entry: { peopleAhead: 12 } }));
     expect(pass.eventTicket).toBeDefined();
     expect(fieldsOf(pass).headerFields[0]).toMatchObject({ key: 'numero', value: 'A-042' });
-    expect(fieldsOf(pass).primaryFields[0]).toMatchObject({ label: 'DROP AURORE', value: 12 });
+    // Le chiffre se lit avec « Devant vous » ; le nom du drop coiffe le billet.
+    expect(fieldsOf(pass).primaryFields[0]).toMatchObject({ label: 'DEVANT VOUS', value: 12 });
+    expect(pass.logoText).toBe('Drop Aurore');
     expect(pass.barcodes).toBeUndefined();
     expect(allFields(pass).some((f) => f.changeMessage)).toBe(false);
     expect(pass.groupingIdentifier).toBe('event.44444444-4444-4444-8444-444444444444');
     expect(pass.semantics).toEqual({ eventName: 'Drop Aurore', venueName: 'Barber House Bastille' });
   });
 
-  it('accès ouvert : QR signé lié au pass, alerte, heure limite, tolérance, vague', () => {
+  it('accès ouvert : QR signé lié au pass, alerte, heure limite une seule fois, tolérance, vague', () => {
     const snap = eventSnapshot({ access: issued });
     const view = viewOf(snap);
     const qrMessage = `${SITE}/scan/${issued.publicId}?w=${signWalletQrCode(issued.tokenHash, snap.pass.id)}`;
     const pass = render(snap, { qrMessage });
     expect(pass.barcodes).toEqual([{ format: 'PKBarcodeFormatQR', message: qrMessage, messageEncoding: 'iso-8859-1', altText: 'A-042 · Vague 3' }]);
     expect(field(pass, 'etat')).toMatchObject({ label: 'À FAIRE', value: view.statusText, changeMessage: 'Votre accès est prêt. %@.' });
-    expect(field(pass, 'limite')).toMatchObject({ value: '2026-09-24T12:32:00Z', timeStyle: 'PKDateStyleShort' });
+    // L'heure limite est dans la consigne (« … avant 14:32 ») : pas répétée.
+    expect(view.statusText).toMatch(/\d{2}:\d{2}/);
+    expect(field(pass, 'limite')).toBeUndefined();
+    expect(fieldsOf(pass).secondaryFields.map((f) => f.key)).toEqual(['etat', 'tolerance']);
     expect(field(pass, 'tolerance')?.value).toBe('+5 min');
+    // Un mot se suffit : pas d'étiquette au-dessus de « Accès ouvert ».
+    expect(fieldsOf(pass).primaryFields[0]?.label).toBeUndefined();
     expect(field(pass, 'vague')?.value).toBe('3');
     expect(pass.expirationDate).toBe('2026-09-24T12:37:00Z');
     expect(pass.relevantDates).toEqual([{ startDate: '2026-09-24T12:22:00Z', endDate: '2026-09-24T12:37:00Z' }]);
@@ -327,7 +372,8 @@ describe('.pkpass complet, signé par l’AC de test', () => {
     const cover = await sharp({ create: { width: 1600, height: 900, channels: 3, background: '#3A63D8' } }).jpeg().toBuffer();
     const snap = eventSnapshot({ access: issued });
     const built = await buildApplePass({ snap, view: viewOf(snap), now: NOW, config, sources: { logo, cover } });
-    expect(built.passJson.logoText).toBeUndefined();
+    // Billet : le nom du drop à côté du logo de la marque, comme un billet imprimé.
+    expect(built.passJson.logoText).toBe('Drop Aurore');
     const strip = await sharp(built.files.get('strip@3x.png')!).metadata();
     expect([strip.width, strip.height]).toEqual([1125, 294]);
     const logoMeta = await sharp(built.files.get('logo@2x.png')!).metadata();
@@ -341,6 +387,17 @@ describe('.pkpass complet, signé par l’AC de test', () => {
   it('logo illisible : repli sur le signe, nom écrit à côté', async () => {
     const snap = queue();
     const built = await buildApplePass({ snap, view: viewOf(snap), now: NOW, config, sources: { logo: Buffer.from('pas une image'), cover: null } });
+    expect(built.passJson.logoText).toBe('Barber House');
+    expect((await sharp(built.files.get('logo@3x.png')!).metadata()).width).toBe(150);
+  });
+
+  it('image démesurée (au-delà de 40 Mpx) : refusée au décodage, repli sur le signe', async () => {
+    // Un SVG de 10 000 × 5 000 px (50 Mpx) : sharp lit les dimensions et
+    // refuse avant d'allouer quoi que ce soit.
+    const huge = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10000" height="5000"><rect width="100%" height="100%" fill="#D9903A"/></svg>');
+    expect(10_000 * 5_000).toBeGreaterThan(MAX_INPUT_PIXELS);
+    const snap = queue();
+    const built = await buildApplePass({ snap, view: viewOf(snap), now: NOW, config, sources: { logo: huge, cover: null } });
     expect(built.passJson.logoText).toBe('Barber House');
     expect((await sharp(built.files.get('logo@3x.png')!).metadata()).width).toBe(150);
   });

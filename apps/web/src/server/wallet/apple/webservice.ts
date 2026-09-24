@@ -1,7 +1,8 @@
 import 'server-only';
+import { createHash } from 'node:crypto';
 import type { AppleWalletConfig } from './config';
 import type { AppleStore } from './store';
-import { APPLE_SERIAL, redactApplePass, verifyApplePassToken } from './tokens';
+import { APPLE_SERIAL, redactWalletLog, verifyApplePassToken } from './tokens';
 import { PKPASS_TYPE, httpDate } from './pass';
 
 /**
@@ -24,18 +25,42 @@ import { PKPASS_TYPE, httpDate } from './pass';
  *    révoqué, effacé ou faux jeton : la MÊME réponse 401 ;
  *  - limites de débit (condensat d'adresse, jamais l'adresse) ;
  *  - le journal de l'iPhone ne va que dans les journaux applicatifs,
- *    tronqué, jetons masqués : jamais en base.
+ *    corps borné, tronqué, jetons ET identifiants masqués : jamais en base.
  */
 
 export const DEVICE_ID = /^[A-Za-z0-9._-]{8,128}$/;
 export const PUSH_TOKEN = /^[0-9a-fA-F]{32,200}$/;
-const SINCE_TAG = /^\d{1,19}$/;
+/**
+ * Étiquette de version (version_seq, bigint) : 15 chiffres au plus, sous
+ * 2^53, pour qu'un Number() reste exact. La séquence n'approchera pas
+ * 10^15 ; au-delà, c'est une valeur fabriquée : 400.
+ */
+const SINCE_TAG = /^\d{1,15}$/;
 
+/**
+ * Limites de débit, par fenêtre de 5 minutes.
+ *
+ *  - ip : un plafond de CRUE, large. Pendant un drop, des centaines
+ *    d'iPhones partagent l'adresse du Wi-Fi du lieu ou d'un NAT
+ *    d'opérateur, et chaque mise à jour coûte deux requêtes par appareil
+ *    (liste, puis pass). Deviner un jeton ApplePass (HMAC-SHA256) ou un
+ *    identifiant d'appareil est de toute façon hors de portée : ce
+ *    plafond ne protège que la base ;
+ *  - serial : par pass (routes authentifiées), un appareil qui boucle ;
+ *  - device : par appareil (liste des mises à jour, authentifiée par son
+ *    seul identifiant), clé condensée : l'identifiant ne va pas en base ;
+ *  - log : le journal de l'iPhone, facultatif, par adresse.
+ * [à mesurer en recette : un drop réel derrière un seul Wi-Fi.]
+ */
 export const LIMITS = {
-  ip: { max: 300, window: 300 },
+  ip: { max: 3000, window: 300 },
   serial: { max: 60, window: 300 },
+  device: { max: 120, window: 300 },
   log: { max: 20, window: 300 },
 } as const;
+
+/** Corps d'un journal Wallet : quelques lignes. Au-delà, on ne lit pas. */
+export const LOG_MAX_BYTES = 16 * 1024;
 
 /** Rendu servi à un appareil : .pkpass signé de la version courante. */
 export interface RenderedPass {
@@ -72,11 +97,54 @@ const notFound = () => empty(404);
 const unauthorized = () => empty(401);
 const tooMany = () => empty(429, { 'Retry-After': '60' });
 
-async function limited(request: Request, deps: WebServiceDeps, serial: string | null): Promise<boolean> {
+/** Condensat court d'un identifiant d'appareil : clé de débit sans l'identifiant lui-même. */
+export function deviceKey(deviceId: string): string {
+  return createHash('sha256').update(`wallet-device:${deviceId}`, 'utf8').digest('hex').slice(0, 32);
+}
+
+async function limited(
+  request: Request,
+  deps: WebServiceDeps,
+  scope: { serial?: string; deviceId?: string },
+): Promise<boolean> {
   const ip = await deps.ipHash(request);
   if (ip && !(await deps.allow(`wallet-ws:ip:${ip}`, LIMITS.ip.max, LIMITS.ip.window))) return true;
-  if (serial && !(await deps.allow(`wallet-ws:serial:${serial}`, LIMITS.serial.max, LIMITS.serial.window))) return true;
+  if (scope.serial && !(await deps.allow(`wallet-ws:serial:${scope.serial}`, LIMITS.serial.max, LIMITS.serial.window))) return true;
+  if (scope.deviceId && !(await deps.allow(`wallet-ws:device:${deviceKey(scope.deviceId)}`, LIMITS.device.max, LIMITS.device.window))) {
+    return true;
+  }
   return false;
+}
+
+/**
+ * Corps JSON borné : Content-Length annoncé trop grand → refus sans rien
+ * lire ; sinon lecture du flux, arrêtée dès que la borne est dépassée (un
+ * corps « chunked » n'annonce pas sa taille). null : trop grand ou
+ * illisible. Les routes /api/wallet/ échappent au middleware, et Caddy
+ * ne borne pas les corps : la borne est ici.
+ */
+export async function readJsonBounded(request: Request, maxBytes: number): Promise<unknown> {
+  const declared = Number(request.headers.get('content-length') ?? '');
+  if (Number.isFinite(declared) && declared > maxBytes) return null;
+  if (!request.body) return null;
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 interface RegistrationParams {
@@ -100,7 +168,7 @@ async function authenticate(
   if (params.passTypeId !== config.passTypeId) return notFound();
   if (params.deviceId !== undefined && !DEVICE_ID.test(params.deviceId)) return notFound();
   if (!APPLE_SERIAL.test(params.serial)) return unauthorized();
-  if (await limited(request, deps, params.serial)) return tooMany();
+  if (await limited(request, deps, { serial: params.serial })) return tooMany();
   if (!verifyApplePassToken(params.serial, request.headers.get('authorization'), config.authSecret)) return unauthorized();
   return config;
 }
@@ -110,12 +178,9 @@ export async function registerDevice(request: Request, params: RegistrationParam
   const auth = await authenticate(request, params, deps);
   if (auth instanceof Response) return auth;
 
-  let pushToken: unknown;
-  try {
-    pushToken = ((await request.json()) as { pushToken?: unknown } | null)?.pushToken;
-  } catch {
-    return empty(400);
-  }
+  // { "pushToken": "…" } : quelques dizaines d'octets.
+  const body = await readJsonBounded(request, 1024);
+  const pushToken = body && typeof body === 'object' ? (body as { pushToken?: unknown }).pushToken : undefined;
   if (typeof pushToken !== 'string' || !PUSH_TOKEN.test(pushToken)) return empty(400);
 
   switch (await deps.store.register(params.serial, params.deviceId, pushToken)) {
@@ -154,7 +219,7 @@ export async function listUpdatedSerials(
   if (params.passTypeId !== config.passTypeId || !DEVICE_ID.test(params.deviceId)) return notFound();
   const sinceRaw = new URL(request.url).searchParams.get('passesUpdatedSince');
   if (sinceRaw !== null && sinceRaw !== '' && !SINCE_TAG.test(sinceRaw)) return empty(400);
-  if (await limited(request, deps, null)) return tooMany();
+  if (await limited(request, deps, { deviceId: params.deviceId })) return tooMany();
 
   const since = sinceRaw ? Number(sinceRaw) : null;
   const rows = await deps.store.serials(params.deviceId, config.passTypeId, since);
@@ -208,17 +273,15 @@ export async function receiveLog(request: Request, deps: WebServiceDeps): Promis
   if (!config) return notFound();
   const ip = await deps.ipHash(request);
   if (ip && !(await deps.allow(`wallet-log:ip:${ip}`, LIMITS.log.max, LIMITS.log.window))) return tooMany();
-  let logs: unknown;
-  try {
-    logs = ((await request.json()) as { logs?: unknown } | null)?.logs;
-  } catch {
-    return empty(200);
-  }
+  // Trop grand ou illisible : 200 quand même (Wallet ne réessaie pas un
+  // journal, et rien n'est dit de plus à qui essaierait d'autres corps).
+  const body = await readJsonBounded(request, LOG_MAX_BYTES);
+  const logs = body && typeof body === 'object' ? (body as { logs?: unknown }).logs : undefined;
   if (Array.isArray(logs)) {
     const lines = logs
       .filter((line): line is string => typeof line === 'string')
       .slice(0, 10)
-      .map((line) => redactApplePass(line).replace(/[\r\n\t]+/g, ' ').slice(0, 300));
+      .map((line) => redactWalletLog(line.replace(/[\r\n\t]+/g, ' ')).slice(0, 300));
     if (lines.length > 0) deps.log(lines);
   }
   return empty(200);
