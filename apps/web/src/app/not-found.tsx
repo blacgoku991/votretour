@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { SiteFooter, SiteHeader } from '@/components/SiteChrome';
-import { hasLegalNotice } from '@/lib/legal';
+import { siteFooterData } from '@/server/founders';
 import { FloorScene, type FloorSlat } from '@/components/objects/FloorScene';
 import styles from './status.module.css';
 
@@ -21,7 +21,7 @@ const SLATS: FloorSlat[] = [
  * comme à quelqu'un debout devant un comptoir, pas comme à un
  * développeur.
  */
-export default function NotFound() {
+export default async function NotFound() {
   return (
     <div className={styles.page}>
       <SiteHeader />
@@ -51,7 +51,7 @@ export default function NotFound() {
           </div>
         </div>
       </main>
-      <SiteFooter legalNotice={hasLegalNotice()} />
+      <SiteFooter {...await siteFooterData()} />
     </div>
   );
 }
