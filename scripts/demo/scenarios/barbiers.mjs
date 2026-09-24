@@ -72,7 +72,7 @@ export const scenario = {
       kicker: 'Rangvia',
       title: 'Ouvrez votre file.',
       body: 'Une plaque au comptoir, et vos clients attendent où ils veulent.',
-      cta: 'rangvia.fr/inscription',
+      cta: 'rangvia.com/inscription',
       client: CLIENT_NAME,
       clientHint: 'À vous',
       foot: 'Démonstration filmée sur le vrai produit, avec un commerce fictif.',

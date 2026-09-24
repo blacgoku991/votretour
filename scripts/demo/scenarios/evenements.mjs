@@ -61,7 +61,7 @@ export const scenario = {
       kicker: 'Rangvia',
       title: 'Faites entrer par vagues.',
       body: 'Pas de campement devant la boutique, pas de pass revendu deux fois.',
-      cta: 'rangvia.fr/inscription',
+      cta: 'rangvia.com/inscription',
       client: CLIENT_NAME,
       clientHint: 'Accès validé',
       foot: 'Démonstration filmée sur le vrai produit, avec un commerce fictif.',
