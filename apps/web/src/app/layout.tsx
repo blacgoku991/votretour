@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Archivo } from 'next/font/google';
+import { appClipPublished, seoIndexable } from '@/lib/seo/site';
 import './globals.css';
 
 /**
@@ -31,10 +32,15 @@ export const metadata: Metadata = {
     locale: 'fr_FR',
     siteName: 'Rangvia',
     title: "Rangvia — la file d'attente qui vous laisse partir",
-    description:
-      'File d\'attente virtuelle pour les commerces sans rendez-vous. Plaque NFC, QR code, App Clip iPhone.',
+    // L'App Clip n'est cité qu'une fois réellement publié sur l'App Store.
+    description: appClipPublished()
+      ? 'File d\'attente virtuelle pour les commerces sans rendez-vous. Plaque NFC, QR code, App Clip iPhone.'
+      : 'File d\'attente virtuelle pour les commerces sans rendez-vous. Plaque NFC et QR code, sans application à installer.',
   },
-  robots: { index: true, follow: true },
+  // Indexable seulement en production (SEO_INDEXABLE=1, en https), en
+  // cohérence avec robots.txt : un banc ou une préproduction ne doit
+  // jamais se retrouver dans Google.
+  robots: seoIndexable() ? { index: true, follow: true } : { index: false, follow: false },
   formatDetection: { telephone: false },
 };
 

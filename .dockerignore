@@ -1,0 +1,15 @@
+# Contexte de build Docker = racine du dépôt (deploy/docker-compose.yml :
+# context: ..). Sans ce fichier, `COPY . .` embarquait les node_modules
+# locaux et surtout les .env* (y compris deploy/.env et ses secrets)
+# dans l'étape de construction, que `next build` lit.
+**/node_modules
+**/.next
+.git
+.claude
+**/.env
+**/.env.*
+!**/.env.example
+deploy/.env
+ios
+docs
+scripts/e2e/baseline

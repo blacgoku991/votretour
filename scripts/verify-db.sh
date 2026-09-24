@@ -36,7 +36,18 @@ psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f "$ROOT/supabase/tests/00_supabase_shim.s
 echo "▸ Migrations"
 for f in "$ROOT"/supabase/migrations/*.sql; do
   printf '   %s' "$(basename "$f")"
-  psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f "$f" 2>&1 | grep -vE 'NOTICE|^$' || true
+  # Le code de retour de psql, pas celui de grep : une migration en échec
+  # doit arrêter la vérification au lieu d'afficher « ✓ ».
+  set +e
+  OUTPUT="$(psql "$DB_URL" -q -v ON_ERROR_STOP=1 -f "$f" 2>&1)"
+  RC=$?
+  set -e
+  printf '%s\n' "$OUTPUT" | grep -vE 'NOTICE|^$' || true
+  if [ "$RC" -ne 0 ]; then
+    printf '  ✗\n'
+    echo "✗ La migration $(basename "$f") a échoué."
+    exit 1
+  fi
   printf '  ✓\n'
 done
 
