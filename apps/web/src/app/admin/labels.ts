@@ -137,6 +137,9 @@ const AUDIT_ACTION_LABEL: Record<string, string> = {
   'settings.updated': 'Réglages modifiés',
   'location.updated': 'Site modifié',
   'plan.updated': 'Offre modifiée',
+  // Écrit une fois, par la migration 0043 : sans libellé, la salle de
+  // contrôle affichait « Plans single offer ».
+  'plans.single_offer': 'Passage à l’offre unique',
   'quota.override': 'Quota ajusté',
   'onboarding.completed': 'Mise en route terminée',
   'billing.checkout_started': 'Paiement commencé',

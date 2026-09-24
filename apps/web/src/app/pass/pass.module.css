@@ -87,6 +87,9 @@
 .cover {
   display: block;
   width: calc(100% + 44px);
+  /* La remise à zéro globale plafonne les images à 100 % : sans cette
+     ligne, le bandeau s'arrête 44 px avant le bord droit du billet. */
+  max-width: none;
   height: 96px;
   margin: -21px -22px 2px;
   object-fit: cover;
