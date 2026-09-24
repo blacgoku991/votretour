@@ -60,33 +60,17 @@ export interface WalletCardData {
    ==================================================================== */
 
 /**
- * ╔══════════════════════════════════════════════════════════════════╗
- * ║ TODO(intégration W1) — REBRANCHER AVANT LA MISE EN PRODUCTION     ║
- * ╚══════════════════════════════════════════════════════════════════╝
- *
- * État des fournisseurs, lu dans le registre du lot W1
+ * État des fournisseurs, lu dans le registre du socle Wallet
  * (server/wallet/providers.ts → walletStatuses(), mis en cache 5 min).
- * Ce module n'existe pas encore dans cette branche. Une fois W1 intégré :
- *
- *   1. remplacer le corps de readWalletStatuses() par
- *        const { walletStatuses } = await import('@/server/wallet/providers');
- *        return walletStatuses();
- *   2. passer WALLET_REGISTRY_WIRED à true.
- *
- * Tant que ce n'est pas fait, la carte dit « non configuré » MÊME quand
- * Wallet fonctionne en production. D'où le drapeau exporté : un test
- * (tests/admin-wallet-card.test.ts) échoue dès que
- * src/server/wallet/providers.ts existe alors que le drapeau vaut
- * encore false, pour que l'oubli casse la CI au lieu de passer en silence.
- *
- * (Import dynamique : la page d'accueil de /admin ne charge le code
- * Wallet que lorsqu'elle s'affiche.) D'ici là, `null` : on n'affiche
- * jamais « prêt » sans que le fournisseur l'ait dit lui-même.
+ * Import dynamique : la page d'accueil de /admin ne charge le code Wallet
+ * que lorsqu'elle s'affiche. Le drapeau reste exporté pour le garde-fou de
+ * tests/admin-wallet-card.test.ts.
  */
-export const WALLET_REGISTRY_WIRED = false;
+export const WALLET_REGISTRY_WIRED = true;
 
 async function readWalletStatuses(): Promise<Record<WalletProviderId, WalletProviderStatus> | null> {
-  return null;
+  const { walletStatuses } = await import('@/server/wallet/providers');
+  return walletStatuses();
 }
 
 /* ====================================================================

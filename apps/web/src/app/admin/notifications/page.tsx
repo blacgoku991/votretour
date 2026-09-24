@@ -79,6 +79,8 @@ export default async function AdminNotificationsPage({
             <option value="web_push">Web Push</option>
             <option value="apns_appclip">APNs App Clip</option>
             <option value="apns_app">APNs App</option>
+            <option value="apple_wallet">Apple Wallet</option>
+            <option value="google_wallet">Google Wallet</option>
             <option value="fcm">FCM</option>
           </select>
           <button className="btn btn--solid btn--sm" type="submit">Filtrer</button>
