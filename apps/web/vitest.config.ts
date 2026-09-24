@@ -2,6 +2,9 @@ import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
+  // tsconfig garde `jsx: preserve` pour Next.js ; les tests qui importent un
+  // composant serveur (.tsx) ont besoin que Vite transforme le JSX lui-même.
+  oxc: { jsx: { runtime: 'automatic' } },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
