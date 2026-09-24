@@ -79,6 +79,22 @@ export interface WalletSnapshot {
     /** Type de cet événement (client_leave, cancel, event_sold_out…). */
     statusEvent: string | null;
     statusChangedAt: string | null;
+    /**
+     * Dernier report, retour après absence ou restauration (queue_events
+     * defer / absent_move_back / restore) : à cet instant, le moteur a vidé
+     * ses paliers (notification_status - your_turn - ahead_one - ahead_two)
+     * pour prévenir le client à nouveau. Le registre Wallet suit la même
+     * règle (alerts.ts). Absent de l'instantané 0021 : complété par
+     * loadWalletSnapshot() (outbox.ts) tant que W0 ne le livre pas.
+     */
+    rankResetAt?: string | null;
+    /**
+     * Registre du moteur (queue_entries.notification_status) : horodatage,
+     * 'at_join' ou 'superseded' par palier. Sert à ne pas faire sonner, au
+     * premier envoi, un palier que le client avait déjà atteint avant
+     * d'ajouter son pass. Complété par loadWalletSnapshot(), comme ci-dessus.
+     */
+    engineLedger?: Partial<Record<string, string>>;
   };
   queue: {
     id: string;
@@ -86,6 +102,14 @@ export interface WalletSnapshot {
     mode: QueueMode;
     notifyAheadThreshold: number;
     entryTtlMinutes: number | null;
+    /**
+     * Événement `live` ou `paused` qui tient la file EN CE MOMENT (même
+     * détection que dispatchQueueNotifications). Un pass de file ajouté
+     * avant le lancement d'un drop reste `kind = 'queue'` : c'est ce champ,
+     * et non le type figé du pass, qui coupe les alertes de rang. Complété
+     * par loadWalletSnapshot() tant que W0 ne le livre pas.
+     */
+    runningEventId?: string | null;
   };
   location: {
     id: string;
@@ -172,6 +196,12 @@ export type LocalOrUrl =
 
 export interface WalletView {
   kind: WalletKind;
+  /**
+   * Mode Événement : billet de drop, OU pass de file pendant qu'un drop
+   * tient la file (queue.runningEventId). Jamais d'alerte de rang, textes
+   * de la famille event_waiting.
+   */
+  eventMode: boolean;
   phase: WalletPhase;
   /** « 6 personnes devant vous », « C’est votre tour ». */
   headline: string;
@@ -181,6 +211,14 @@ export interface WalletView {
   statusText: string;
   /** Moment clé associé à la phase (null : mise à jour silencieuse). */
   alertKind: AlertKind | null;
+  /**
+   * Prestation commencée APRÈS un appel (mode call_next : next → serving,
+   * called_at < service_started_at). « C’est votre tour » a déjà été montré :
+   * Apple ne resonne pas sur « En cours ». Faux en auto_serve, où serving
+   * EST l'appel (called_at = service_started_at). Donnée stable : elle ne
+   * dépend pas du registre, qu'un iPhone ou une montre lirait trop tard.
+   */
+  turnAnnounced: boolean;
   /** État final (réversible pendant 2 h si le moteur remet le ticket en file). */
   final: boolean;
   /** ISO : fin d'affichage actif (Merci + 2 h, grace_until…). */
@@ -190,13 +228,29 @@ export interface WalletView {
   googleState: 'ACTIVE' | 'COMPLETED' | 'EXPIRED';
   times: { joinedAt: string; limitAt?: string; graceUntil?: string; redeemedAt?: string; tz: string };
   event?: { name: string; ticketNumber: string | null; wave: number | null; rules: string | null };
-  /** Seulement si un accès est émis, valide, et accepté en Wallet par l'événement. */
+  /**
+   * Présent dès qu'un billet de drop a un accès émis et encore valide
+   * (phase event_access), QUE LE CONTRÔLE ACCEPTE OU NON le QR Wallet.
+   * `allowWallet: false` (événement réglé sans QR Wallet) : NE JAMAIS
+   * dessiner de code-barres, le contrôle le refuserait ; afficher à la
+   * place WALLET_OFFER_COPY.qrNotAccepted. Null partout ailleurs.
+   */
   qr: { publicId: string; tokenHash: string; allowWallet: boolean } | null;
   brand: {
     orgName: string; placeName: string; accentHex: string;
     /** Accent d'établissement normalisé (lattes, palette de file). */
     accent: WalletAccent;
-    logo: LocalOrUrl | null; cover: LocalOrUrl | null;
+    /** Première source trouvée (événement → lieu → organisation), à titre indicatif. */
+    logo: LocalOrUrl | null;
+    /**
+     * Apple : premier FICHIER local parmi les mêmes sources. Une URL externe
+     * d'événement ne masque pas le logo téléversé du lieu : sans lui, Apple
+     * retomberait sur le monogramme.
+     */
+    logoFile: Extract<LocalOrUrl, { kind: 'local' }> | null;
+    /** Google : première source publiable en HTTPS (null → logo Rangvia). */
+    logoPublicUrl: string | null;
+    cover: LocalOrUrl | null;
     address: string | null; lat: number | null; lng: number | null;
   };
   links: { ticket: string; review: string | null };
@@ -298,8 +352,19 @@ export interface WalletProvider {
   status(): Promise<ProviderStatus>;
   /** GET /api/client/wallet/[provider]. */
   distribute(ctx: DistributeContext): Promise<Response>;
-  /** Traite une ligne de la file d'envoi. `view` est déjà construite par le vidage. */
-  process(job: ClaimedJob, snap: WalletSnapshot, now: Date, view: WalletView): Promise<JobResult>;
+  /**
+   * Traite une ligne de la file d'envoi. `view` est déjà construite par le
+   * vidage. `signal` est annulé quand le délai du traitement est dépassé
+   * (outbox.ts : 15 s au plus, moins si le budget du vidage s'épuise) :
+   * le relayer à fetch() et aux requêtes APNs. Un résultat qui arrive
+   * malgré tout après le délai est encore enregistré (complete ou fail),
+   * mais l'envoi doit rester IDEMPOTENT : Google addMessage avec
+   * `id = kind` (un doublon répond 409, à traiter comme un succès),
+   * Apple : même valeur de `etat` → Wallet ne resonne pas.
+   * Décision : decideAlertFor() (alerts.ts). Texte : walletAlertText()
+   * (lib/wallet-copy.ts), commun au changeMessage Apple et à addMessage.
+   */
+  process(job: ClaimedJob, snap: WalletSnapshot, now: Date, view: WalletView, signal: AbortSignal): Promise<JobResult>;
   /**
    * Tâches de fond appelées chaque minute par le cron, AVANT le vidage et
    * même si le fournisseur n'est pas prêt (Google : créer la classe de

@@ -26,10 +26,12 @@ import { WALLET_PLUS_THRESHOLD } from '@/lib/wallet-copy';
  * DÉTERMINISTE : une chaîne SVG ne dépend que de (format, nombre, accent).
  * Google met les images en cache par URL : une URL par état, jamais deux
  * contenus sous la même URL (voir heroFileName). Toute retouche du dessin
- * DOIT changer ART_REVISION… et le nom de fichier public (préfixe « rang »).
+ * DOIT changer ART_REVISION : la révision fait partie du nom public
+ * (rang-r2-7-jade.png), si bien qu'un nouveau dessin a de nouvelles URL et
+ * que Google ne peut pas garder l'ancienne image en cache.
  */
 
-export const ART_REVISION = 'r1';
+export const ART_REVISION = 'r2';
 
 /** Nombre de personnes devant, ou « au-delà du dernier palier dessiné ». */
 export type SlatsCount = number | 'plus';
@@ -130,6 +132,17 @@ export function thumbSvg(count: SlatsCount, accent: WalletAccent, scale = 1): st
   const selfH = alone ? h * 3.4 : h * 2.1;
   const selfY = alone ? (size - selfH) / 2 : bottom - selfH;
 
+  // Centrage vertical PARTIEL du groupe (comptoir ou points → « Vous ») :
+  // aux petits paliers, une file ancrée en bas laissait le haut vide. On
+  // remonte le groupe de 70 % de l'écart entre les marges haute et basse :
+  // la composition s'équilibre, et « Vous » bouge encore un peu quand la
+  // file avance (le comptoir, lui, descend nettement vers vous).
+  const groupTop = alone
+    ? selfY
+    : selfY - grey * (h + gap) - (count === 'plus' ? 4.4 + 1.5 : gap + 0.8);
+  const groupBottom = selfY + selfH + edge * 1.4;
+  const lift = alone ? 0 : Math.max(0, ((groupTop - (size - groupBottom)) / 2) * 0.7);
+
   const parts: string[] = [];
   parts.push(
     `<defs>`,
@@ -139,6 +152,7 @@ export function thumbSvg(count: SlatsCount, accent: WalletAccent, scale = 1): st
     `</radialGradient>`,
     `</defs>`,
   );
+  if (lift > 0) parts.push(`<g transform="translate(0 ${f(-lift)})">`);
 
   // Lueur de la latte « Vous » (--spill), sous tout le reste.
   parts.push(
@@ -196,6 +210,7 @@ export function thumbSvg(count: SlatsCount, accent: WalletAccent, scale = 1): st
     `<rect x="${f(dotX + dotR * 2.4)}" y="${f(dotY - 2.6)}" width="${f(slatW * 0.34)}" height="2" rx="1" fill="${t.onAccent}" fill-opacity="0.78"/>`,
     `<rect x="${f(dotX + dotR * 2.4)}" y="${f(dotY + 1.2)}" width="${f(slatW * 0.2)}" height="1.4" rx="0.7" fill="${t.onAccent}" fill-opacity="0.45"/>`,
   );
+  if (lift > 0) parts.push(`</g>`);
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 ${size} ${size}">`,
@@ -207,6 +222,9 @@ export function thumbSvg(count: SlatsCount, accent: WalletAccent, scale = 1): st
 /* --------------------------------------------------------------------
    En-tête Google : la file couchée, qui avance vers le comptoir
    -------------------------------------------------------------------- */
+
+/** Places déjà parcourues dessinées en creux derrière « Vous ». */
+const GHOST_TRAIL = 6;
 
 export function heroSvg(count: SlatsCount, accent: WalletAccent): string {
   assertAccent(accent);
@@ -261,6 +279,12 @@ export function heroSvg(count: SlatsCount, accent: WalletAccent): string {
     `<stop offset="0" stop-color="${t.accent}" stop-opacity="0.2"/>`,
     `<stop offset="1" stop-color="${t.accent}" stop-opacity="0"/>`,
     `</radialGradient>`,
+    // Le rail naît du bord gauche et prend corps en arrivant sur « Vous » :
+    // aux petits paliers, la distance déjà parcourue se lit au lieu d'un vide.
+    `<linearGradient id="railIn" x1="0" y1="0" x2="1" y2="0">`,
+    `<stop offset="0" stop-color="${t.rail}" stop-opacity="0"/>`,
+    `<stop offset="1" stop-color="${t.rail}" stop-opacity="1"/>`,
+    `</linearGradient>`,
     // Le comptoir : le trait d'accent de la page client (« COMPTOIR »),
     // redressé, qui s'estompe vers le haut.
     `<linearGradient id="counter" x1="0" y1="1" x2="0" y2="0">`,
@@ -283,9 +307,30 @@ export function heroSvg(count: SlatsCount, accent: WalletAccent): string {
     `<ellipse cx="${f(selfCx)}" cy="${f(railY + 20)}" rx="${f(selfW * 1.9)}" ry="30" fill="url(#spill)"/>`,
   );
 
-  // Le rail, jusqu'au comptoir.
+  // Le rail, jusqu'au comptoir. Derrière « Vous », il s'estompe vers le
+  // bord gauche, et les places déjà parcourues restent dessinées en
+  // creux (simple contour, de plus en plus ténu) : la distance au comptoir
+  // se lit, et la composition tient même avec 0 à 3 lattes devant.
+  const fadeEnd = Math.max(railStart, selfX - 24);
+  if (fadeEnd > 24) {
+    parts.push(
+      `<rect x="0" y="${railY}" width="${f(fadeEnd)}" height="${railH}" fill="url(#railIn)"/>`,
+    );
+    const pitch = w + gap;
+    const trail = plus ? 0 : GHOST_TRAIL;
+    for (let i = 0; i < trail; i += 1) {
+      const x = selfX - gap - w - i * pitch;
+      if (x < 8) break;
+      // Traînée courte, qui s'éteint vite : un sillage, pas une foule.
+      const alpha = 0.26 * (1 - i / trail) ** 1.8;
+      parts.push(
+        `<rect x="${f(x + 0.75)}" y="${f(slatBottom - slatH + 0.75)}" width="${f(w - 1.5)}" height="${f(slatH - 1.5)}" rx="${r}" fill="none" stroke="${t.tick}" stroke-width="1.5" stroke-opacity="${f(alpha)}"/>`,
+        `<rect x="${f(x + w / 2 - 1)}" y="${f(slatBottom)}" width="2" height="${notch + 1}" rx="1" fill="${t.rail}" fill-opacity="${f(Math.min(1, alpha * 3))}"/>`,
+      );
+    }
+  }
   parts.push(
-    `<rect x="${f(railStart)}" y="${railY}" width="${f(counterX - railStart)}" height="${railH}" rx="${railH / 2}" fill="${t.rail}"/>`,
+    `<rect x="${f(fadeEnd)}" y="${railY}" width="${f(counterX - fadeEnd)}" height="${railH}" rx="${railH / 2}" fill="${t.rail}"/>`,
     `<rect x="${counterX}" y="${railY - 184}" width="4" height="${184 + railH}" rx="2" fill="url(#counter)"/>`,
   );
 
@@ -337,17 +382,23 @@ export type ArtFile =
 export const RANGVIA_LOGO_FILE = 'rangvia-660.png';
 
 export function heroFileName(count: SlatsCount, accent: WalletAccent): string {
-  return `rang-${count}-${accent}.png`;
+  return `rang-${ART_REVISION}-${count}-${accent}.png`;
 }
 
 export function heroUrl(siteUrl: string, peopleAhead: number, accent: WalletAccent): string {
   return `${siteUrl.replace(/\/+$/, '')}/api/wallet/art/${heroFileName(heroCount(peopleAhead), accent)}`;
 }
 
-/** Liste blanche stricte : tout autre nom est refusé avant même d'être lu. */
+const ART_FILE = new RegExp(`^rang-${ART_REVISION}-(\\d{1,2}|plus)-(signal|copper|jade|cobalt|brique)\\.png$`);
+
+/**
+ * Liste blanche stricte : tout autre nom est refusé avant même d'être lu,
+ * y compris une AUTRE révision (une ancienne URL ne doit jamais recevoir
+ * le nouveau dessin sous un en-tête « immutable »).
+ */
 export function parseArtFile(name: string): ArtFile | null {
   if (name === RANGVIA_LOGO_FILE) return { type: 'logo' };
-  const match = /^rang-(\d{1,2}|plus)-(signal|copper|jade|cobalt|brique)\.png$/.exec(name);
+  const match = ART_FILE.exec(name);
   if (!match) return null;
   const raw = match[1]!;
   if (raw === 'plus') return { type: 'hero', count: 'plus', accent: match[2] as WalletAccent };

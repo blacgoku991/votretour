@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import sharp from 'sharp';
 import {
-  HERO_HEIGHT, HERO_WIDTH, heroCount, heroFileName, heroSvg, heroUrl, parseArtFile, thumbCount, thumbSvg,
+  ART_REVISION, HERO_HEIGHT, HERO_WIDTH, heroCount, heroFileName, heroSvg, heroUrl, parseArtFile, thumbCount, thumbSvg,
 } from '../../src/server/wallet/art/slats';
-import { svgToPng } from '../../src/server/wallet/art/raster';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { svgToPng, thumbPng, walletCacheDir } from '../../src/server/wallet/art/raster';
 import { WALLET_ACCENTS } from '../../src/server/wallet/types';
 
 /**
@@ -48,15 +51,31 @@ describe('lattes (SVG)', () => {
     expect(() => heroSvg(1, 'fuchsia' as never)).toThrow();
   });
 
-  it('noms de fichiers : liste blanche stricte, un seul nom par état', () => {
-    expect(heroFileName(7, 'jade')).toBe('rang-7-jade.png');
-    expect(heroUrl('https://rangvia.fr/', 33, 'signal')).toBe('https://rangvia.fr/api/wallet/art/rang-plus-signal.png');
-    expect(parseArtFile('rang-7-jade.png')).toEqual({ type: 'hero', count: 7, accent: 'jade' });
-    expect(parseArtFile('rang-plus-brique.png')).toEqual({ type: 'hero', count: 'plus', accent: 'brique' });
+  it('noms de fichiers : révision du dessin dans le nom, liste blanche stricte, un seul nom par état', () => {
+    expect(ART_REVISION).toMatch(/^r\d+$/);
+    const r = ART_REVISION;
+    expect(heroFileName(7, 'jade')).toBe(`rang-${r}-7-jade.png`);
+    expect(heroUrl('https://rangvia.fr/', 33, 'signal')).toBe(`https://rangvia.fr/api/wallet/art/rang-${r}-plus-signal.png`);
+    expect(parseArtFile(`rang-${r}-7-jade.png`)).toEqual({ type: 'hero', count: 7, accent: 'jade' });
+    expect(parseArtFile(`rang-${r}-plus-brique.png`)).toEqual({ type: 'hero', count: 'plus', accent: 'brique' });
     expect(parseArtFile('rangvia-660.png')).toEqual({ type: 'logo' });
-    for (const bad of ['rang-07-jade.png', 'rang-21-jade.png', 'rang-3-ardoise.png', 'rang-3-jade.svg', '../rang-3-jade.png', 'rang-3-jade.png?x']) {
+    for (const bad of [
+      // Sans révision, ou une autre révision : une ancienne URL (en cache
+      // « immutable » chez Google) ne reçoit jamais le nouveau dessin.
+      'rang-7-jade.png', 'rang-r0-7-jade.png', 'rang-r99-7-jade.png',
+      `rang-${r}-07-jade.png`, `rang-${r}-21-jade.png`, `rang-${r}-3-ardoise.png`, `rang-${r}-3-jade.svg`,
+      `../rang-${r}-3-jade.png`, `rang-${r}-3-jade.png?x`,
+    ]) {
       expect(parseArtFile(bad), bad).toBeNull();
     }
+  });
+
+  it('en-tête : sillage des places parcourues, jamais à la place d’une latte', () => {
+    // Personne devant : la latte « Vous » seule, son sillage en creux derrière elle.
+    const svg = heroSvg(0, 'signal');
+    expect((svg.match(/fill="none"/g) ?? []).length).toBeGreaterThan(0);
+    // « Plus » : la latte « Vous » est au bord, pas de sillage.
+    expect(heroSvg('plus', 'signal')).not.toContain('fill="none"');
   });
 });
 
@@ -75,5 +94,38 @@ describe('lattes (PNG)', () => {
     const meta = await sharp(png).metadata();
     expect([meta.width, meta.height]).toEqual([HERO_WIDTH, HERO_HEIGHT]);
     expect(png.length).toBeLessThan(60_000);
+  });
+});
+
+describe('cache des rendus', () => {
+  it('dossier voisin de MEDIA_ROOT, jamais dedans (pas servi par /media)', () => {
+    const saved = { media: process.env.MEDIA_ROOT, cache: process.env.WALLET_CACHE_DIR };
+    try {
+      process.env.MEDIA_ROOT = '/srv/rangvia/uploads';
+      delete process.env.WALLET_CACHE_DIR;
+      expect(walletCacheDir()).toBe('/srv/rangvia/wallet-cache');
+      process.env.WALLET_CACHE_DIR = '/var/cache/rangvia-wallet';
+      expect(walletCacheDir()).toBe('/var/cache/rangvia-wallet');
+    } finally {
+      if (saved.media === undefined) delete process.env.MEDIA_ROOT; else process.env.MEDIA_ROOT = saved.media;
+      if (saved.cache === undefined) delete process.env.WALLET_CACHE_DIR; else process.env.WALLET_CACHE_DIR = saved.cache;
+    }
+  });
+
+  it('rendus simultanés d’une même image : un seul passage, un seul fichier', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'rv-wallet-cache-'));
+    const saved = process.env.WALLET_CACHE_DIR;
+    process.env.WALLET_CACHE_DIR = dir;
+    try {
+      const [a, b, c] = await Promise.all([thumbPng(4, 'copper', 2), thumbPng(4, 'copper', 2), thumbPng(4, 'copper', 2)]);
+      expect(b).toBe(a);
+      expect(c).toBe(a);
+      expect(readdirSync(dir).filter((name) => name.endsWith('.png'))).toHaveLength(1);
+      // Aucun fichier temporaire oublié.
+      expect(readdirSync(dir).every((name) => name.endsWith('.png'))).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env.WALLET_CACHE_DIR; else process.env.WALLET_CACHE_DIR = saved;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

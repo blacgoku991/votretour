@@ -2,6 +2,7 @@ import 'server-only';
 import { after } from 'next/server';
 import { env } from '@/lib/env';
 import { buildWalletView } from './view';
+import { RANK_RESET_EVENTS } from './alerts';
 import { markWalletDegraded, walletProviders, walletStatus } from './providers';
 import type {
   ClaimedJob, JobResult, ProviderStatus, WalletProvider, WalletProviderId, WalletSnapshot,
@@ -31,10 +32,20 @@ import type {
 
 /** Concurrence par fournisseur : 20 flux HTTP/2 APNs, seau de 10 req/s Google. */
 const CONCURRENCY: Record<WalletProviderId, number> = { apple: 20, google: 8 };
-/** Un traitement bloqué ne retient pas le vidage : le bail le rendra réclamable. */
+/** Délai maximal d'un traitement (instantané + fournisseur). */
 export const JOB_TIMEOUT_MS = 15_000;
+/**
+ * Délai minimal accordé à un lot, même en fin de budget : 8 s, le délai
+ * d'un appel REST Google (§ 8.1). Un lot n'est réclamé que s'il reste au
+ * moins CLAIM_FLOOR_MS de budget. Pire cas du cron (budget 20 s) :
+ * 20 − 2 + 8 = 26 s, sous le `curl -m 30` du conteneur cron.
+ */
+export const MIN_JOB_MS = 8_000;
+export const CLAIM_FLOOR_MS = 2_000;
 const LEASE_SECONDS = 60;
 const MAX_ATTEMPTS = 8;
+/** Nouvelles tentatives de complete_wallet_outbox après un envoi réussi. */
+const COMPLETE_RETRY_MS = [250, 1_000] as const;
 
 export interface WalletFlushOptions {
   /** Seulement les passes de cette file (vidage après une action). */
@@ -50,6 +61,8 @@ export interface WalletFlushSummary {
   processed: number;
   done: number;
   failed: number;
+  /** Traitements abandonnés au délai (leur résultat tardif est encore enregistré). */
+  timedOut: number;
   halted: WalletProviderId[];
   budgetExhausted: boolean;
   durationMs: number;
@@ -65,6 +78,8 @@ export interface OutboxDeps {
   fail(id: number, error: string, retryAfterSeconds: number, dead: boolean): Promise<void>;
   degrade(provider: WalletProviderId, reason: string): void;
   now(): number;
+  /** Attente entre deux tentatives de complete (par défaut setTimeout). */
+  sleep?(ms: number): Promise<void>;
   siteUrl: string;
 }
 
@@ -81,11 +96,92 @@ interface ClaimRow {
   created_at: string;
 }
 
-async function adminRpc<T>(fn: string, params: Record<string, unknown>): Promise<T> {
+async function adminDb() {
   const { supabaseAdmin } = await import('@/lib/supabase/admin');
-  const { data, error } = await supabaseAdmin().rpc(fn, params);
+  return supabaseAdmin();
+}
+
+async function adminRpc<T>(fn: string, params: Record<string, unknown>): Promise<T> {
+  const { data, error } = await (await adminDb()).rpc(fn, params);
   if (error) throw new Error(`${fn} : ${error.message}`);
   return data as T;
+}
+
+/**
+ * Complète l'instantané SQL de ce qu'il ne livre pas encore (voir
+ * types.ts : queue.runningEventId, entry.rankResetAt, entry.engineLedger).
+ * Chaque champ déjà fourni par wallet_pass_snapshot() est gardé tel quel :
+ * dès que W0 les livre, cette fonction ne lit plus rien.
+ *
+ * Une lecture en échec LÈVE (le traitement échoue et sera repris) : mieux
+ * vaut un envoi retardé qu'un « C’est votre tour » pendant un drop.
+ */
+export async function completeWalletSnapshot(snap: WalletSnapshot): Promise<WalletSnapshot> {
+  const needEvent = snap.queue.runningEventId === undefined;
+  const needEntry = snap.entry.rankResetAt === undefined || snap.entry.engineLedger === undefined;
+  if (!needEvent && !needEntry) return snap;
+  const db = await adminDb();
+
+  const runningEvent = async (): Promise<string | null> => {
+    // Même détection que dispatchQueueNotifications.
+    const { data, error } = await db
+      .from('event_campaigns')
+      .select('id')
+      .eq('queue_id', snap.queue.id)
+      .in('status', ['live', 'paused'])
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(`event_campaigns : ${error.message}`);
+    return (data?.id as string | undefined) ?? null;
+  };
+
+  const entryLedger = async (): Promise<{ rankResetAt: string | null; engineLedger: Partial<Record<string, string>> }> => {
+    const { data: row, error } = await db
+      .from('queue_entries')
+      .select('id, notification_status')
+      .eq('public_id', snap.entry.publicId)
+      .maybeSingle();
+    if (error) throw new Error(`queue_entries : ${error.message}`);
+    if (!row) return { rankResetAt: null, engineLedger: {} };
+    const { data: reset, error: resetError } = await db
+      .from('queue_events')
+      .select('created_at')
+      .eq('entry_id', row.id)
+      .in('event_type', [...RANK_RESET_EVENTS])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (resetError) throw new Error(`queue_events : ${resetError.message}`);
+    const raw = (row.notification_status ?? {}) as Record<string, unknown>;
+    const engineLedger: Partial<Record<string, string>> = {};
+    for (const [key, value] of Object.entries(raw)) if (typeof value === 'string') engineLedger[key] = value;
+    return { rankResetAt: (reset?.created_at as string | undefined) ?? null, engineLedger };
+  };
+
+  const [eventId, ledger] = await Promise.all([
+    needEvent ? runningEvent() : Promise.resolve(snap.queue.runningEventId ?? null),
+    needEntry ? entryLedger() : Promise.resolve(null),
+  ]);
+
+  return {
+    ...snap,
+    queue: { ...snap.queue, runningEventId: eventId },
+    entry: {
+      ...snap.entry,
+      rankResetAt: snap.entry.rankResetAt !== undefined ? snap.entry.rankResetAt : (ledger?.rankResetAt ?? null),
+      engineLedger: snap.entry.engineLedger ?? ledger?.engineLedger ?? {},
+    },
+  };
+}
+
+/**
+ * Instantané complet d'un pass, pour le vidage ET pour les routes des
+ * fournisseurs (distribution, service web Apple) : toujours passer par ici
+ * plutôt que d'appeler wallet_pass_snapshot() directement.
+ */
+export async function loadWalletSnapshot(passId: string): Promise<WalletSnapshot | null> {
+  const snap = await adminRpc<WalletSnapshot | null>('wallet_pass_snapshot', { p_pass_id: passId });
+  return snap ? completeWalletSnapshot(snap) : null;
 }
 
 export function defaultOutboxDeps(): OutboxDeps {
@@ -101,9 +197,7 @@ export function defaultOutboxDeps(): OutboxDeps {
       });
       return (rows ?? []).map(toClaimedJob);
     },
-    async snapshot(passId) {
-      return (await adminRpc<WalletSnapshot | null>('wallet_pass_snapshot', { p_pass_id: passId })) ?? null;
-    },
+    snapshot: loadWalletSnapshot,
     async complete(id, result) {
       await adminRpc('complete_wallet_outbox', { p_id: id, p_result: result });
     },
@@ -117,6 +211,7 @@ export function defaultOutboxDeps(): OutboxDeps {
     },
     degrade: markWalletDegraded,
     now: () => Date.now(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     siteUrl: env.siteUrl,
   };
 }
@@ -152,7 +247,21 @@ export function retryDelaySeconds(attempts: number): number {
   return Math.min(1800, 15 * 2 ** Math.max(0, attempts - 1));
 }
 
+/** Délai d'un lot réclamé à `now` : jamais au-delà du budget + MIN_JOB_MS. */
+export function jobTimeoutMs(now: number, deadline: number): number {
+  return Math.min(JOB_TIMEOUT_MS, Math.max(MIN_JOB_MS, deadline - now));
+}
+
 const TIMEOUT = Symbol('timeout');
+const MISSING = Symbol('missing');
+
+/** Motif d'annulation transmis au fournisseur par le signal. */
+export class WalletJobTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`Délai de traitement dépassé (${ms} ms)`);
+    this.name = 'WalletJobTimeoutError';
+  }
+}
 
 async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T | typeof TIMEOUT> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -170,39 +279,104 @@ async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T | typeof 
 
 type JobOutcome = 'done' | 'failed' | 'halt' | 'timeout';
 
-async function runJob(provider: WalletProvider, job: ClaimedJob, deps: OutboxDeps): Promise<JobOutcome> {
-  try {
-    const snap = await deps.snapshot(job.walletPassId);
-    if (!snap) {
-      // Pass supprimé entre l'enfilement et le traitement (purge) : rien à envoyer.
-      await deps.complete(job.id, { error: 'Pass introuvable' });
-      return 'done';
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'erreur inconnue';
+}
+
+/**
+ * Après un envoi RÉUSSI, l'enregistrement ne doit pas se perdre : sans lui,
+ * ni le registre d'alertes ni le budget Google ne sont écrits, et la ligne
+ * repartirait (nouvelle sonnerie). On réessaie donc complete, puis, s'il
+ * échoue encore, on n'appelle PAS fail (qui reprogrammerait l'envoi dans
+ * 15 s) : la ligne attend l'expiration du bail (60 s). L'envoi rejoué
+ * reste sans double sonnerie grâce à l'idempotence des fournisseurs
+ * (voir WalletProvider.process dans types.ts).
+ */
+async function completeReliably(deps: OutboxDeps, job: ClaimedJob, payload: Record<string, unknown>): Promise<boolean> {
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await deps.complete(job.id, payload);
+      return true;
+    } catch (error) {
+      const wait = COMPLETE_RETRY_MS[attempt];
+      if (wait === undefined) {
+        console.error('[wallet] enregistrement impossible après envoi', job.provider, job.id, errorMessage(error));
+        return false;
+      }
+      await sleep(wait);
     }
+  }
+}
+
+async function failQuietly(deps: OutboxDeps, job: ClaimedJob, message: string): Promise<void> {
+  try {
+    await deps.fail(job.id, message, retryDelaySeconds(job.attempts), job.attempts >= MAX_ATTEMPTS);
+  } catch {
+    /* la ligne redeviendra réclamable à l'expiration du bail */
+  }
+}
+
+/** Enregistre l'issue d'un traitement : complete, fail, ou rien si le bail s'en chargera. */
+async function record(
+  provider: WalletProvider,
+  job: ClaimedJob,
+  deps: OutboxDeps,
+  result: JobResult | typeof MISSING,
+): Promise<JobOutcome> {
+  if (result === MISSING) {
+    // Pass supprimé entre l'enfilement et le traitement (purge) : rien à envoyer.
+    return (await completeReliably(deps, job, { error: 'Pass introuvable' })) ? 'done' : 'failed';
+  }
+  if (result.ok) {
+    return (await completeReliably(deps, job, completionPayload(result))) ? 'done' : 'failed';
+  }
+  try {
+    await deps.fail(job.id, result.error, result.retryAfterSeconds, result.dead);
+  } catch {
+    /* la ligne redeviendra réclamable à l'expiration du bail */
+  }
+  return result.haltProvider ? 'halt' : 'failed';
+}
+
+async function runJob(provider: WalletProvider, job: ClaimedJob, deps: OutboxDeps, timeoutMs: number): Promise<JobOutcome> {
+  const controller = new AbortController();
+  const work = (async (): Promise<JobResult | typeof MISSING> => {
+    const snap = await deps.snapshot(job.walletPassId);
+    if (!snap) return MISSING;
+    // Délai déjà dépassé pendant la lecture : on n'envoie plus rien.
+    controller.signal.throwIfAborted();
     const now = new Date(deps.now());
     const view = buildWalletView(snap, now, { siteUrl: deps.siteUrl });
-    const result = await withTimeout(provider.process(job, snap, now, view), JOB_TIMEOUT_MS);
-    if (result === TIMEOUT) {
-      // On n'écrit rien : la ligne reste « en cours » et redevient
-      // réclamable à l'expiration du bail, qui relira l'état courant.
-      console.warn('[wallet] traitement trop long', provider.id, job.id);
-      return 'timeout';
-    }
-    if (result.ok) {
-      await deps.complete(job.id, completionPayload(result));
-      return 'done';
-    }
-    await deps.fail(job.id, result.error, result.retryAfterSeconds, result.dead);
-    return result.haltProvider ? 'halt' : 'failed';
+    return provider.process(job, snap, now, view, controller.signal);
+  })();
+
+  let result: JobResult | typeof MISSING | typeof TIMEOUT;
+  try {
+    result = await withTimeout(work, timeoutMs);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'erreur inconnue';
-    console.error('[wallet] traitement impossible', provider.id, job.id, message);
-    try {
-      await deps.fail(job.id, message, retryDelaySeconds(job.attempts), job.attempts >= MAX_ATTEMPTS);
-    } catch {
-      /* la ligne redeviendra réclamable à l'expiration du bail */
-    }
+    console.error('[wallet] traitement impossible', provider.id, job.id, errorMessage(error));
+    await failQuietly(deps, job, errorMessage(error));
     return 'failed';
   }
+
+  if (result === TIMEOUT) {
+    // On annule (le fournisseur relaie le signal à fetch et à APNs), et on
+    // garde la main : si le travail aboutit malgré tout, son résultat réel
+    // est enregistré (registre, budget, notification_deliveries) ; s'il
+    // échoue ou est annulé, la ligne repart proprement par fail. Sans
+    // cette suite, un envoi tardif ferait sonner sans rien inscrire, et
+    // la reprise à l'expiration du bail ferait sonner une seconde fois.
+    console.warn('[wallet] traitement trop long', provider.id, job.id);
+    controller.abort(new WalletJobTimeoutError(timeoutMs));
+    void work.then(
+      (late) => record(provider, job, deps, late),
+      (error: unknown) => failQuietly(deps, job, errorMessage(error)),
+    ).catch(() => undefined);
+    return 'timeout';
+  }
+
+  return record(provider, job, deps, result);
 }
 
 export async function flushWalletOutbox(
@@ -214,7 +388,7 @@ export async function flushWalletOutbox(
   const limit = Math.max(1, options.limit ?? 100);
   const deadline = started + budgetMs;
   const summary: WalletFlushSummary = {
-    ready: [], processed: 0, done: 0, failed: 0, halted: [], budgetExhausted: false, durationMs: 0,
+    ready: [], processed: 0, done: 0, failed: 0, timedOut: 0, halted: [], budgetExhausted: false, durationMs: 0,
   };
 
   // Fournisseurs prêts seulement : un fournisseur non prêt laisse ses
@@ -232,7 +406,9 @@ export async function flushWalletOutbox(
   for (const provider of ready) {
     let halted = false;
     while (!halted && summary.processed < limit) {
-      if (deps.now() >= deadline) {
+      // Un lot réclamé doit pouvoir finir : pas de réclamation dans les
+      // dernières secondes du budget (voir CLAIM_FLOOR_MS).
+      if (deadline - deps.now() < CLAIM_FLOOR_MS) {
         summary.budgetExhausted = true;
         break;
       }
@@ -252,11 +428,15 @@ export async function flushWalletOutbox(
       }
       if (batch.length === 0) break;
 
-      const outcomes = await Promise.all(batch.map((job) => runJob(provider, job, deps)));
+      // Un délai commun au lot, borné par le budget restant : le vidage
+      // ne déborde jamais de plus de MIN_JOB_MS.
+      const timeoutMs = jobTimeoutMs(deps.now(), deadline);
+      const outcomes = await Promise.all(batch.map((job) => runJob(provider, job, deps, timeoutMs)));
       for (const outcome of outcomes) {
         summary.processed += 1;
         if (outcome === 'done') summary.done += 1;
         else summary.failed += 1;
+        if (outcome === 'timeout') summary.timedOut += 1;
         if (outcome === 'halt') halted = true;
       }
     }

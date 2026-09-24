@@ -6,8 +6,8 @@ import {
 } from '@/lib/wallet-copy';
 import { isActiveStatus } from '@/lib/types';
 import { ACCENT_HEX, normalizeAccent, normalizeHex } from './palette';
-import { mediaRef } from './media';
-import type { AlertKind, WalletPhase, WalletSnapshot, WalletView } from './types';
+import { mediaRef, publicHttpsUrl } from './media';
+import type { AlertKind, LocalOrUrl, WalletPhase, WalletSnapshot, WalletView } from './types';
 
 /**
  * Modèle de vue d'un pass : fonction PURE (instantané, horloge) → vue.
@@ -74,11 +74,17 @@ function queuePhase(snap: WalletSnapshot): PhaseResult {
     case 'expired':
       return { phase: 'expired', headline: WALLET_HEADLINE.expired, statusText: WALLET_STATUS.closedTicket, alertKind: null, showPosition: false };
     case 'absent':
-      // Titre inchangé (dernière position connue) : seul le statut parle.
-      return { phase: 'absent', headline: walletAheadHeadline(n), statusText: WALLET_STATUS.absent, alertKind: null, showPosition: false };
+      // Titre neutre : un absent n'est plus dans la file (sa dernière
+      // position serait fausse) et « C’est votre tour » contredirait le statut.
+      return { phase: 'absent', headline: WALLET_HEADLINE.absent, statusText: WALLET_STATUS.absent, alertKind: null, showPosition: false };
     case 'serving':
-      // `your_turn` a déjà sonné à l'appel : « En cours » ne réveille personne.
-      return { phase: 'serving', headline: WALLET_HEADLINE.turn, statusText: WALLET_STATUS.serving, alertKind: null, showPosition: false };
+      // Même règle que le moteur (claim_pending_notifications : serving ou
+      // next → your_turn). En auto_serve, le réglage par défaut, le client
+      // passe directement de « 1 personne devant » à « en cours » : c'est
+      // l'appel lui-même, et le seul moment qu'il ne doit pas manquer.
+      // Les doublons sont évités plus loin : registre pour Google,
+      // `turnAnnounced` pour Apple (alerts.ts).
+      return { phase: 'serving', headline: WALLET_HEADLINE.turn, statusText: WALLET_STATUS.serving, alertKind: 'your_turn', showPosition: false };
     case 'next':
       return { phase: 'turn', headline: WALLET_HEADLINE.turn, statusText: WALLET_STATUS.turn, alertKind: 'your_turn', showPosition: false };
     default:
@@ -119,7 +125,10 @@ function overPhase(snap: WalletSnapshot, reason: 'sold_out' | 'ended'): PhaseRes
   };
 }
 
-/** Phases d'un billet de drop : l'accès émis prime sur tout le reste. */
+/**
+ * Phases d'un billet de drop (ou d'un pass de file pendant un drop) :
+ * l'accès émis prime sur tout le reste.
+ */
 function eventPhase(snap: WalletSnapshot, now: Date): PhaseResult {
   const { entry, access, event } = snap;
   const tz = snap.location.timezone;
@@ -163,6 +172,12 @@ function eventPhase(snap: WalletSnapshot, now: Date): PhaseResult {
 
   // Ticket terminé hors vague (quitté, retiré, expiré) : mêmes mots qu'en file.
   if (!isActiveStatus(entry.status) && entry.status !== 'absent') return queuePhase(snap);
+
+  // Déjà au comptoir : « En cours », sans alerte (aucune alerte de rang
+  // en mode Événement, pas même your_turn).
+  if (entry.status === 'serving') {
+    return { phase: 'serving', headline: WALLET_HEADLINE.turn, statusText: WALLET_STATUS.serving, alertKind: null, showPosition: false };
+  }
 
   const n = Math.max(0, entry.peopleAhead ?? 0);
   return {
@@ -216,14 +231,34 @@ export interface BuildViewOptions {
   siteUrl: string;
 }
 
+function parseTime(iso: string | null | undefined): number {
+  return iso ? Date.parse(iso) : Number.NaN;
+}
+
+/**
+ * Appelé AVANT d'être servi (call_next : next → serving) ? En auto_serve,
+ * la promotion pose called_at et service_started_at dans la même
+ * instruction : ils sont égaux. Retour en file → les deux sont remis à nul.
+ */
+function turnAnnouncedBeforeServing(entry: WalletSnapshot['entry']): boolean {
+  if (entry.status !== 'serving') return false;
+  const called = parseTime(entry.calledAt);
+  const started = parseTime(entry.serviceStartedAt);
+  return Number.isFinite(called) && Number.isFinite(started) && called < started;
+}
+
 export function buildWalletView(snap: WalletSnapshot, now: Date, options: BuildViewOptions): WalletView {
   const siteUrl = options.siteUrl.replace(/\/+$/, '');
   const tz = snap.location.timezone || 'Europe/Paris';
   const accent = normalizeAccent(snap.organization.brandAccent);
   const isEvent = snap.pass.kind === 'event' && snap.event !== null;
   const event = isEvent ? snap.event : null;
+  // Un drop lancé APRÈS l'ajout du pass de file le fait passer en mode
+  // Événement : plus aucune alerte de rang (dispatchQueueNotifications
+  // les coupe aussi), seule la vague fait venir le client.
+  const eventMode = isEvent || Boolean(snap.queue.runningEventId);
 
-  const result = isEvent ? eventPhase(snap, now) : queuePhase(snap);
+  const result = eventMode ? eventPhase(snap, now) : queuePhase(snap);
   const { phase } = result;
   const n = Math.max(0, snap.entry.peopleAhead ?? 0);
 
@@ -242,7 +277,7 @@ export function buildWalletView(snap: WalletSnapshot, now: Date, options: BuildV
   else if (phase === 'done' && archiveAt && now.getTime() >= Date.parse(archiveAt)) googleState = 'COMPLETED';
 
   const times: WalletView['times'] = { joinedAt: snap.entry.joinedAt, tz };
-  if (snap.access && isEvent) {
+  if (snap.access && eventMode) {
     if (snap.access.status === 'issued') {
       times.limitAt = snap.access.validUntil;
       times.graceUntil = snap.access.graceUntil;
@@ -255,9 +290,16 @@ export function buildWalletView(snap: WalletSnapshot, now: Date, options: BuildV
     : null;
 
   const accentHex = (event && normalizeHex(event.accentHex)) || ACCENT_HEX[accent];
-  const logo = mediaRef(event?.logoUrl, siteUrl)
-    ?? mediaRef(snap.location.logoUrl, siteUrl)
-    ?? mediaRef(snap.organization.logoUrl, siteUrl);
+  // Sources de logo par ordre de préférence. Apple ne lit que des fichiers
+  // locaux, Google que des URL HTTPS : chacun prend la première source
+  // qu'il sait utiliser, au lieu de retomber sur le monogramme parce que
+  // la première source de la liste lui était inutilisable.
+  const logos = [event?.logoUrl, snap.location.logoUrl, snap.organization.logoUrl]
+    .map((value) => mediaRef(value, siteUrl))
+    .filter((ref): ref is LocalOrUrl => ref !== null);
+  const logo = logos[0] ?? null;
+  const logoFile = logos.find((ref): ref is Extract<LocalOrUrl, { kind: 'local' }> => ref.kind === 'local') ?? null;
+  const logoPublicUrl = logos.map(publicHttpsUrl).find((url): url is string => url !== null) ?? null;
   const cover = mediaRef(event ? event.coverUrl : snap.location.coverUrl, siteUrl);
 
   const ticketLink = `${siteUrl}/e/${encodeURIComponent(snap.location.slug)}${event ? `?event=${event.id}` : ''}`;
@@ -269,6 +311,7 @@ export function buildWalletView(snap: WalletSnapshot, now: Date, options: BuildV
 
   return {
     kind: snap.pass.kind,
+    eventMode,
     phase,
     headline: result.headline,
     position: result.showPosition
@@ -276,6 +319,7 @@ export function buildWalletView(snap: WalletSnapshot, now: Date, options: BuildV
       : null,
     statusText: result.statusText,
     alertKind: result.alertKind,
+    turnAnnounced: phase === 'serving' && turnAnnouncedBeforeServing(snap.entry),
     final,
     archiveAt,
     voided,
@@ -298,6 +342,8 @@ export function buildWalletView(snap: WalletSnapshot, now: Date, options: BuildV
       accentHex,
       accent,
       logo,
+      logoFile,
+      logoPublicUrl,
       cover,
       address: joinAddress(snap.location),
       lat: snap.location.latitude,

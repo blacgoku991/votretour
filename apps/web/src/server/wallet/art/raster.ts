@@ -13,20 +13,29 @@ import { ART_REVISION, heroSvg, thumbSvg, type SlatsCount } from './slats';
  * dépendance de Next) ; il est chargé À LA DEMANDE : une action de file
  * qui ne touche pas au Wallet n'a pas à charger libvips.
  *
- * Deux niveaux de cache, parce qu'une vague de 200 accès demande 200 fois
+ * Trois protections, parce qu'une vague de 200 accès demande 200 fois
  * les mêmes quelques images :
+ *  - rendus simultanés d'une même image regroupés : un seul passage par
+ *    sharp, les autres attendent le même résultat ;
  *  - mémoire (quelques dizaines d'entrées, bornée) ;
- *  - disque, MEDIA_ROOT/wallet-cache : survit au redéploiement. Écriture
- *    atomique (fichier temporaire puis renommage) : deux processus qui
- *    génèrent la même image en même temps ne laissent jamais un fichier
- *    tronqué. Un disque en lecture seule n'empêche rien : on sert depuis
- *    la mémoire.
+ *  - disque : un dossier VOISIN de MEDIA_ROOT (/app/data/wallet-cache par
+ *    défaut, ou WALLET_CACHE_DIR), jamais dedans. MEDIA_ROOT est servi
+ *    tel quel par /media/… et sauvegardé avec les téléversements des pros :
+ *    un cache n'a rien à y faire. Il survit aux redémarrages du processus
+ *    (le dossier /app/data appartient à l'utilisateur du conteneur) mais
+ *    pas forcément au redéploiement : ce n'est qu'un cache, il se refait
+ *    au premier passage. Écriture atomique (fichier temporaire
+ *    puis renommage) : deux processus qui génèrent la même image en même
+ *    temps ne laissent jamais un fichier tronqué. Un disque en lecture
+ *    seule n'empêche rien : on sert depuis la mémoire.
  * La clé est l'empreinte du SVG : un nouveau dessin ne peut pas servir
  * l'ancienne image.
  */
 
 const MEMORY_MAX = 96;
 const memory = new Map<string, Buffer>();
+const inflight = new Map<string, Promise<Buffer>>();
+let diskWarned = false;
 
 function remember(key: string, png: Buffer): void {
   if (memory.has(key)) memory.delete(key);
@@ -39,7 +48,9 @@ function remember(key: string, png: Buffer): void {
 }
 
 export function walletCacheDir(): string {
-  return path.join(mediaRoot(), 'wallet-cache');
+  const explicit = process.env.WALLET_CACHE_DIR?.trim();
+  if (explicit) return path.resolve(explicit);
+  return path.join(path.dirname(path.resolve(mediaRoot())), 'wallet-cache');
 }
 
 type SharpFactory = (input: Buffer, options?: { density?: number }) => {
@@ -61,12 +72,7 @@ export async function svgToPng(svg: string, options: { palette?: boolean } = {})
     .toBuffer();
 }
 
-async function cached(name: string, svg: string, palette = true): Promise<Buffer> {
-  const digest = createHash('sha256').update(svg).digest('hex').slice(0, 16);
-  const key = `${ART_REVISION}-${name}-${digest}`;
-  const hit = memory.get(key);
-  if (hit) return hit;
-
+async function renderAndStore(key: string, svg: string, palette: boolean): Promise<Buffer> {
   const dir = walletCacheDir();
   const file = path.join(dir, `${key}.png`);
   try {
@@ -87,9 +93,27 @@ async function cached(name: string, svg: string, palette = true): Promise<Buffer
     await writeFile(tmp, png);
     await rename(tmp, file);
   } catch (error) {
-    console.warn('[wallet] cache d’images indisponible', error instanceof Error ? error.message : error);
+    // Une fois par processus : un disque en lecture seule ne doit pas
+    // remplir les journaux à chaque image.
+    if (!diskWarned) {
+      diskWarned = true;
+      console.warn('[wallet] cache d’images sur disque indisponible', error instanceof Error ? error.message : error);
+    }
   }
   return png;
+}
+
+async function cached(name: string, svg: string, palette = true): Promise<Buffer> {
+  const digest = createHash('sha256').update(svg).digest('hex').slice(0, 16);
+  const key = `${ART_REVISION}-${name}-${digest}`;
+  const hit = memory.get(key);
+  if (hit) return hit;
+
+  const pending = inflight.get(key);
+  if (pending) return pending;
+  const job = renderAndStore(key, svg, palette).finally(() => inflight.delete(key));
+  inflight.set(key, job);
+  return job;
 }
 
 /** Vignette Apple : thumbnail.png (1), @2x (2), @3x (3). */

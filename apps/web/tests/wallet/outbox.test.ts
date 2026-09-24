@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  completionPayload, flushWalletOutbox, retryDelaySeconds, scheduleWalletFlush, toClaimedJob, type OutboxDeps,
+  CLAIM_FLOOR_MS, JOB_TIMEOUT_MS, MIN_JOB_MS, WalletJobTimeoutError,
+  completionPayload, flushWalletOutbox, jobTimeoutMs, retryDelaySeconds, scheduleWalletFlush, toClaimedJob, type OutboxDeps,
 } from '../../src/server/wallet/outbox';
 import { walletProviders } from '../../src/server/wallet/providers';
 import type { ClaimedJob, JobResult, WalletProvider, WalletProviderId } from '../../src/server/wallet/types';
@@ -119,9 +120,9 @@ describe('flushWalletOutbox', () => {
 
   it('budget tenu : arrêt dès qu’il est dépassé, le reste attend le tour suivant', async () => {
     const many = Array.from({ length: 50 }, (_, i) => job(i + 1));
-    // Chaque lecture d'horloge avance de 100 ms : le budget de 1 s est vite atteint.
+    // Chaque lecture d'horloge avance de 100 ms : le budget de 3 s est vite atteint.
     const h = harness([fakeProvider('google', true, ok)], { google: many }, 100);
-    const summary = await flushWalletOutbox({ budgetMs: 1000, limit: 400 }, h.deps);
+    const summary = await flushWalletOutbox({ budgetMs: 3000, limit: 400 }, h.deps);
     expect(summary.budgetExhausted).toBe(true);
     expect(summary.processed).toBeLessThan(50);
     expect(summary.processed).toBeGreaterThan(0);
@@ -148,10 +149,144 @@ describe('flushWalletOutbox', () => {
     expect(h.degraded).toEqual(['apple']);
   });
 
+  it('fin de budget : aucune réclamation dans les dernières secondes', async () => {
+    const h = harness([fakeProvider('google', true, ok)], { google: [job(1)] });
+    const summary = await flushWalletOutbox({ budgetMs: CLAIM_FLOOR_MS - 1 }, h.deps);
+    expect(h.claims).toEqual([]);
+    expect(summary).toMatchObject({ processed: 0, budgetExhausted: true });
+  });
+
+  it('délai d’un lot borné par le budget restant (pire cas du cron sous 30 s)', () => {
+    expect(jobTimeoutMs(0, 20_000)).toBe(JOB_TIMEOUT_MS);
+    expect(jobTimeoutMs(10_000, 20_000)).toBe(10_000);
+    // En fin de budget, un lot garde au moins le délai d'un appel REST.
+    expect(jobTimeoutMs(18_000, 20_000)).toBe(MIN_JOB_MS);
+    // Dernière réclamation possible à échéance − CLAIM_FLOOR_MS : 20 − 2 + 8 = 26 s.
+    expect(20_000 - CLAIM_FLOOR_MS + jobTimeoutMs(20_000 - CLAIM_FLOOR_MS, 20_000)).toBeLessThanOrEqual(26_000);
+  });
+
+  it('envoi réussi mais enregistrement en échec : complete réessayé, jamais fail (pas de seconde sonnerie)', async () => {
+    const h = harness([fakeProvider('google', true, ok)], { google: [job(1), job(2)] });
+    const attempts: Record<number, number> = {};
+    h.deps.complete = async (id, result) => {
+      attempts[id] = (attempts[id] ?? 0) + 1;
+      if (id === 1 && attempts[id]! < 3) throw new Error('base occupée');
+      if (id === 2) throw new Error('base indisponible');
+      h.completed.push({ id, result });
+    };
+    const sleeps: number[] = [];
+    h.deps.sleep = async (ms) => { sleeps.push(ms); };
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const summary = await flushWalletOutbox({ budgetMs: 4000 }, h.deps);
+      expect(attempts).toEqual({ 1: 3, 2: 3 });
+      expect(h.completed.map((c) => c.id)).toEqual([1]);
+      // Un fail reprogrammerait l'envoi dans 15 s, et l'alerte avec : la
+      // ligne attend plutôt l'expiration du bail.
+      expect(h.failed).toEqual([]);
+      expect(summary).toMatchObject({ done: 1, failed: 1 });
+      // Deux lignes en parallèle : 250 ms puis 1 s d'attente chacune.
+      expect([...sleeps].sort((a, b) => a - b)).toEqual([250, 250, 1000, 1000]);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it('une panne de réclamation ne lève pas', async () => {
     const h = harness([fakeProvider('google', true, ok)], {});
     h.deps.claim = async () => { throw new Error('base indisponible'); };
     await expect(flushWalletOutbox({}, h.deps)).resolves.toMatchObject({ processed: 0 });
+  });
+});
+
+describe('fournisseur lent', () => {
+  /** Laisse s'écouler les microtâches et les minuteries simulées en attente. */
+  async function settle() {
+    for (let i = 0; i < 10; i += 1) await vi.advanceTimersByTimeAsync(1);
+  }
+
+  it('délai dépassé : signal annulé, le vidage rend la main, le résultat tardif est ENREGISTRÉ', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const signals: AbortSignal[] = [];
+      const effects: string[] = [];
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      // Fournisseur qui n'écoute pas le signal (le pire cas) : il finit par
+      // envoyer son alerte, bien après le délai.
+      const slow: WalletProvider['process'] = async (j, _snap, _now, _view, signal) => {
+        signals.push(signal);
+        await gate;
+        effects.push(`addMessage TEXT_AND_NOTIFY ${j.id}`);
+        return { ok: true, syncedHash: `late-${j.id}-0123456`, alertKind: 'your_turn', alertNotified: true };
+      };
+      const h = harness([fakeProvider('google', true, slow)], { google: [job(1), job(2)] });
+      const flush = flushWalletOutbox({ budgetMs: 20_000 }, h.deps);
+      await vi.advanceTimersByTimeAsync(JOB_TIMEOUT_MS);
+      const summary = await flush;
+      expect(summary).toMatchObject({ processed: 2, timedOut: 2, done: 0 });
+      expect(signals.map((sig) => sig.aborted)).toEqual([true, true]);
+      expect(signals[0]!.reason).toBeInstanceOf(WalletJobTimeoutError);
+      expect(h.completed).toEqual([]);
+
+      // L'envoi aboutit après coup : le registre, le budget et la ligne de
+      // notification_deliveries sont écrits (sinon la reprise au bail
+      // ferait sonner une seconde fois).
+      release();
+      await settle();
+      expect(effects).toEqual(['addMessage TEXT_AND_NOTIFY 1', 'addMessage TEXT_AND_NOTIFY 2']);
+      expect(h.completed.map((c) => c.id).sort()).toEqual([1, 2]);
+      expect(h.completed[0]!.result).toMatchObject({ alertKind: 'your_turn', alertNotified: true });
+      expect(h.failed).toEqual([]);
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('fournisseur qui relaie le signal : annulé, la ligne repart par fail', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const obedient: WalletProvider['process'] = (_j, _snap, _now, _view, signal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason));
+        });
+      const h = harness([fakeProvider('google', true, obedient)], { google: [job(1)] });
+      const flush = flushWalletOutbox({ budgetMs: 20_000 }, h.deps);
+      await vi.advanceTimersByTimeAsync(JOB_TIMEOUT_MS);
+      await flush;
+      await settle();
+      expect(h.completed).toEqual([]);
+      expect(h.failed).toEqual([
+        { id: 1, error: `Délai de traitement dépassé (${JOB_TIMEOUT_MS} ms)`, retry: retryDelaySeconds(1), dead: false },
+      ]);
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('délai plus court en fin de budget : le vidage ne déborde que de MIN_JOB_MS', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const never: WalletProvider['process'] = () => new Promise(() => undefined);
+      const h = harness([fakeProvider('google', true, never)], { google: [job(1)] });
+      // Budget de 3 s : réclamation permise, délai porté à MIN_JOB_MS.
+      const flush = flushWalletOutbox({ budgetMs: 3_000 }, h.deps);
+      await vi.advanceTimersByTimeAsync(MIN_JOB_MS - 1);
+      let finished = false;
+      void flush.then(() => { finished = true; });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(finished).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(flush).resolves.toMatchObject({ timedOut: 1 });
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
 

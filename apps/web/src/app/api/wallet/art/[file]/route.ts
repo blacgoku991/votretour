@@ -6,11 +6,13 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Images publiques des passes Google Wallet : lattes d'en-tête
- * (rang-<n|plus>-<accent>.png, 1032 × 336) et logo Rangvia par défaut
- * (rangvia-660.png).
+ * (rang-<révision>-<n|plus>-<accent>.png, 1032 × 336) et logo Rangvia par
+ * défaut (rangvia-660.png).
  *
  * Google télécharge et met en cache ces images PAR URL : chaque état a sa
- * propre URL et son contenu ne change jamais (d'où « immutable »). Le nom
+ * propre URL, la révision du dessin en fait partie, et son contenu ne
+ * change jamais (d'où « immutable »). Le logo, lui, suit public/icon.svg,
+ * qui peut être retouché sans y penser : un jour de cache seulement. Le nom
  * passe une liste blanche stricte avant tout travail : aucune donnée, aucun
  * chemin de fichier ne vient de la requête.
  */
@@ -25,7 +27,7 @@ export async function GET(_request: Request, context: { params: Promise<{ file: 
       headers: {
         'Content-Type': 'image/png',
         'Content-Length': String(png.length),
-        'Cache-Control': 'public, max-age=31536000, immutable',
+        'Cache-Control': art.type === 'logo' ? 'public, max-age=86400' : 'public, max-age=31536000, immutable',
         'X-Content-Type-Options': 'nosniff',
       },
     });

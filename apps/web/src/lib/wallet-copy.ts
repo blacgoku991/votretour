@@ -1,6 +1,6 @@
 import { notificationCopy, peopleAheadLabel } from '@/lib/copy';
 import type { EntryStatus } from '@/lib/types';
-import type { WalletPhase, WalletView } from '@/server/wallet/types';
+import type { AlertKind, WalletPhase, WalletProviderId, WalletView } from '@/server/wallet/types';
 
 /**
  * Textes des passes Apple Wallet et Google Wallet : SOURCE UNIQUE.
@@ -70,7 +70,12 @@ export function walletTime(value: string | Date, timeZone: string): string {
 export const WALLET_HEADLINE = {
   turn: 'C’est votre tour',
   /** File en pause ou fermée alors que plus personne n'est devant. */
-  first: 'Vous êtes le prochain',
+  first: 'Vous passez en premier',
+  /**
+   * Marqué absent. Ni la dernière position (le ticket n'est plus dans la
+   * file), ni « C’est votre tour » (qui contredirait le statut).
+   */
+  absent: 'Appel manqué',
   done: 'Merci de votre visite',
   left: 'Vous avez quitté la file',
   removed: 'Vous avez été retiré de la file',
@@ -94,7 +99,8 @@ export const WALLET_STATUS = {
   paused: 'File en pause : votre place est conservée',
   closed: 'File fermée pour le moment',
   done: 'Terminé',
-  closedTicket: 'Clos',
+  /** Quitté, retiré ou expiré. Aussi le début de l'alerte Apple d'un retrait. */
+  closedTicket: 'Ticket clos',
   eventWaiting: 'En attente de votre vague',
   eventExpired: 'Accès expiré',
 } as const;
@@ -125,6 +131,86 @@ export function eventOverCopy(
     headline: reason === 'sold_out' ? WALLET_HEADLINE.eventSoldOut : WALLET_HEADLINE.eventEnded,
     statusText: copy.body,
   };
+}
+
+/* ====================================================================
+   Texte des alertes : le même moment, les mêmes mots, partout
+   ==================================================================== */
+
+/**
+ * Texte d'une alerte Wallet, par moment clé. Tiré de notificationCopy()
+ * (les mots du Web Push), sans emoji et en phrases épicènes quand c'était
+ * possible sans s'éloigner de la page web.
+ *
+ *  - `header` / `body` : message Google (addMessage, `id = kind`).
+ *  - `appleChangeMessage` : format du `changeMessage` Apple, posé sur le
+ *    champ `etat`. Apple exige `%@`, remplacé par la NOUVELLE valeur du
+ *    champ (le `statusText` de la vue). Sans cela, l'écran verrouillé
+ *    n'afficherait que « Ticket clos » ou « Terminé ». Chaque format est
+ *    écrit pour se lire avec les valeurs de `etat` des phases qui portent
+ *    ce moment (tests/wallet/copy.test.ts les assemble toutes).
+ */
+export interface WalletAlertText {
+  header: string;
+  body: string;
+  appleChangeMessage: string;
+}
+
+export function walletAlertText(
+  kind: AlertKind,
+  context: { placeName: string; peopleAhead?: number | null },
+): WalletAlertText {
+  const place = context.placeName;
+  const push = notificationCopy(kind, { locationName: place, peopleAhead: context.peopleAhead ?? undefined });
+  switch (kind) {
+    case 'ahead_two': {
+      const n = Math.max(2, context.peopleAhead ?? 2);
+      return {
+        header: place,
+        body: push.body,
+        // « Bientôt votre tour : plus que 2 personnes devant vous. »
+        appleChangeMessage: `%@ : plus que ${n} personnes devant vous.`,
+      };
+    }
+    case 'ahead_one':
+      return {
+        header: place,
+        body: push.body,
+        // « Plus qu’une personne devant vous. Commencez à revenir. »
+        appleChangeMessage: '%@. Commencez à revenir.',
+      };
+    case 'your_turn':
+      return {
+        header: push.title,
+        body: push.body,
+        // « Présentez-vous : c’est votre tour chez … » ; « En cours : … » en auto_serve.
+        appleChangeMessage: `%@ : c’est votre tour chez ${place}.`,
+      };
+    case 'visit_completed':
+      return {
+        header: WALLET_HEADLINE.done,
+        body: `Merci de votre visite chez ${place}. À bientôt.`,
+        appleChangeMessage: `%@ : merci de votre visite chez ${place}.`,
+      };
+    case 'removed':
+      return {
+        header: place,
+        body: push.body,
+        // « Ticket clos : vous avez été retiré de la file chez … »
+        appleChangeMessage: `%@ : vous avez été retiré de la file chez ${place}.`,
+      };
+    case 'event_access':
+      return {
+        header: 'Votre accès est prêt',
+        body: push.body,
+        // « Votre accès est prêt. Présentez-vous avant 14:32. »
+        appleChangeMessage: 'Votre accès est prêt. %@.',
+      };
+    case 'event_sold_out':
+    case 'event_ended':
+      // `etat` porte déjà la phrase complète de notificationCopy.
+      return { header: push.title, body: push.body, appleChangeMessage: '%@' };
+  }
 }
 
 /* ====================================================================
@@ -233,7 +319,17 @@ export const WALLET_OFFER_COPY = {
     'Wallet vous préviendra : quand votre tour approchera, une alerte s’affichera sur l’écran verrouillé.',
   googleAfter: 'Une fois ajouté, votre ticket se met à jour tout seul dans Google Wallet.',
   qrNotAccepted: 'Le QR Wallet n’est pas accepté pour cet événement : présentez cette page.',
-  unavailable: 'Google Wallet ne répond pas pour l’instant. Votre ticket reste suivi ici.',
+  unavailableApple: 'Apple Wallet ne répond pas pour l’instant. Votre ticket reste suivi ici.',
+  unavailableGoogle: 'Google Wallet ne répond pas pour l’instant. Votre ticket reste suivi ici.',
+  /** `wp` absent ou inconnu (lien retouché à la main). */
+  unavailable: 'Wallet ne répond pas pour l’instant. Votre ticket reste suivi ici.',
   appleBadgeAlt: 'Ajouter à Apple Wallet',
   googleBadgeAlt: 'Ajouter à Google Wallet',
 } as const;
+
+/** Encart `?wallet=indisponible&wp=<fournisseur>` de la page d'origine. */
+export function walletUnavailableText(provider: WalletProviderId | string | null | undefined): string {
+  if (provider === 'apple') return WALLET_OFFER_COPY.unavailableApple;
+  if (provider === 'google') return WALLET_OFFER_COPY.unavailableGoogle;
+  return WALLET_OFFER_COPY.unavailable;
+}

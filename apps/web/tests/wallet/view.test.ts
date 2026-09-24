@@ -70,17 +70,27 @@ describe('ticket de file : phases du § 4.1', () => {
     }
   });
 
-  it('en cours : aucune nouvelle alerte', () => {
-    expectRow(view({ entry: { status: 'serving', peopleAhead: 0 } }), {
-      phase: 'serving', headline: 'C’est votre tour', statusText: 'En cours', alertKind: null,
+  it('en cours : c’est l’appel (auto_serve) ; déjà annoncé après un appel (call_next)', () => {
+    // auto_serve, réglage par défaut : de « 1 personne devant » directement
+    // à « en cours », called_at = service_started_at. C'est l'appel.
+    const auto = view({ entry: { status: 'serving', peopleAhead: 0, calledAt: '2026-09-24T12:29:00Z', serviceStartedAt: '2026-09-24T12:29:00Z' } });
+    expectRow(auto, {
+      phase: 'serving', headline: 'C’est votre tour', statusText: 'En cours', alertKind: 'your_turn', turnAnnounced: false,
     });
+    // call_next : appelé à 12:25, prestation commencée à 12:29.
+    const called = view({ entry: { status: 'serving', peopleAhead: 0, calledAt: '2026-09-24T12:25:00Z', serviceStartedAt: '2026-09-24T12:29:00Z' } });
+    expectRow(called, { phase: 'serving', alertKind: 'your_turn', turnAnnounced: true });
+    // turnAnnounced ne concerne que « en cours ».
+    expect(view({ entry: { status: 'next', peopleAhead: 0, calledAt: '2026-09-24T12:25:00Z' } }).turnAnnounced).toBe(false);
   });
 
-  it('absent : titre inchangé, pas final (restaurable)', () => {
-    expectRow(view({ entry: { status: 'absent', peopleAhead: 3 } }), {
-      phase: 'absent', headline: '3 personnes devant vous',
-      statusText: 'Marqué absent : présentez-vous à l’accueil', alertKind: null, final: false, voided: false,
-    });
+  it('absent : titre neutre (ni position, ni « C’est votre tour »), pas final (restaurable)', () => {
+    for (const n of [3, 0]) {
+      expectRow(view({ entry: { status: 'absent', peopleAhead: n } }), {
+        phase: 'absent', headline: 'Appel manqué', position: null,
+        statusText: 'Marqué absent : présentez-vous à l’accueil', alertKind: null, final: false, voided: false,
+      });
+    }
   });
 
   it('file en pause ou fermée : place conservée, pas un état final', () => {
@@ -89,8 +99,27 @@ describe('ticket de file : phases du § 4.1', () => {
       statusText: 'File en pause : votre place est conservée', alertKind: null, final: false,
     });
     expectRow(view({ queue: { status: 'closed' }, entry: { peopleAhead: 0 } }), {
-      phase: 'closed', headline: 'Vous êtes le prochain', statusText: 'File fermée pour le moment', final: false,
+      phase: 'closed', headline: 'Vous passez en premier', statusText: 'File fermée pour le moment', final: false,
     });
+  });
+
+  it('drop lancé APRÈS l’ajout du pass de file : mode Événement, plus d’alerte de rang', () => {
+    const running = { runningEventId: '44444444-4444-4444-8444-444444444444' };
+    for (const n of [2, 1, 0]) {
+      expectRow(view({ queue: running, entry: { peopleAhead: n } }), {
+        kind: 'queue', eventMode: true, phase: 'event_waiting', alertKind: null, statusText: 'En attente de votre vague',
+      });
+    }
+    expectRow(view({ queue: running, entry: { status: 'next', peopleAhead: 0 } }), { phase: 'event_waiting', alertKind: null });
+    expectRow(view({ queue: running, entry: { status: 'serving', peopleAhead: 0 } }), { phase: 'serving', alertKind: null });
+    // La vague, elle, fait sonner (sans QR : le billet de file n'en porte pas).
+    const access = {
+      publicId: 'Kp3AccessPublic01', tokenHash: 'd'.repeat(64), status: 'issued' as const, issuedAt: '2026-09-24T12:22:00Z',
+      validUntil: '2026-09-24T12:32:00Z', graceUntil: '2026-09-24T12:37:00Z', redeemedAt: null, revokedAt: null, wave: 1,
+    };
+    expectRow(view({ queue: running, access }), { phase: 'event_access', alertKind: 'event_access', qr: null });
+    // Drop terminé : retour aux règles de la file.
+    expectRow(view({ queue: { runningEventId: null }, entry: { peopleAhead: 1 } }), { eventMode: false, phase: 'one', alertKind: 'ahead_one' });
   });
 
   it('merci : actif 2 h avec le lien d’avis, puis COMPLETED', () => {
@@ -114,7 +143,7 @@ describe('ticket de file : phases du § 4.1', () => {
 
   it('quitté par le client : annulé, sans alerte', () => {
     expectRow(view({ entry: { status: 'cancelled', statusActor: 'client', statusEvent: 'client_leave' } }), {
-      phase: 'left', headline: 'Vous avez quitté la file', statusText: 'Clos', alertKind: null,
+      phase: 'left', headline: 'Vous avez quitté la file', statusText: 'Ticket clos', alertKind: null,
       final: true, voided: true, googleState: 'EXPIRED', position: null,
     });
   });
@@ -125,7 +154,7 @@ describe('ticket de file : phases du § 4.1', () => {
       { status: 'cancelled' as const, statusActor: 'staff' as const, statusEvent: 'cancel' },
     ]) {
       expectRow(view({ entry }), {
-        phase: 'removed', headline: 'Vous avez été retiré de la file', statusText: 'Clos', alertKind: 'removed',
+        phase: 'removed', headline: 'Vous avez été retiré de la file', statusText: 'Ticket clos', alertKind: 'removed',
         final: true, voided: true, googleState: 'EXPIRED',
       });
     }
@@ -133,7 +162,7 @@ describe('ticket de file : phases du § 4.1', () => {
 
   it('expiré', () => {
     expectRow(view({ entry: { status: 'expired', statusActor: 'system' } }), {
-      phase: 'expired', headline: 'Ticket expiré', statusText: 'Clos', alertKind: null,
+      phase: 'expired', headline: 'Ticket expiré', statusText: 'Ticket clos', alertKind: null,
       final: true, voided: true, googleState: 'EXPIRED',
     });
   });
@@ -178,8 +207,9 @@ describe('billet de drop : phases du § 4.2', () => {
     expect(v.links.ticket).toBe(`${SITE}/e/barber-house-bastille?event=44444444-4444-4444-8444-444444444444`);
   });
 
-  it('QR Wallet refusé par l’événement : signalé, jamais masqué en silence', () => {
-    expect(eventView({ access: issued, event: { walletQrEnabled: false } }).qr?.allowWallet).toBe(false);
+  it('QR Wallet refusé par l’événement : signalé (allowWallet: false), jamais masqué en silence', () => {
+    const v = eventView({ access: issued, event: { walletQrEnabled: false } });
+    expect(v.qr).toEqual({ publicId: issued.publicId, tokenHash: issued.tokenHash, allowWallet: false });
   });
 
   it('tolérance dépassée avant le passage du cron : plus de QR', () => {
@@ -262,6 +292,9 @@ describe('instantanés réels (migration 0021, lot W0)', () => {
   const real = snapshotsFromSql as unknown as Record<string, WalletSnapshot>;
   const build = (label: string) => buildWalletView(real[label]!, new Date(real[label]!.at), { siteUrl: SITE });
 
+  // Figé ici pour la vue ; le SQL lui-même est rejoué à chaque vérification
+  // de la base (supabase/tests/20_wallet_core.test.sql, § 10, lot W0) et
+  // par sequences-0021.sql (tests/wallet/sequences.test.ts).
   it('la fonction SQL ne livre aucun prénom', () => {
     expect(JSON.stringify(real)).not.toContain(TRAP_NAME);
   });
@@ -309,6 +342,19 @@ describe('minimisation et marque', () => {
     expect(view({ location: { logoUrl: 'http://example.com/logo.png' } }).brand.logo).toBeNull();
     expect(view({ location: { logoUrl: 'https://cdn.example.com/l.png' } }).brand.logo).toEqual({ kind: 'url', url: 'https://cdn.example.com/l.png' });
     expect(view({ location: { logoUrl: `${SITE}/media/../etc/passwd.png` } }).brand.logo).toBeNull();
+  });
+
+  it('logo par fournisseur : une URL d’événement ne masque pas le fichier du lieu', () => {
+    // Événement avec un logo HTTPS externe, lieu avec un fichier téléversé.
+    const v = eventView({ event: { logoUrl: 'https://cdn.example.com/drop.png' } });
+    expect(v.brand.logo).toEqual({ kind: 'url', url: 'https://cdn.example.com/drop.png' });
+    // Apple : le fichier local du lieu, pas le monogramme.
+    expect(v.brand.logoFile).toEqual({ kind: 'local', relativePath: 'org/logo.png', publicUrl: `${SITE}/media/org/logo.png` });
+    // Google : la première source publiable en HTTPS.
+    expect(v.brand.logoPublicUrl).toBe('https://cdn.example.com/drop.png');
+    // Rien d'utilisable : null partout (logo Rangvia, monogramme).
+    const none = view({ location: { logoUrl: null }, organization: { logoUrl: null } });
+    expect([none.brand.logo, none.brand.logoFile, none.brand.logoPublicUrl]).toEqual([null, null, null]);
   });
 
   it('accent inconnu → signal ; adresse complète', () => {

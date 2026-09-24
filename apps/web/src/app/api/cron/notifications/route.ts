@@ -11,6 +11,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
+/** Fin du vidage Wallet, comptée depuis le début de la requête. */
+const CRON_WALLET_DEADLINE_MS = 20_000;
+
 /**
  * Filet de sécurité des notifications.
  *
@@ -24,6 +27,7 @@ export const maxDuration = 60;
  */
 export async function GET(request: Request) {
   if (!checkSecret(request)) return new Response('Non autorisé', { status: 401 });
+  const startedAt = Date.now();
 
   const db = supabaseAdmin();
   const summary = {
@@ -60,13 +64,17 @@ export async function GET(request: Request) {
 
   // Passes Wallet : filet de sécurité du vidage fait après chaque action,
   // et transitions différées (« Merci » archivé à +2 h). À part, dans son
-  // propre try/catch : une panne Wallet ne fait pas échouer ce cron. 20 s
-  // au plus : le conteneur cron coupe l'appel à 30 s (curl -m 30).
+  // propre try/catch : une panne Wallet ne fait pas échouer ce cron. Le
+  // conteneur cron coupe l'appel à 30 s (curl -m 30) : le budget du vidage
+  // se compte depuis le début de la requête (20 s en tout), et le vidage
+  // ne réclame plus rien dans ses 2 dernières secondes et borne alors chaque
+  // traitement à MIN_JOB_MS (outbox.ts) : 26 s au pire.
   let wallet: WalletFlushSummary | { error: string } | null = null;
   try {
     // Tâches de fond des fournisseurs d'abord (Google : classes).
     await runWalletMaintenance();
-    wallet = await flushWalletOutbox({ budgetMs: 20_000, limit: 400 });
+    const budgetMs = Math.max(0, CRON_WALLET_DEADLINE_MS - (Date.now() - startedAt));
+    wallet = await flushWalletOutbox({ budgetMs, limit: 400 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'inconnu';
     wallet = { error: message };
