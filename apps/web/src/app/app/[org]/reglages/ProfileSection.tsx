@@ -1,37 +1,38 @@
 'use client';
 
-import { useEffect, useId, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Section, SettingRow, Toggle } from '@/components/Page';
 import { Immatriculation } from '@/components/objects/Immatriculation';
 import { TicketNumber } from '@/components/objects/TicketNumber';
-import { getProfile, isActivityType, profileForActivity } from '@/lib/profiles';
-import { profileAvailable } from '@/lib/profiles/capabilities';
+import { getProfile, isActivityType, isLegacyProfile } from '@/lib/profiles';
 import { PARTY_MAX_LIMIT, resolveProfileOptions } from '@/lib/profiles/options';
 import { asMaskedRegistration } from '@/lib/profiles/registration';
 import { formatTicketNo, TICKET_PREFIX_RE } from '@/lib/profiles/ticket';
 import type { ProfileOptions, QueueProfile, TvRegistrationMode } from '@/lib/profiles/types';
-import { setDeskLabel, switchQueueProfile, updateProfileOptions } from '@/server/actions/profiles';
+import { setDeskLabel, updateProfileOptions } from '@/server/actions/profiles';
 import { MetierApercu, ProfileGlyph } from './MetierApercu';
 import styles from './metier.module.css';
 
 /**
- * RÉGLAGES — « MÉTIER DE LA FILE ».
+ * RÉGLAGES — « MÉTIER DE LA FILE ».
  *
- * Trois temps, dans l'ordre où le professionnel se pose les questions :
+ * Décision du propriétaire : le métier est ATTRIBUÉ par l'équipe Rangvia,
+ * à l'installation (espace super-admin). Le commerçant ne le choisit pas
+ * et ne le change pas : cette section le MONTRE, en lecture seule, puis
+ * lui laisse les options de ce métier.
+ *
  *   1. la scène : le métier de la file, montré par ses propres objets
  *      (plaque, rail d'étapes, chevalet, numéro) et ses deux touches ;
- *   2. le choix : les métiers disponibles, en lattes. Survoler ou choisir
- *      une latte change l'aperçu (aperçu vivant) ; rien ne change dans la
- *      file avant « Changer de métier », qui dit d'abord ce qui va changer ;
- *   3. les options du métier courant, enregistrées au geste.
+ *   2. la ligne « Métier : Atelier véhicule · activé par l'équipe
+ *      Rangvia », sans sélecteur ni bouton ;
+ *   3. les options du métier, enregistrées au geste : devis en ligne,
+ *      immatriculation obligatoire, couverts, préfixe, guichets.
  *
- * Un barbier n'est jamais poussé vers un autre métier : sa file reste
- * « Passage au fauteuil », SANS proposition de changement, même le jour
- * où d'autres métiers seront ouverts à tous (`offersMetierChoice`). Le
- * choix n'est offert qu'à une activité qui a son propre métier (garage,
- * restaurant, guichet…), à une organisation qui a les profils activés,
- * ou qui a déjà une autre file dans un métier.
+ * Une file au passage (un barbier) ne voit RIEN de nouveau : la section ne
+ * rend rien, sauf dans une organisation où l'équipe a installé un métier
+ * sur une autre file (elle dit alors, sans rien proposer, que celle-ci
+ * fonctionne au passage).
  */
 
 export interface ProfileQueue {
@@ -52,18 +53,15 @@ export interface DeskStaff {
 type ActionOutcome = { ok: true } | { ok: false; error: string; code?: string };
 type Runner = (fn: () => Promise<ActionOutcome>) => void;
 
-/** Les métiers qu'une file peut prendre ici. `event` a son propre module. */
-const PICKABLE: readonly QueueProfile[] = ['walkin', 'vehicle', 'device', 'table', 'desk', 'retail'];
-
-/** Activités « au fauteuil » : le mot n'a de sens que pour elles. */
+/** Activités « au fauteuil » : le mot n'a de sens que pour elles. */
 const CHAIR_ACTIVITIES: ReadonlySet<string> = new Set(['barber', 'hair_salon', 'nail_bar', 'beauty']);
 
 /**
  * Le nom d'un métier tel que le pro le lit. Le passage au fauteuil garde
  * son nom chez un coiffeur, et quand l'activité est inconnue (c'est le
  * produit d'aujourd'hui : captures R0 inchangées). Ailleurs (une file
- * « Pneus minute » de garage, un commerce « autre »), il devient
- * « Passage sans rendez-vous » : il n'y a pas de fauteuil.
+ * « Pneus minute » de garage, un commerce « autre »), il devient
+ * « Passage sans rendez-vous » : il n'y a pas de fauteuil.
  */
 export function metierLabel(profile: QueueProfile, activity: string | null): string {
   if (profile === 'walkin' && isActivityType(activity) && !CHAIR_ACTIVITIES.has(activity)) {
@@ -73,26 +71,20 @@ export function metierLabel(profile: QueueProfile, activity: string | null): str
 }
 
 /**
- * Proposer de changer de métier ? Toujours pour une file déjà dans un
- * métier (il faut pouvoir revenir en arrière). Pour une file au passage,
- * seulement si l'activité a un métier propre, si l'organisation a les
- * profils activés, ou si elle a déjà une autre file dans un métier. Un
- * barbier ne se voit donc jamais proposer six métiers, quel que soit le
- * contenu d'`OPEN_PROFILES`.
+ * La section a-t-elle quelque chose à dire ? Toujours pour une file dans
+ * un métier. Pour une file au passage, seulement si l'équipe Rangvia a
+ * installé des métiers dans l'organisation (`features.profiles`, ou une
+ * autre file déjà dans un métier) : un barbier ne voit rien de nouveau.
  */
-export function offersMetierChoice({
-  current, activity, features, orgHasProfiledQueue, availableCount,
+export function showsMetier({
+  current, features, orgHasProfiledQueue,
 }: {
   current: QueueProfile;
-  activity: string | null;
   features: Readonly<Record<string, unknown>> | null;
   orgHasProfiledQueue: boolean;
-  availableCount: number;
 }): boolean {
-  if (availableCount <= 1) return false;
-  if (current !== 'walkin') return true;
-  const own = profileForActivity(activity);
-  return (own !== 'walkin' && PICKABLE.includes(own)) || features?.profiles === true || orgHasProfiledQueue;
+  if (!isLegacyProfile(current)) return true;
+  return features?.profiles === true || orgHasProfiledQueue;
 }
 
 const REVIEW_DELAYS: readonly (number | null)[] = [0, 30, 45, 60, 75, 90, 120, 180, 240, null];
@@ -122,224 +114,66 @@ export function ProfileSection({
   orgHasProfiledQueue?: boolean;
   /** Plusieurs files dans l'établissement : le titre nomme celle qu'on règle. */
   showQueueName?: boolean;
-  /** Le lien « Rédiger un avis » est renseigné (section Avis Google). */
+  /** Le lien « Rédiger un avis » est renseigné (section Avis Google). */
   reviewLink?: boolean;
 }) {
-  const router = useRouter();
   const current = queue.profile;
+  if (!showsMetier({ current, features, orgHasProfiledQueue })) return null;
+
   const options = resolveProfileOptions(current, queue.profile_options, activity);
-
-  const available = PICKABLE.filter((p) => p === current || profileAvailable(p, features));
-  const suggestedRaw = profileForActivity(activity);
-  const suggested = suggestedRaw !== 'walkin' && suggestedRaw !== current && available.includes(suggestedRaw)
-    ? suggestedRaw
-    : null;
-
-  const offersChoice = offersMetierChoice({
-    current, activity, features, orgHasProfiledQueue, availableCount: available.length,
-  });
-  const label = (p: QueueProfile) => metierLabel(p, activity);
-
-  const [pickerOpen, setPickerOpen] = useState(current === 'walkin' && suggested !== null);
-  const [candidate, setCandidate] = useState<QueueProfile | null>(null);
-  const [hovered, setHovered] = useState<QueueProfile | null>(null);
-  const [switchError, setSwitchError] = useState<{ message: string; busy: boolean } | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  // Changement enregistré, page pas encore relue : la scène montre déjà
-  // le métier cible (« Enregistrement… ») et le message attend que la
-  // page rafraîchie le confirme. Jamais « est passée en Table » à côté
-  // de « Métier actuel : Passage au fauteuil ».
-  const [landing, setLanding] = useState<{ profile: QueueProfile; note: string } | null>(null);
-  const [switching, startSwitch] = useTransition();
-  const pickerId = useId();
-
-  useEffect(() => {
-    if (landing && landing.profile === current) {
-      setNote(landing.note);
-      setLanding(null);
-    }
-  }, [landing, current]);
-
-  // Une autre file, ou le métier vient de changer : on repart d'un choix vide.
-  useEffect(() => {
-    setCandidate(null);
-    setHovered(null);
-    setSwitchError(null);
-  }, [queue.id, current]);
-
-  const saving = landing !== null && landing.profile !== current;
-  const shown = saving ? landing.profile : (hovered ?? candidate ?? current);
-  const shownDef = getProfile(shown);
-  const shownOptions = shown === current ? options : resolveProfileOptions(shown, null, activity);
-  const isPreview = shown !== current && !saving;
+  const def = getProfile(current);
+  const label = metierLabel(current, activity);
 
   const setOption = (patch: ProfileOptions) =>
     run(() => updateProfileOptions(orgSlug, { queueId: queue.id, options: patch as Record<string, unknown> }));
 
-  const confirmSwitch = (target: QueueProfile) => {
-    setSwitchError(null);
-    setNote(null);
-    startSwitch(async () => {
-      const result = await switchQueueProfile(orgSlug, { queueId: queue.id, profile: target });
-      if (!result.ok) {
-        setSwitchError({ message: result.error, busy: result.code === 'queue_not_empty' });
-        return;
-      }
-      const parts = [`« ${queue.name} » est passée en ${metierLabel(result.data.profile, activity)}.`];
-      if (result.data.settingsRestored) parts.push('Vos réglages d’avant ont été rétablis.');
-      if (result.data.servicesRetired > 0) {
-        const n = result.data.servicesRetired;
-        parts.push(`${n} motif${n > 1 ? 's' : ''} ajouté${n > 1 ? 's' : ''} par l’ancien métier ${n > 1 ? 'ont été retirés' : 'a été retiré'}.`);
-      }
-      if (result.data.servicesCreated > 0) {
-        const n = result.data.servicesCreated;
-        parts.push(`${n} motif${n > 1 ? 's' : ''} proposé${n > 1 ? 's' : ''} par défaut : à retoucher dans Prestations.`);
-      }
-      const text = parts.join(' ');
-      setCandidate(null);
-      setHovered(null);
-      setPickerOpen(false);
-      if (result.data.profile === current) setNote(text);
-      else setLanding({ profile: result.data.profile, note: text });
-      router.refresh();
-    });
-  };
-
   return (
     <Section
-      title={showQueueName ? `Métier de « ${queue.name} »` : 'Métier de la file'}
+      title={showQueueName ? `Métier de « ${queue.name} »` : 'Métier de la file'}
       description="Ce qui avance dans la file, les mots de vos touches, et ce que voient vos clients et votre écran."
     >
       {/* ------------------------------------------------ La scène */}
       <div className={styles.stage}>
         <div className={styles.stageGrid}>
-          <div className={styles.stageScene} key={shown} data-preview={isPreview ? '1' : undefined}>
+          <div className={styles.stageScene}>
             <MetierApercu
-              profile={shown}
-              options={shownOptions}
+              profile={current}
+              options={options}
               ticketPrefix={queue.ticket_prefix}
-              chair={label('walkin') === getProfile('walkin').label}
+              chair={metierLabel('walkin', activity) === getProfile('walkin').label}
             />
           </div>
-          <div className={styles.stageText} aria-live="polite" aria-busy={saving || undefined}>
-            <p className={styles.stageEyebrow} data-saving={saving ? '1' : undefined}>
+          <div className={styles.stageText}>
+            <p className={styles.stageEyebrow}>
               <span className={styles.stageNotch} aria-hidden="true" />
-              {saving ? 'Enregistrement…' : isPreview ? 'Aperçu' : 'Métier actuel'}
+              Votre métier
             </p>
-            <h3 className={styles.stageTitle}>{label(shown)}</h3>
-            <p className={styles.stageTagline}>{shownDef.tagline}</p>
+            <h3 className={styles.stageTitle}>{label}</h3>
+            <p className={styles.stageTagline}>{def.tagline}</p>
             <dl className={styles.vocab}>
-              <div><dt>On suit</dt><dd>des {shownDef.vocab.subjectPlural}</dd></div>
-              <div><dt>La touche qui prévient</dt><dd>{shownDef.vocab.call}</dd></div>
-              <div><dt>La touche de fin</dt><dd>{shownDef.vocab.complete}</dd></div>
-              <div><dt>Le compteur</dt><dd>{shownDef.vocab.todayCounter}</dd></div>
+              <div><dt>On suit</dt><dd>des {def.vocab.subjectPlural}</dd></div>
+              <div><dt>La touche qui prévient</dt><dd>{def.vocab.call}</dd></div>
+              <div><dt>La touche de fin</dt><dd>{def.vocab.complete}</dd></div>
+              <div><dt>Le compteur</dt><dd>{def.vocab.todayCounter}</dd></div>
             </dl>
           </div>
         </div>
       </div>
 
-      {note && (
-        <p className={styles.note} role="status">
-          <span className={styles.noteMark} aria-hidden="true" />
-          {note}
+      {/* ------------------------------------------------ Le sceau : lecture seule */}
+      <div className={styles.assigned}>
+        <span className={styles.assignedGlyph} aria-hidden="true"><ProfileGlyph profile={current} /></span>
+        <p className={styles.assignedText}>
+          Métier&nbsp;: <strong>{label}</strong>
+          <span className={styles.assignedDot} aria-hidden="true"> · </span>
+          <span className={styles.assignedBy}>activé par l’équipe Rangvia</span>
         </p>
-      )}
-
-      {/* ------------------------------------------------ Le choix */}
-      {/* Pendant l'enregistrement, ni « Voir les autres métiers » ni la
-          phrase du métier quitté : la scène parle déjà du nouveau. */}
-      {offersChoice && !saving && (
-        <div className={styles.picker}>
-          {!pickerOpen ? (
-            <div className={styles.pickerClosed}>
-              <p className={styles.pickerClosedText}>
-                {current === 'walkin'
-                  ? 'Votre file fonctionne au passage : la personne avance, dans l’ordre d’arrivée.'
-                  : `Ce métier se règle par file : « ${queue.name} » seulement.`}
-              </p>
-              {canConfigure && (
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--sm"
-                  aria-expanded={false}
-                  onClick={() => setPickerOpen(true)}
-                >
-                  {current === 'walkin' ? 'Voir les autres métiers' : 'Changer de métier'}
-                </button>
-              )}
-            </div>
-          ) : (
-            <fieldset className={styles.choices} id={pickerId} disabled={!canConfigure || switching}>
-              <legend className={styles.choicesLegend}>
-                Choisissez le métier de « {queue.name} »
-                <span className={styles.choicesHint}> · l’aperçu suit votre choix, rien ne change avant de confirmer</span>
-              </legend>
-              <div className={styles.choiceList} onMouseLeave={() => setHovered(null)}>
-                {available.map((p) => {
-                  const def = getProfile(p);
-                  const isCurrent = p === current;
-                  const isChosen = (candidate ?? current) === p;
-                  return (
-                    <label
-                      key={p}
-                      className={styles.choice}
-                      data-chosen={isChosen ? '1' : undefined}
-                      data-current={isCurrent ? '1' : undefined}
-                      onMouseEnter={() => setHovered(p)}
-                    >
-                      <input
-                        type="radio"
-                        className="sr-only"
-                        name={`metier-${queue.id}`}
-                        value={p}
-                        checked={isChosen}
-                        onChange={() => { setCandidate(isCurrent ? null : p); setSwitchError(null); }}
-                        onFocus={() => setHovered(null)}
-                      />
-                      <span className={styles.choiceGlyph}><ProfileGlyph profile={p} /></span>
-                      <span className={styles.choiceText}>
-                        <span className={styles.choiceLabel}>{label(p)}</span>
-                        <span className={styles.choiceTagline}>{def.tagline}</span>
-                      </span>
-                      {isCurrent ? (
-                        <span className={`chip ${styles.choiceChip}`}>Actuel</span>
-                      ) : p === suggested ? (
-                        <span className={`chip chip--signal ${styles.choiceChip}`}>Fait pour vous</span>
-                      ) : null}
-                    </label>
-                  );
-                })}
-              </div>
-
-              {candidate && candidate !== current ? (
-                <SwitchTicket
-                  queueName={queue.name}
-                  from={current}
-                  to={candidate}
-                  labelOf={label}
-                  switching={switching}
-                  error={switchError}
-                  fileHref={`/app/${orgSlug}/file?file=${queue.id}`}
-                  onConfirm={() => confirmSwitch(candidate)}
-                  onCancel={() => { setCandidate(null); setSwitchError(null); }}
-                />
-              ) : (
-                <div className={styles.pickerFoot}>
-                  <button
-                    type="button"
-                    className="btn btn--quiet btn--sm"
-                    aria-expanded
-                    aria-controls={pickerId}
-                    onClick={() => { setPickerOpen(false); setCandidate(null); }}
-                  >
-                    Fermer
-                  </button>
-                </div>
-              )}
-            </fieldset>
-          )}
-        </div>
-      )}
+        <p className={styles.assignedHint}>
+          Un autre métier pour «&nbsp;{queue.name}&nbsp;»&nbsp;?{' '}
+          <Link href={`/app/${orgSlug}/support`} className={styles.assignedLink}>Écrivez-nous</Link>
+          , l’équipe s’en charge.
+        </p>
+      </div>
 
       {/* ------------------------------------------------ Les options */}
       <ProfileOptionsRows
@@ -355,66 +189,6 @@ export function ProfileSection({
         reviewLink={reviewLink}
       />
     </Section>
-  );
-}
-
-/* --------------------------------------------------------------------
-   Confirmation du changement : ce qui change, dit AVANT
-   -------------------------------------------------------------------- */
-
-function SwitchTicket({
-  queueName, from, to, labelOf, switching, error, fileHref, onConfirm, onCancel,
-}: {
-  queueName: string;
-  from: QueueProfile;
-  to: QueueProfile;
-  labelOf: (p: QueueProfile) => string;
-  switching: boolean;
-  error: { message: string; busy: boolean } | null;
-  fileHref: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const def = getProfile(to);
-  const ttl = def.queueDefaults.entryTtlMinutes;
-  const lines: string[] = [
-    `Le poste, l’écran client et la TV parlent de ${def.vocab.subjectPlural} : « ${def.vocab.call} », « ${def.vocab.complete} ».`,
-  ];
-  if (def.defaultServices.length > 0) {
-    lines.push(`S’il n’y a aucune prestation, les motifs du métier sont proposés : ${def.defaultServices.slice(0, 4).join(', ')}${def.defaultServices.length > 4 ? '…' : ''}`);
-  }
-  if (ttl && ttl > 1440) lines.push(`Une fiche reste suivie ${Math.round(ttl / 1440)} jours, même d’un jour sur l’autre.`);
-  lines.push(`Les réglages de « ${labelOf(from)} » sont gardés de côté : y revenir les rétablit.`);
-
-  return (
-    <div className={styles.ticket} data-state={error ? 'error' : undefined}>
-      <p className={styles.ticketTitle}>
-        Passer « {queueName} » en <strong>{labelOf(to)}</strong> ?
-      </p>
-      <ul className={styles.ticketList}>
-        {lines.map((l) => <li key={l}>{l}</li>)}
-      </ul>
-      {error && (
-        <p className={styles.ticketError} role="alert">
-          {error.message}
-          {error.busy && (
-            <>
-              {' '}
-              <a href={fileHref} className={styles.ticketLink}>Ouvrir le poste</a>
-            </>
-          )}
-        </p>
-      )}
-      <div className={styles.ticketActions}>
-        <button type="button" className="btn btn--signal" onClick={onConfirm} disabled={switching}>
-          {switching ? 'Changement…' : 'Changer de métier'}
-        </button>
-        <button type="button" className="btn btn--quiet" onClick={onCancel} disabled={switching}>
-          Annuler
-        </button>
-        <span className={styles.ticketHint}>Seulement quand la file est vide.</span>
-      </div>
-    </div>
   );
 }
 

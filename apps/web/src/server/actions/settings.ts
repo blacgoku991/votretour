@@ -355,6 +355,10 @@ export async function createLocation(
       ));
     }
 
+    // Même règle qu'à l'inscription : la file du nouvel établissement naît
+    // au passage (create_location, 0042), quelle que soit l'activité ; son
+    // métier, s'il en faut un, est attribué par l'équipe Rangvia. Aucune
+    // activité n'est envoyée : celle de l'organisation reste la sienne.
     const { data, error } = await db.rpc('create_location', {
       p_organization_id: parsed.organizationId,
       p_name: parsed.name,

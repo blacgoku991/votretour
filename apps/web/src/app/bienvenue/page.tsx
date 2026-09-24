@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { requireUser, getMyOrganizations } from '@/server/auth';
-import { OPEN_PROFILES } from '@/lib/profiles/capabilities';
 import { OnboardingFlow } from './OnboardingFlow';
 import { DEFAULT_ACTIVITY, parseActivityParam } from './metiers';
 
@@ -27,14 +26,8 @@ export default async function WelcomePage({
   // métier. Liste blanche : une valeur inconnue est ignorée, sans erreur.
   const initialActivity = parseActivityParam(activite) ?? DEFAULT_ACTIVITY;
 
-  // Les profils ouverts viennent du serveur : le parcours n'affiche un
-  // aperçu que pour un métier que l'action serveur provisionnera vraiment
-  // dans son profil (elle refait la même décision, sans se fier au client).
-  return (
-    <OnboardingFlow
-      userName={user.fullName}
-      initialActivity={initialActivity}
-      openProfiles={[...OPEN_PROFILES]}
-    />
-  );
+  // L'activité est présélectionnée, jamais le métier : la file naît au
+  // passage, et l'équipe Rangvia active l'interface du métier à
+  // l'installation.
+  return <OnboardingFlow userName={user.fullName} initialActivity={initialActivity} />;
 }

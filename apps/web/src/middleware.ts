@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { parseActivityParam } from '@/app/bienvenue/activite';
 
 /**
  * Rafraîchit le jeton de session à chaque navigation et verrouille les
@@ -77,7 +78,26 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = '/app';
     url.search = '';
-    return NextResponse.redirect(url);
+    // Un compte déjà connecté qui suit « Ouvrir ma file » d'une page métier
+    // (/inscription?activite=garage) n'a pas à recréer de compte. S'il n'a
+    // pas encore fini son installation (aucune organisation : /bienvenue la
+    // crée d'un seul geste), il y va directement, son activité présélectionnée ;
+    // sinon, son tableau de bord. `activite` passe par la liste blanche : rien
+    // d'autre n'est repris de l'URL.
+    const activity = pathname === '/inscription'
+      ? parseActivityParam(request.nextUrl.searchParams.get('activite'))
+      : null;
+    if (activity) {
+      const { data: organizations } = await supabase.rpc('my_organizations');
+      if (!Array.isArray(organizations) || organizations.length === 0) {
+        url.pathname = '/bienvenue';
+        url.searchParams.set('activite', activity);
+      }
+    }
+    const redirect = NextResponse.redirect(url);
+    // Garde le jeton éventuellement rafraîchi plus haut.
+    for (const cookie of response.cookies.getAll()) redirect.cookies.set(cookie);
+    return redirect;
   }
 
   return response;

@@ -4,18 +4,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * RÉGLAGES DES PROFILS MÉTIER — `server/actions/profiles.ts` et la borne
  * du TTL de `server/actions/settings.ts`.
  *
- *  - chaque action exige `queue.configure` : un simple membre est refusé
- *    AVANT toute lecture ou écriture ;
- *  - un profil ni ouvert à tous (`OPEN_PROFILES`) ni activé pour
- *    l'organisation (`features.profiles`) est refusé ; revenir au passage
- *    au fauteuil ne l'est jamais ;
+ * Décision du propriétaire : le MÉTIER est attribué par le super-admin
+ * seulement (`server/actions/admin-profiles.ts`, testé à part). Ici :
+ *  - aucune action ne change le métier d'une file : `switchQueueProfile`
+ *    n'existe plus, un membre (même propriétaire) ne peut pas l'appeler ;
+ *  - les OPTIONS du métier attribué restent réglables (`queue.configure`),
+ *    sans aucune clé `features.profiles` ni métier « ouvert » : que le
+ *    métier soit posé sur une file de l'organisation suffit ;
+ *  - un métier qui n'est attribué à aucune file est refusé (messages,
+ *    guichets) ;
+ *  - un simple membre est refusé AVANT toute lecture ou écriture ;
  *  - une file, une fiche ou un modèle d'un autre commerce répond
- *    « introuvable » ;
- *  - VT017 (« Terminez ou videz la file avant de changer de profil »)
- *    revient tel quel, et la réponse dit si les réglages d'avant sont
- *    rétablis ;
- *  - chaque écriture laisse une trace d'audit (le changement de profil,
- *    lui, l'écrit en SQL : l'acteur est transmis à la fonction).
+ *    « introuvable » ; chaque écriture laisse une trace d'audit.
  */
 
 const ORG = '11111111-1111-4111-8111-111111111111';
@@ -28,6 +28,9 @@ const Q_DESK = '77777777-7777-4777-8777-777777777777';
 const STAFF = '88888888-8888-4888-8888-888888888888';
 const STAFF_FOREIGN = '99999999-9999-4999-8999-999999999999';
 const USER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+/** Un second établissement de l'organisation, sans guichet. */
+const LOC_2 = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const STAFF_ELSEWHERE = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
 type Row = Record<string, unknown>;
 
@@ -115,8 +118,8 @@ vi.mock('@/server/profiles/queue', async (importOriginal) => {
 
 vi.mock('next/cache', () => ({ revalidatePath: () => undefined }));
 
-const { switchQueueProfile, updateProfileOptions, upsertMessageTemplate, deleteMessageTemplate, setDeskLabel } =
-  await import('@/server/actions/profiles');
+const profileActions = await import('@/server/actions/profiles');
+const { updateProfileOptions, upsertMessageTemplate, deleteMessageTemplate, setDeskLabel } = profileActions;
 const { updateQueueSettings } = await import('@/server/actions/settings');
 
 beforeEach(() => {
@@ -133,6 +136,7 @@ beforeEach(() => {
     staff: [
       { id: STAFF, organization_id: ORG, location_id: LOC },
       { id: STAFF_FOREIGN, organization_id: OTHER_ORG, location_id: LOC },
+      { id: STAFF_ELSEWHERE, organization_id: ORG, location_id: LOC_2 },
     ],
     locations: [{ id: LOC, organization_id: ORG }],
     message_templates: [],
@@ -159,9 +163,7 @@ beforeEach(() => {
 describe('permission queue.configure', () => {
   it('refuse chaque action à un simple membre, avant toute lecture ni écriture', async () => {
     db.role = 'member';
-    db.features = { profiles: true };
     const results = await Promise.all([
-      switchQueueProfile('garage-demo', { queueId: Q_WALKIN, profile: 'vehicle' }),
       updateProfileOptions('garage-demo', { queueId: Q_VEHICLE, options: { quotes: false } }),
       upsertMessageTemplate('garage-demo', { profile: 'vehicle', label: 'Clés', body: 'Vos clés sont à l’accueil.' }),
       deleteMessageTemplate('garage-demo', { profile: 'vehicle', key: 'cles' }),
@@ -176,96 +178,77 @@ describe('permission queue.configure', () => {
     expect(db.audits).toHaveLength(0);
   });
 
-  it('accepte un responsable (manager), qui règle la file sans gérer l’établissement', async () => {
+  it('accepte un responsable (manager), qui règle les options sans gérer l’établissement', async () => {
     db.role = 'manager';
-    db.features = { profiles: true };
-    const r = await switchQueueProfile('garage-demo', { queueId: Q_WALKIN, profile: 'vehicle' });
+    const r = await updateProfileOptions('garage-demo', { queueId: Q_VEHICLE, options: { quotes: false } });
     expect(r.ok).toBe(true);
   });
 });
 
 /* ------------------------------------------------------------------ */
-/* Profil non ouvert                                                    */
+/* Le métier : attribué par le super-admin seulement                    */
 /* ------------------------------------------------------------------ */
 
-describe('profil non ouvert', () => {
-  it('refuse de passer une file dans un profil ni ouvert ni activé pour l’organisation', async () => {
-    const r = await switchQueueProfile('garage-demo', { queueId: Q_WALKIN, profile: 'vehicle' });
-    expect(r).toMatchObject({ ok: false, code: 'profile_unavailable' });
+describe('changement de métier', () => {
+  it('n’est plus une action du commerce : aucune action exportée ne change le profil d’une file', () => {
+    expect('switchQueueProfile' in profileActions).toBe(false);
+    expect(Object.keys(profileActions).sort()).toEqual(
+      ['deleteMessageTemplate', 'setDeskLabel', 'updateProfileOptions', 'upsertMessageTemplate'],
+    );
+  });
+
+  it('aucune action du commerce n’appelle switch_queue_profile ni n’écrit la colonne profile', async () => {
+    for (const role of ['owner', 'member'] as const) {
+      db.role = role;
+      await updateProfileOptions('garage-demo', { queueId: Q_VEHICLE, options: { profile: 'table' } as never });
+      await updateProfileOptions('garage-demo', { queueId: Q_VEHICLE, profile: 'table' } as never);
+    }
     expect(db.rpcCalls).toHaveLength(0);
+    expect(db.writes.some((w) => w.values && 'profile' in w.values)).toBe(false);
   });
+});
 
-  it('l’accepte dès que features.profiles est posé (banc local, organisation activée)', async () => {
-    db.features = { profiles: true };
-    const r = await switchQueueProfile('garage-demo', { queueId: Q_WALKIN, profile: 'vehicle' });
-    expect(r.ok).toBe(true);
-    expect(db.rpcCalls).toEqual([
-      { fn: 'switch_queue_profile', params: { p_queue_id: Q_WALKIN, p_profile: 'vehicle', p_actor_user_id: USER } },
-    ]);
-  });
+/* ------------------------------------------------------------------ */
+/* Options du métier attribué : sans aucune clé features.profiles       */
+/* ------------------------------------------------------------------ */
 
-  it('ne bloque jamais le retour au passage au fauteuil', async () => {
-    db.rpcResult = {
-      data: { profile: 'walkin', previousProfile: 'vehicle', changed: true, settingsRestored: true, servicesCreated: 0, servicesRetired: 7 },
-      error: null,
-    };
-    const r = await switchQueueProfile('garage-demo', { queueId: Q_VEHICLE, profile: 'walkin' });
-    expect(r).toEqual({
-      ok: true,
-      data: { profile: 'walkin', previousProfile: 'vehicle', changed: true, settingsRestored: true, servicesCreated: 0, servicesRetired: 7 },
-    });
-  });
-
-  it('refuse aussi les options, les messages et les guichets d’un profil non ouvert', async () => {
+describe('métier attribué', () => {
+  it('les options, les messages et les guichets d’un métier attribué restent réglables, sans features.profiles', async () => {
+    db.features = null;
     const results = await Promise.all([
       updateProfileOptions('garage-demo', { queueId: Q_VEHICLE, options: { quotes: false } }),
+      updateProfileOptions('garage-demo', { queueId: Q_VEHICLE, options: { registrationRequired: false } }),
+      updateProfileOptions('garage-demo', { queueId: Q_DESK, ticketPrefix: 'C' }),
       upsertMessageTemplate('garage-demo', { profile: 'vehicle', label: 'Clés', body: 'Vos clés sont à l’accueil.' }),
       deleteMessageTemplate('garage-demo', { profile: 'vehicle', key: 'cles' }),
       setDeskLabel('garage-demo', { staffId: STAFF, label: 'Guichet 3' }),
     ]);
+    for (const r of results) expect(r.ok).toBe(true);
+  });
+
+  it('refuse les messages d’un métier attribué à aucune file de l’organisation', async () => {
+    const results = await Promise.all([
+      upsertMessageTemplate('garage-demo', { profile: 'table', label: 'Retard', body: 'Votre table arrive.' }),
+      deleteMessageTemplate('garage-demo', { profile: 'retail', key: 'retard' }),
+    ]);
     for (const r of results) expect(r).toMatchObject({ ok: false, code: 'profile_unavailable' });
     expect(db.writes).toHaveLength(0);
   });
-});
 
-/* ------------------------------------------------------------------ */
-/* Changement de profil                                                 */
-/* ------------------------------------------------------------------ */
+  it('refuse un libellé de guichet là où aucun guichet n’a été installé', async () => {
+    const r = await setDeskLabel('garage-demo', { staffId: STAFF_ELSEWHERE, label: 'Guichet 1' });
+    expect(r).toMatchObject({ ok: false, code: 'profile_unavailable' });
+    expect(r.ok === false && r.error).toMatch(/l’équipe Rangvia l’active à l’installation/);
+    expect(db.writes).toHaveLength(0);
+  });
 
-describe('switchQueueProfile', () => {
-  beforeEach(() => { db.features = { profiles: true }; });
-
-  it('rend VT017 lisible : « Terminez ou videz la file avant de changer de profil »', async () => {
-    db.rpcResult = { data: null, error: { code: 'VT017', message: 'Terminez ou videz la file avant de changer de profil' } };
-    const r = await switchQueueProfile('garage-demo', { queueId: Q_VEHICLE, profile: 'table' });
-    expect(r).toEqual({
-      ok: false,
-      code: 'queue_not_empty',
-      error: 'Terminez ou videz la file avant de changer de profil.',
+  it('ne regarde que les files de SON organisation', async () => {
+    db.tables.queues!.push({
+      id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', organization_id: OTHER_ORG, location_id: LOC,
+      profile: 'table', profile_options: {}, ticket_prefix: 'A',
     });
-  });
-
-  it('dit quand les réglages d’avant sont rétablis', async () => {
-    db.rpcResult = {
-      data: { profile: 'walkin', previousProfile: 'table', changed: true, settingsRestored: true, servicesCreated: 0, servicesRetired: 0 },
-      error: null,
-    };
-    const r = await switchQueueProfile('garage-demo', { queueId: Q_WALKIN, profile: 'walkin' });
-    expect(r.ok && r.data.settingsRestored).toBe(true);
-  });
-
-  it('répond « introuvable » pour la file d’un autre commerce, sans appeler la base', async () => {
-    const r = await switchQueueProfile('garage-demo', { queueId: Q_FOREIGN, profile: 'vehicle' });
-    expect(r).toMatchObject({ ok: false, code: 'not_found' });
-    expect(db.rpcCalls).toHaveLength(0);
-  });
-
-  it('refuse un profil inconnu et une clé en trop', async () => {
-    const a = await switchQueueProfile('garage-demo', { queueId: Q_WALKIN, profile: 'spa' as never });
-    const b = await switchQueueProfile('garage-demo', { queueId: Q_WALKIN, profile: 'vehicle', force: true } as never);
-    expect(a).toMatchObject({ ok: false, code: 'validation' });
-    expect(b).toMatchObject({ ok: false, code: 'validation' });
-    expect(db.rpcCalls).toHaveLength(0);
+    const r = await upsertMessageTemplate('garage-demo', { profile: 'table', label: 'Retard', body: 'Votre table arrive.' });
+    expect(r).toMatchObject({ ok: false, code: 'profile_unavailable' });
   });
 });
 
@@ -274,8 +257,6 @@ describe('switchQueueProfile', () => {
 /* ------------------------------------------------------------------ */
 
 describe('updateProfileOptions', () => {
-  beforeEach(() => { db.features = { profiles: true }; });
-
   it('garde les options stockées, applique le changement et écrit l’audit', async () => {
     const r = await updateProfileOptions('garage-demo', { queueId: Q_VEHICLE, options: { tvRegistration: 'model_only' } });
     expect(r).toEqual({ ok: true, data: { options: { quotes: true, tvRegistration: 'model_only' }, ticketPrefix: 'A' } });
@@ -327,8 +308,6 @@ describe('updateProfileOptions', () => {
 /* ------------------------------------------------------------------ */
 
 describe('modèles de messages', () => {
-  beforeEach(() => { db.features = { profiles: true }; });
-
   it('refuse une adresse web et un texte de plus de 180 caractères', async () => {
     const url = await upsertMessageTemplate('garage-demo', { profile: 'vehicle', label: 'Lien', body: 'Payez sur bit.ly/garage' });
     const long = await upsertMessageTemplate('garage-demo', { profile: 'vehicle', label: 'Long', body: 'a'.repeat(181) });
@@ -407,8 +386,6 @@ describe('modèles de messages', () => {
 /* ------------------------------------------------------------------ */
 
 describe('setDeskLabel', () => {
-  beforeEach(() => { db.features = { profiles: true }; });
-
   it('nomme un guichet de l’organisation et écrit l’audit', async () => {
     const r = await setDeskLabel('garage-demo', { staffId: STAFF, label: '  Guichet 3 ' });
     expect(r).toEqual({ ok: true, data: { staffId: STAFF, label: 'Guichet 3' } });
@@ -505,7 +482,6 @@ describe('mergeTemplates (Réglages, section Messages)', () => {
 describe('file de santé (sensitive)', () => {
   const Q_HEALTH = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
   beforeEach(() => {
-    db.features = { profiles: true };
     db.tables.queues!.push({
       id: Q_HEALTH, organization_id: ORG, location_id: LOC, profile: 'desk',
       profile_options: { numbering: true, sensitive: true, review: false, reviewDelayMinutes: null }, ticket_prefix: 'A',
@@ -547,27 +523,27 @@ describe('file de santé (sensitive)', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* Choix du métier : jamais proposé à un barbier                       */
+/* Réglages : le métier en lecture seule                                */
 /* ------------------------------------------------------------------ */
 
-const { offersMetierChoice, metierLabel } = await import('@/app/app/[org]/reglages/ProfileSection');
+const { showsMetier, metierLabel } = await import('@/app/app/[org]/reglages/ProfileSection');
 
-describe('offersMetierChoice (Réglages, « Voir les autres métiers »)', () => {
-  const base = { current: 'walkin' as const, activity: 'barber', features: null, orgHasProfiledQueue: false, availableCount: 6 };
+describe('showsMetier (Réglages, section « Métier de la file »)', () => {
+  const base = { current: 'walkin' as const, features: null, orgHasProfiledQueue: false };
 
-  it('un barbier au passage : jamais, même si six métiers étaient ouverts', () => {
-    expect(offersMetierChoice(base)).toBe(false);
+  it('un barbier au passage : rien de nouveau', () => {
+    expect(showsMetier(base)).toBe(false);
   });
 
-  it('une activité à métier propre, une organisation activée ou une autre file à métier : oui', () => {
-    expect(offersMetierChoice({ ...base, activity: 'garage' })).toBe(true);
-    expect(offersMetierChoice({ ...base, features: { profiles: true } })).toBe(true);
-    expect(offersMetierChoice({ ...base, orgHasProfiledQueue: true })).toBe(true);
+  it('une file dans un métier : toujours, en lecture seule', () => {
+    for (const current of ['vehicle', 'device', 'table', 'desk', 'retail'] as const) {
+      expect(showsMetier({ ...base, current })).toBe(true);
+    }
   });
 
-  it('une file déjà dans un métier peut toujours revenir en arrière ; un seul métier possible : rien', () => {
-    expect(offersMetierChoice({ ...base, current: 'table' })).toBe(true);
-    expect(offersMetierChoice({ ...base, activity: 'garage', availableCount: 1 })).toBe(false);
+  it('une file au passage d’une organisation où l’équipe a installé un métier : oui, pour le dire', () => {
+    expect(showsMetier({ ...base, features: { profiles: true } })).toBe(true);
+    expect(showsMetier({ ...base, orgHasProfiledQueue: true })).toBe(true);
   });
 
   it('« Passage au fauteuil » chez un coiffeur, « Passage sans rendez-vous » dans un garage', () => {
@@ -578,40 +554,51 @@ describe('offersMetierChoice (Réglages, « Voir les autres métiers »)', () =>
   });
 });
 
-describe('ProfileSection (rendu) avec OPEN_PROFILES étendu à tous les métiers', () => {
-  it('un barbier voit « Passage au fauteuil » sans « Voir les autres métiers » ; un garage le voit', async () => {
+describe('ProfileSection (rendu)', () => {
+  it('métier attribué : « Métier : Atelier véhicule · activé par l’équipe Rangvia », sans sélecteur ni « Changer de métier », options présentes', async () => {
     vi.resetModules();
     vi.doMock('next/navigation', () => ({ useRouter: () => ({ refresh: () => undefined }) }));
-    vi.doMock('@/lib/profiles/capabilities', async (importOriginal) => {
-      const actual = await importOriginal<typeof import('@/lib/profiles/capabilities')>();
-      const all = new Set(['walkin', 'event', 'vehicle', 'device', 'table', 'desk', 'retail'] as const);
-      return { ...actual, OPEN_PROFILES: all, profileAvailable: () => true };
-    });
     const { createElement } = await import('react');
     const { renderToStaticMarkup } = await import('react-dom/server');
     const { ProfileSection } = await import('@/app/app/[org]/reglages/ProfileSection');
     const props = {
-      orgSlug: 'barber-house',
-      queue: { id: Q_WALKIN, name: 'Salon', profile: 'walkin' as const, profile_options: {}, ticket_prefix: 'A' },
+      orgSlug: 'garage-demo',
+      activity: 'garage',
       features: null,
       canConfigure: true,
       staff: [],
       run: () => undefined,
       pending: false,
     };
-    const barber = renderToStaticMarkup(createElement(ProfileSection, { ...props, activity: 'barber' }));
-    expect(barber).toContain('Passage au fauteuil');
-    expect(barber).not.toContain('Voir les autres métiers');
-    expect(barber).not.toContain('Changer de métier');
-
     const garage = renderToStaticMarkup(createElement(ProfileSection, {
-      ...props, activity: 'garage', queue: { ...props.queue, name: 'Pneus minute' },
+      ...props,
+      queue: { id: Q_VEHICLE, name: 'Atelier', profile: 'vehicle' as const, profile_options: {}, ticket_prefix: 'A' },
     }));
-    expect(garage).toContain('Passage sans rendez-vous');
-    expect(garage).not.toContain('Au fauteuil');
-    // Le garage a son métier : le sélecteur s'ouvre de lui-même, suggestion comprise.
-    expect(garage).toContain('Fait pour vous');
-    vi.doUnmock('@/lib/profiles/capabilities');
+    const text = garage.replace(/<[^>]+>/g, '').replace(/&nbsp;|\u00a0/g, ' ');
+    expect(text).toContain('Métier : Atelier véhicule · activé par l’équipe Rangvia');
+    expect(text).not.toMatch(/Changer de métier|Voir les autres métiers|Choisissez le métier/);
+    expect(garage).not.toContain('type="radio" class="sr-only" name="metier-');
+    // Les options du métier restent là : devis en ligne, immatriculation.
+    expect(text).toContain('Devis en ligne');
+    expect(text).toContain('Immatriculation obligatoire');
+
+    // Un barbier : la section ne rend rien.
+    const barber = renderToStaticMarkup(createElement(ProfileSection, {
+      ...props,
+      activity: 'barber',
+      queue: { id: Q_WALKIN, name: 'Salon', profile: 'walkin' as const, profile_options: {}, ticket_prefix: 'A' },
+    }));
+    expect(barber).toBe('');
+
+    // Une file au passage dans une organisation qui a un atelier : dite, rien à régler.
+    const tyres = renderToStaticMarkup(createElement(ProfileSection, {
+      ...props,
+      orgHasProfiledQueue: true,
+      queue: { id: Q_WALKIN, name: 'Pneus minute', profile: 'walkin' as const, profile_options: {}, ticket_prefix: 'A' },
+    })).replace(/<[^>]+>/g, '');
+    expect(tyres).toContain('Passage sans rendez-vous');
+    expect(tyres).not.toContain('Au fauteuil');
+    expect(tyres).not.toContain('Devis en ligne');
     vi.doUnmock('next/navigation');
   });
 });

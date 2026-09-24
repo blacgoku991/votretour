@@ -6,7 +6,6 @@ import { z } from 'zod';
 import { AppError, toAppError } from '@/lib/errors';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { isLegacyProfile, isQueueProfile, QUEUE_PROFILES } from '@/lib/profiles';
-import { profileAvailable } from '@/lib/profiles/capabilities';
 import { profileOptionsSchema, resolveProfileOptions } from '@/lib/profiles/options';
 import {
   defaultTemplates,
@@ -19,11 +18,19 @@ import { TICKET_PREFIX_RE } from '@/lib/profiles/ticket';
 import type { ProfileOptions, QueueProfile } from '@/lib/profiles/types';
 import { requireOrgAccess } from '@/server/auth';
 import { audit } from '@/server/audit';
-import { frenchIssues, loadOrganizationFeatures } from '@/server/profiles/queue';
+import { frenchIssues } from '@/server/profiles/queue';
 
 /**
  * RÉGLAGES DES PROFILS MÉTIER — ce que le professionnel règle dans
  * Réglages, sections « Métier de la file » et « Messages ».
+ *
+ * Le MÉTIER lui-même ne se règle pas ici. Décision du propriétaire : il
+ * est attribué par l'équipe Rangvia, à l'installation, depuis l'espace
+ * super-admin (`server/actions/admin-profiles.ts`). Aucune action de ce
+ * fichier ne change le profil d'une file. Le professionnel règle les
+ * OPTIONS du métier qui lui a été attribué : devis en ligne,
+ * immatriculation obligatoire, couverts, préfixe du numéro, libellés des
+ * guichets, modèles de messages.
  *
  * Chaque action revérifie, à chaque appel, sans rien croire du navigateur :
  *   1. l'accès à l'organisation de l'URL avec la permission
@@ -32,17 +39,12 @@ import { frenchIssues, loadOrganizationFeatures } from '@/server/profiles/queue'
  *   2. que la file, la fiche ou le guichet visé appartient BIEN à cette
  *      organisation : un identifiant deviné d'un autre commerce répond
  *      « introuvable », comme un identifiant inexistant ;
- *   3. que le profil est DISPONIBLE pour elle : ouvert à tous
- *      (`OPEN_PROFILES`, rempli par l'ouverture générale) ou activé pour
- *      cette organisation (`organization_settings.features.profiles`,
- *      posé en SQL par l'exploitant, et sur le banc local). Revenir au
- *      passage au fauteuil reste toujours possible : c'est le retour
- *      arrière, il ne doit jamais être bloqué ;
+ *   3. que le métier visé est bien ATTRIBUÉ, ce que seul le super-admin
+ *      peut faire : la file est dans ce métier (options), l'organisation a
+ *      une file dans ce métier (messages), l'établissement de la fiche a
+ *      une file au guichet (libellés) ;
  *   4. des entrées validées en zod STRICT.
- * Chaque écriture laisse une trace dans `audit_logs`. Le changement de
- * profil l'écrit en SQL, dans la même transaction que le changement
- * (`internal.switch_queue_profile`, 0034) : c'est de cette ligne que se
- * relisent, au retour, les réglages d'avant.
+ * Chaque écriture laisse une trace dans `audit_logs`.
  */
 
 export type ActionResult<T> =
@@ -80,14 +82,28 @@ async function configureAccess(orgSlug: unknown) {
   return { organizationId: access.organization.organization_id, userId: access.user.id };
 }
 
-const NOT_OPEN_MESSAGE = 'Ce métier n’est pas encore ouvert à votre établissement.';
+const NOT_ASSIGNED_MESSAGE = 'Ce métier n’est pas celui de votre établissement : l’équipe Rangvia l’active à l’installation.';
 
-/** Profil ouvert à tous, ou activé pour cette organisation. */
-async function assertProfileAvailable(organizationId: string, profile: QueueProfile): Promise<void> {
-  if (isLegacyProfile(profile)) return;
-  const features = await loadOrganizationFeatures(organizationId);
-  if (!profileAvailable(profile, features)) {
-    throw new AppError('profile_unavailable', NOT_OPEN_MESSAGE, 403);
+/**
+ * Une file de l'organisation (de cet établissement, si précisé) est-elle
+ * dans ce métier ? C'est la seule preuve qui compte : seul le super-admin
+ * pose un métier sur une file.
+ */
+async function assertProfileAssigned(
+  organizationId: string,
+  profile: QueueProfile,
+  locationId?: string,
+): Promise<void> {
+  let query = supabaseAdmin()
+    .from('queues')
+    .select('id')
+    .eq('organization_id', organizationId)
+    .eq('profile', profile);
+  if (locationId) query = query.eq('location_id', locationId);
+  const { data, error } = await query.limit(1);
+  if (error) throw toAppError(error);
+  if (!data || data.length === 0) {
+    throw new AppError('profile_unavailable', NOT_ASSIGNED_MESSAGE, 403);
   }
 }
 
@@ -120,62 +136,6 @@ async function queueInOrg(queueId: string, organizationId: string): Promise<Queu
 function revalidate(orgSlug: string): void {
   for (const page of ['reglages', 'file', 'ecran', 'statistiques', 'notifications']) {
     revalidatePath(`/app/${orgSlug}/${page}`);
-  }
-}
-
-/* --------------------------------------------------------------------
-   Changer le métier d'une file
-   -------------------------------------------------------------------- */
-
-const switchSchema = z.object({ queueId: uuid, profile: profileSchema }).strict();
-
-export interface SwitchProfileResult {
-  profile: QueueProfile;
-  previousProfile: QueueProfile;
-  changed: boolean;
-  /** La file retrouve les réglages qu'elle avait en quittant ce profil. */
-  settingsRestored: boolean;
-  servicesCreated: number;
-  /** Motifs créés automatiquement par le profil quitté, jamais retouchés, désactivés. */
-  servicesRetired: number;
-}
-
-/**
- * Passe une file dans un autre profil. Refusé tant qu'un ticket est actif
- * (VT017 : « Terminez ou videz la file avant de changer de profil ») : le
- * contrôle est fait en SQL, sous verrou de la file, pour qu'aucune
- * inscription ne se glisse entre le contrôle et le changement.
- */
-export async function switchQueueProfile(
-  orgSlug: string,
-  input: z.input<typeof switchSchema>,
-): Promise<ActionResult<SwitchProfileResult>> {
-  try {
-    const { organizationId, userId } = await configureAccess(orgSlug);
-    const parsed = parse(switchSchema, input);
-    await queueInOrg(parsed.queueId, organizationId);
-    await assertProfileAvailable(organizationId, parsed.profile);
-
-    const { data, error } = await supabaseAdmin().rpc('switch_queue_profile', {
-      p_queue_id: parsed.queueId,
-      p_profile: parsed.profile,
-      p_actor_user_id: userId,
-    });
-    if (error) throw error;
-
-    const row = (data ?? {}) as Partial<Record<string, unknown>>;
-    const result: SwitchProfileResult = {
-      profile: isQueueProfile(row.profile) ? row.profile : parsed.profile,
-      previousProfile: isQueueProfile(row.previousProfile) ? row.previousProfile : parsed.profile,
-      changed: row.changed === true,
-      settingsRestored: row.settingsRestored === true,
-      servicesCreated: typeof row.servicesCreated === 'number' ? row.servicesCreated : 0,
-      servicesRetired: typeof row.servicesRetired === 'number' ? row.servicesRetired : 0,
-    };
-    revalidate(orgSlug);
-    return { ok: true, data: result };
-  } catch (error) {
-    return fail(error);
   }
 }
 
@@ -225,7 +185,8 @@ export async function updateProfileOptions(
     if (isLegacyProfile(queue.profile)) {
       throw new AppError('invalid_action', 'Cette file n’a pas d’options de métier.', 400);
     }
-    await assertProfileAvailable(organizationId, queue.profile);
+    // Pas d'autre garde : le métier de la file est, par construction,
+    // celui que l'équipe Rangvia lui a attribué ; ses options sont au pro.
 
     // Seules les clés réellement stockées sont reprises : un défaut que le
     // pro n'a jamais touché reste un défaut (il suivra le code).
@@ -306,7 +267,7 @@ async function assertTemplateProfile(organizationId: string, profile: QueueProfi
   if (isLegacyProfile(profile)) {
     throw new AppError('invalid_action', 'Ce métier n’envoie pas de message en un geste.', 400);
   }
-  await assertProfileAvailable(organizationId, profile);
+  await assertProfileAssigned(organizationId, profile);
 }
 
 async function assertLocationInOrg(locationId: string, organizationId: string): Promise<void> {
@@ -506,7 +467,8 @@ export async function setDeskLabel(
     if (!staff || staff.organization_id !== organizationId) {
       throw new AppError('not_found', 'Fiche introuvable.', 404);
     }
-    await assertProfileAvailable(organizationId, 'desk');
+    // Une fiche = un guichet, là seulement où un guichet a été installé.
+    await assertProfileAssigned(organizationId, 'desk', staff.location_id as string);
 
     const { error } = await db
       .from('staff')

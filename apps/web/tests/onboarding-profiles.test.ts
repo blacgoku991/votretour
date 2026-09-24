@@ -1,21 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * ONBOARDING PAR MÉTIER (lot P7).
+ * ONBOARDING PAR MÉTIER (lots P7 et P10).
  *
- *  - activité → profil : le profil du métier s'il est OUVERT, sinon walkin ;
+ * Décision du propriétaire : le commerçant DÉCLARE son activité, il ne
+ * choisit pas son métier ; l'équipe Rangvia l'active à l'installation.
+ *  - activité → la file naît TOUJOURS au passage (walkin), l'activité est
+ *    enregistrée telle quelle ; même si tous les métiers étaient ouverts
+ *    à tous (`OPEN_PROFILES` simulé plein ici) ;
  *  - `?activite=` : liste blanche, une valeur inconnue est ignorée ;
- *  - `completeOnboarding` : un garage avant l'ouverture de `vehicle`
- *    s'inscrit en walkin, sous l'activité neutre `other` que l'organisation
- *    GARDE (ses établissements suivants naissent donc en walkin, sans
- *    motif) ; après l'ouverture — SIMULÉE ici par injection, sans toucher à
- *    `lib/profiles/capabilities.ts` — il naît directement en `vehicle` ;
+ *  - aucun aperçu de métier : une phrase honnête, « L'équipe Rangvia
+ *    active l'interface de votre métier lors de l'installation. », pour
+ *    une activité qui a un métier propre, et rien pour un barbier ;
  *  - un barbier envoie et obtient exactement ce qu'il obtenait avant.
  */
 
 const state = vi.hoisted(() => ({
-  /** Profils ouverts, partagés avec le module simulé des capacités. */
-  open: new Set<string>(['walkin', 'event']),
+  /** Profils « ouverts », partagés avec le module simulé des capacités : sans effet ici. */
+  open: new Set<string>(['walkin', 'event', 'vehicle', 'device', 'table', 'desk', 'retail']),
   rpc: [] as { fn: string; params: Record<string, unknown> }[],
   updates: [] as { table: string; values: Record<string, unknown>; eq: [string, unknown] }[],
   inserts: [] as { table: string; rows: Record<string, unknown>[] }[],
@@ -47,11 +49,10 @@ vi.mock('@/server/audit', () => ({
 }));
 
 /**
- * Base simulée : `provision_organization` pose le profil comme 0037
- * (`internal.default_profile` de l'activité reçue, miroir d'ACTIVITY_PROFILE).
+ * Base simulée : `provision_organization` comme depuis 0042 — la file naît
+ * au passage, l'activité reçue est gardée sur l'organisation.
  */
 vi.mock('@/lib/supabase/admin', async () => {
-  const { ACTIVITY_PROFILE } = await import('@/lib/profiles');
   const chain = (table: string) => ({
     update(values: Record<string, unknown>) {
       return {
@@ -85,13 +86,12 @@ vi.mock('@/lib/supabase/admin', async () => {
       from: chain,
       rpc: async (fn: string, params: Record<string, unknown>) => {
         state.rpc.push({ fn, params });
-        const activity = params.p_activity as keyof typeof ACTIVITY_PROFILE;
-        state.orgActivity = activity;
+        state.orgActivity = params.p_activity as ActivityType;
         return {
           data: {
             organization: { id: 'org-1', slug: 'garage-martin', name: params.p_org_name },
             location: { id: 'loc-1', name: params.p_location_name },
-            queue: { id: 'queue-1', profile: ACTIVITY_PROFILE[activity] },
+            queue: { id: 'queue-1', profile: 'walkin' },
             plate: { code: 'garage-martin-comptoir' },
           },
           error: null,
@@ -109,17 +109,15 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/app/bienvenue/OnboardingFlow', () => ({ OnboardingFlow: () => null }));
 
 import { ACTIVITY_LABEL } from '@/lib/copy';
-import { ACTIVITY_PROFILE, getProfile } from '@/lib/profiles';
-import type { ActivityType, QueueProfile } from '@/lib/profiles/types';
-import { QUEUE_PROFILES } from '@/lib/profiles/types';
+import { ACTIVITY_PROFILE, isLegacyProfile } from '@/lib/profiles';
+import type { ActivityType } from '@/lib/profiles/types';
 import {
+  INSTALL_NOTE,
   METIER_FAMILIES,
-  hasProfilePreview,
-  onboardingCopy,
+  ONBOARDING_COPY,
+  metierInstallNote,
   onboardingProfile,
   parseActivityParam,
-  previewInvitation,
-  quoted,
   reviewOffByDefault,
   samplePlaceholders,
 } from '@/app/bienvenue/metiers';
@@ -127,8 +125,6 @@ import { completeOnboarding } from '@/server/actions/onboarding';
 import WelcomePage from '@/app/bienvenue/page';
 
 const ACTIVITIES = Object.keys(ACTIVITY_PROFILE) as ActivityType[];
-const ALL_OPEN: ReadonlySet<QueueProfile> = new Set(QUEUE_PROFILES);
-const TODAY: ReadonlySet<QueueProfile> = new Set<QueueProfile>(['walkin', 'event']);
 
 function baseInput(activity: ActivityType) {
   return {
@@ -143,9 +139,6 @@ function baseInput(activity: ActivityType) {
 }
 
 beforeEach(() => {
-  state.open.clear();
-  state.open.add('walkin');
-  state.open.add('event');
   state.rpc.length = 0;
   state.updates.length = 0;
   state.inserts.length = 0;
@@ -155,67 +148,26 @@ beforeEach(() => {
   state.failQueueUpdate = false;
 });
 
-/**
- * Miroir de `create_location` (0037) appelé par « Ajouter un établissement »
- * (`settings.ts`, `p_activity: null`) : l'activité est relue sur
- * l'organisation, le profil en découle, et des motifs sont semés hors walkin.
- */
-function secondLocation(orgActivity: ActivityType): { profile: QueueProfile; seedsServices: boolean } {
-  const profile = ACTIVITY_PROFILE[orgActivity];
-  return { profile, seedsServices: profile !== 'walkin' };
-}
-
 /* ------------------------------------------------------------------ */
-describe('activité → profil', () => {
-  it('donne le profil du métier quand il est ouvert', () => {
+describe('activité déclarée → file au passage', () => {
+  it('toujours walkin, l’activité transmise telle quelle, même avec tous les métiers « ouverts »', () => {
     for (const activity of ACTIVITIES) {
-      const choice = onboardingProfile(activity, ALL_OPEN);
-      expect(choice.target).toBe(ACTIVITY_PROFILE[activity]);
-      expect(choice.profile).toBe(ACTIVITY_PROFILE[activity]);
-      expect(choice.open).toBe(true);
+      const choice = onboardingProfile(activity);
+      expect(choice.profile).toBe('walkin');
       expect(choice.provisionActivity).toBe(activity);
+      expect(choice.target).toBe(ACTIVITY_PROFILE[activity]);
+      expect(choice.installedByTeam).toBe(!isLegacyProfile(ACTIVITY_PROFILE[activity]));
     }
   });
 
-  it('retombe sur walkin tant que le profil n’est pas ouvert, en provisionnant comme un barbier', () => {
-    for (const activity of ACTIVITIES) {
-      const target = ACTIVITY_PROFILE[activity];
-      const choice = onboardingProfile(activity, TODAY);
-      if (target === 'walkin' || target === 'event') {
-        expect(choice.profile).toBe(target);
-        expect(choice.provisionActivity).toBe(activity);
-      } else {
-        expect(choice.profile).toBe('walkin');
-        expect(choice.open).toBe(false);
-        // `other` est walkin côté SQL : aucun réglage ni motif de profil posé.
-        expect(choice.provisionActivity).toBe('other');
-        expect(ACTIVITY_PROFILE.other).toBe('walkin');
-      }
+  it('la phrase honnête pour un métier propre, rien pour un barbier, un salon, un événement ou « Autre »', () => {
+    expect(INSTALL_NOTE).toBe('L’équipe Rangvia active l’interface de votre métier lors de l’installation.');
+    for (const activity of ['garage', 'auto_center', 'phone_repair', 'aftersales', 'restaurant', 'counter', 'admin_service', 'health', 'shop'] as const) {
+      expect(metierInstallNote(activity)).toBe(INSTALL_NOTE);
     }
-  });
-
-  it('suit OPEN_PROFILES par défaut (aujourd’hui : walkin et event seulement)', () => {
-    expect(onboardingProfile('garage').profile).toBe('walkin');
-    state.open.add('vehicle');
-    expect(onboardingProfile('garage').profile).toBe('vehicle');
-    expect(onboardingProfile('restaurant').profile).toBe('walkin');
-  });
-
-  it('n’offre un aperçu qu’aux profils différents du parcours d’aujourd’hui', () => {
-    expect(hasProfilePreview('walkin')).toBe(false);
-    expect(hasProfilePreview('event')).toBe(false);
-    for (const p of ['vehicle', 'device', 'table', 'desk', 'retail'] as const) expect(hasProfilePreview(p)).toBe(true);
-  });
-
-  it('n’invite à l’aperçu qu’avec des métiers dont le profil est ouvert', () => {
-    // Aujourd'hui : aucun profil à aperçu ouvert, donc ni invitation ni
-    // colonne d'aperçu — la page reste celle d'avant.
-    expect(previewInvitation(TODAY)).toBeNull();
-    expect(previewInvitation()).toBeNull();
-    const garageOnly = previewInvitation(new Set<QueueProfile>(['walkin', 'event', 'vehicle']));
-    expect(garageOnly).toMatch(/^Garage\u00a0: /);
-    expect(garageOnly).not.toMatch(/restaurant|guichet|boutique|réparation/);
-    expect(previewInvitation(ALL_OPEN)).toMatch(/^Garage, réparation, restaurant, guichet, boutique\u00a0: /);
+    for (const activity of ['barber', 'hair_salon', 'nail_bar', 'beauty', 'event', 'other'] as const) {
+      expect(metierInstallNote(activity)).toBeNull();
+    }
   });
 });
 
@@ -235,10 +187,10 @@ describe('?activite= (liste blanche)', () => {
     expect(parseActivityParam(['garage', 'restaurant'])).toBeNull();
   });
 
-  it('la page transmet le métier valide, et ignore activite=inconnu', async () => {
+  it('la page transmet l’activité valide, et ignore activite=inconnu ; aucun métier ne vient de l’URL', async () => {
     const props = async (activite?: string | string[]) => {
       const element = (await WelcomePage({ searchParams: Promise.resolve({ activite }) })) as {
-        props: { initialActivity: ActivityType; openProfiles: QueueProfile[] };
+        props: Record<string, unknown>;
       };
       return element.props;
     };
@@ -246,8 +198,7 @@ describe('?activite= (liste blanche)', () => {
     expect((await props('inconnu')).initialActivity).toBe('barber');
     expect((await props(undefined)).initialActivity).toBe('barber');
     expect((await props(['restaurant', 'garage'])).initialActivity).toBe('barber');
-    // Les profils ouverts viennent du serveur, jamais de l'URL.
-    expect(new Set((await props('garage')).openProfiles)).toEqual(new Set(['walkin', 'event']));
+    expect(Object.keys(await props('garage')).sort()).toEqual(['initialActivity', 'userName']);
   });
 });
 
@@ -260,8 +211,8 @@ describe('grille de métiers et textes', () => {
     expect(new Set(listed)).toEqual(new Set(ACTIVITIES));
   });
 
-  it('garde au barbier ses textes d’aujourd’hui', () => {
-    const copy = onboardingCopy('walkin');
+  it('garde les textes d’avant les profils, pour tous : aucune promesse d’interface de métier', () => {
+    const copy = ONBOARDING_COPY;
     expect(copy.readyTitle).toBe('Votre file est prête');
     expect(copy.openNow).toBe('Ouvrir la file maintenant');
     expect(copy.createCta).toBe('Créer ma file');
@@ -271,49 +222,40 @@ describe('grille de métiers et textes', () => {
     expect(copy.teamPlaceholder(1)).toBe('Professionnel 2');
     expect(copy.teamRemoveLabel(1)).toBe('Retirer le professionnel 2');
     expect(copy.asksQueueMode).toBe(true);
-    expect(copy.trial).toEqual([]);
-    // Le texte de l'étape Avis d'avant les profils, mot pour mot.
     expect(copy.reviewLead).toBe(
       'À la fin de chaque passage, le client reçoit un remerciement avec un bouton qui ouvre directement ce lien. C’est proposé à tout le monde, sans filtrage.',
     );
-    expect(onboardingCopy('event')).toEqual(copy);
+    const all = Object.values(copy).filter((v): v is string => typeof v === 'string').join(' ');
+    expect(all).not.toMatch(/atelier|salle|guichet|boutique/i);
     expect(samplePlaceholders('barber')).toEqual({ organization: 'Barber House', location: 'Barber House — Paris 11' });
-  });
-
-  it('parle le métier ailleurs, avec les touches réelles du profil', () => {
-    expect(onboardingCopy('vehicle').readyTitle).toBe('Votre atelier est prêt');
-    expect(onboardingCopy('table').readyTitle).toBe('Votre salle est prête');
-    expect(onboardingCopy('desk').readyTitle).toBe('Vos guichets sont prêts');
-    for (const profile of ['vehicle', 'device', 'table', 'desk', 'retail'] as const) {
-      const copy = onboardingCopy(profile);
-      const { vocab } = getProfile(profile);
-      expect(copy.asksQueueMode).toBe(false);
-      expect(copy.openNow).toBe(`${vocab.openQueue} maintenant`);
-      // La touche citée dans l'essai est celle du vocabulaire du profil (plan § 0.8).
-      expect(copy.trial.join(" ")).toContain(quoted(vocab.call));
-      expect(quoted(vocab.call).replace(/\u00a0/g, ' ')).toBe(`« ${vocab.call.replace(/\u00a0/g, ' ')} »`);
-      for (const line of [copy.teamTitle, copy.teamLead, copy.readyTitle, copy.reviewLead, ...copy.trial]) {
-        expect(line).not.toMatch(/'/);
-      }
-      // L'étape Avis parle du moment du métier, pas du passage au fauteuil.
-      expect(copy.reviewLead).not.toMatch(/^À la fin de chaque passage,/);
-      expect(copy.reviewLead).toMatch(/, le client reçoit un remerciement avec un bouton qui ouvre directement ce lien\./);
-    }
-    expect(onboardingCopy('vehicle').reviewLead).toMatch(/^À la remise du véhicule,/);
-    expect(onboardingCopy('table').reviewLead).toMatch(/^Un peu après le repas,/);
-  });
-
-  it('ne coupe jamais une touche citée : toutes ses espaces sont insécables', () => {
-    expect(quoted('Table prête\u00a0· appeler')).toBe('«\u00a0Table\u00a0prête\u00a0·\u00a0appeler\u00a0»');
-    for (const profile of ['vehicle', 'device', 'table', 'desk', 'retail'] as const) {
-      for (const line of onboardingCopy(profile).trial) {
-        for (const [inner] of line.matchAll(/«[^»]*»/g)) expect(inner).not.toMatch(/ /);
-      }
-    }
   });
 
   it('coupe l’avis par défaut en santé et en administration seulement', () => {
     expect(ACTIVITIES.filter(reviewOffByDefault).sort()).toEqual(['admin_service', 'health']);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+describe('le parcours rendu (OnboardingFlow, premier écran)', () => {
+  const render = async (activity: ActivityType) => {
+    const { createElement } = await import('react');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const actual = await vi.importActual<typeof import('@/app/bienvenue/OnboardingFlow')>('@/app/bienvenue/OnboardingFlow');
+    return renderToStaticMarkup(createElement(actual.OnboardingFlow, { userName: 'Camille Martin', initialActivity: activity }))
+      .replace(/<[^>]+>/g, ' ');
+  };
+
+  it('garage : la phrase honnête, ni aperçu ni « Voir ce que verront vos clients »', async () => {
+    const html = await render('garage');
+    expect(html).toContain(INSTALL_NOTE);
+    expect(html).not.toMatch(/Aperçu|Voir ce que verront vos clients|Créons votre atelier/);
+    expect(html).toContain('Créons votre file.');
+  });
+
+  it('barbier : l’écran d’avant, sans la phrase', async () => {
+    const html = await render('barber');
+    expect(html).not.toContain(INSTALL_NOTE);
+    expect(html).toContain('Créons votre file.');
   });
 });
 
@@ -345,48 +287,41 @@ describe('completeOnboarding', () => {
     }
   });
 
-  it('activite=garage avant l’ouverture de vehicle : walkin, l’organisation garde « other »', async () => {
+  it('activite=garage : l’activité est enregistrée telle quelle, la file naît au passage', async () => {
     const response = await completeOnboarding(baseInput('garage'));
     expect(response.ok).toBe(true);
-    expect(provision().p_activity).toBe('other');
+    expect(provision().p_activity).toBe('garage');
     // Le mode de file choisi est conservé, comme pour un barbier.
     expect(provision().p_queue_mode).toBe('per_staff');
     expect(orgActivityUpdate()).toBeUndefined();
-    expect(state.orgActivity).toBe('other');
+    expect(state.orgActivity).toBe('garage');
     if (response.ok) {
       expect(response.data.profile).toBe('walkin');
       expect(response.data.activity).toBe('garage');
     }
-    // Le métier choisi reste lisible dans le journal.
+    // Le métier que l'équipe activera reste lisible dans le journal.
     expect(state.audits[0]?.metadata).toMatchObject({ activity: 'garage', profile: 'walkin', targetProfile: 'vehicle' });
   });
 
-  it('garage non ouvert : son deuxième établissement naît en walkin, sans motif', async () => {
-    for (const activity of ['garage', 'restaurant', 'health', 'phone_repair', 'shop', 'counter'] as const) {
-      state.orgActivity = null;
-      await completeOnboarding(baseInput(activity));
-      // « Ajouter un établissement » : create_location relit l'activité de l'organisation.
-      const orgActivity = state.orgActivity;
-      if (orgActivity === null) throw new Error('organisation non provisionnée');
-      expect(orgActivity).toBe('other');
-      expect(secondLocation(orgActivity)).toEqual({ profile: 'walkin', seedsServices: false });
+  it('toutes les activités : walkin, activité gardée, fiches sans libellé de guichet', async () => {
+    for (const activity of ACTIVITIES) {
+      state.rpc.length = 0;
+      state.inserts.length = 0;
+      const response = await completeOnboarding(baseInput(activity));
+      expect(response.ok).toBe(true);
+      expect(provision().p_activity).toBe(activity);
+      if (response.ok) expect(response.data.profile).toBe('walkin');
+      expect(staffRows().every((r) => !('desk_label' in r))).toBe(true);
     }
-  });
-
-  it('activite=garage après l’ouverture (simulée) : provisionné directement en vehicle', async () => {
-    state.open.add('vehicle');
-    const response = await completeOnboarding({ ...baseInput('garage'), queueMode: 'shared' });
-    expect(response.ok).toBe(true);
-    expect(provision().p_activity).toBe('garage');
-    expect(orgActivityUpdate()).toBeUndefined();
-    if (response.ok) expect(response.data.profile).toBe('vehicle');
+    // Aucune retouche des réglages d'une file : il n'y a pas de métier à régler.
+    expect(state.updates.find((u) => u.table === 'queues')).toBeUndefined();
   });
 
   it('accepte « Événement / Drop », proposé par la grille', async () => {
     const response = await completeOnboarding(baseInput('event'));
     expect(response.ok).toBe(true);
     expect(provision().p_activity).toBe('event');
-    if (response.ok) expect(response.data.profile).toBe('event');
+    if (response.ok) expect(response.data.profile).toBe('walkin');
   });
 
   it('refuse une activité hors liste', async () => {
@@ -403,41 +338,5 @@ describe('completeOnboarding', () => {
   it('santé : l’avis s’active seulement sur demande explicite', async () => {
     await completeOnboarding({ ...baseInput('health'), requestReviews: true });
     expect(locationUpdate().google_review_url).toBe('https://g.page/r/exemple');
-  });
-
-  it('guichet ouvert : chaque fiche porte son guichet ; l’avis demandé l’emporte sur le défaut du profil', async () => {
-    state.open.add('desk');
-    state.queueOptions = { numbering: true, sensitive: true, review: false, reviewDelayMinutes: null };
-    const response = await completeOnboarding({
-      ...baseInput('health'),
-      staffNames: ['Guichet 1', 'Box 2'],
-      requestReviews: true,
-    });
-    expect(response.ok).toBe(true);
-    if (response.ok) expect(response.data.profile).toBe('desk');
-    expect(staffRows().map((r) => r.desk_label)).toEqual(['Guichet 1', 'Box 2']);
-    const options = state.updates.find((u) => u.table === 'queues')?.values.profile_options;
-    expect(options).toEqual({ numbering: true, sensitive: true, review: true });
-  });
-
-  it('guichet ouvert, avis demandé mais écriture en échec : l’inscription aboutit quand même', async () => {
-    state.open.add('desk');
-    state.failQueueUpdate = true;
-    state.queueOptions = { numbering: true, sensitive: true, review: false, reviewDelayMinutes: null };
-    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const response = await completeOnboarding({ ...baseInput('health'), requestReviews: true });
-    // L'organisation existe : renvoyer une erreur ferait recommencer, donc créer un doublon.
-    expect(response.ok).toBe(true);
-    expect(errors).toHaveBeenCalledWith('[onboarding] avis non activé sur la file', expect.any(String));
-    errors.mockRestore();
-    // La suite de l'inscription s'est déroulée.
-    expect(state.updates.some((u) => u.table === 'organizations' && u.values.onboarding_step === 'done')).toBe(true);
-  });
-
-  it('guichet ouvert, avis non demandé : les réglages du profil ne sont pas touchés', async () => {
-    state.open.add('desk');
-    await completeOnboarding(baseInput('admin_service'));
-    expect(state.updates.find((u) => u.table === 'queues')).toBeUndefined();
-    expect(locationUpdate().google_review_url).toBeNull();
   });
 });

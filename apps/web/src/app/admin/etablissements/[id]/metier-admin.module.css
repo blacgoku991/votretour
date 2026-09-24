@@ -1,0 +1,232 @@
+/* =====================================================================
+   SUPER-ADMIN — MÉTIER, FILE PAR FILE
+   Chaque file est une latte ; ouverte, elle devient un établi : les
+   métiers à gauche, la scène du métier (les vrais objets du produit) à
+   droite, la confirmation dessous. Les lattes, la scène et le ticket de
+   confirmation viennent de reglages/metier.module.css : l'équipe voit ce
+   que verra le commerce. On n'anime que transform et opacity, et
+   seulement si le mouvement est permis.
+   ===================================================================== */
+
+.panel { display: flex; flex-direction: column; gap: 16px; }
+
+.lead {
+  max-width: 76ch;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+.lead strong { color: var(--text); font-variation-settings: 'wght' 680; }
+
+.empty { font-size: 0.875rem; color: var(--text-muted); }
+
+.queues {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ---------------------------------------------------------------------
+   La latte d'une file
+   --------------------------------------------------------------------- */
+.queue {
+  container: metier-queue / inline-size;
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+/* L'encoche de la latte ouverte, là où elle rejoint le rail. */
+.queue::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 22px;
+  width: 4px;
+  height: 22px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+.queue[data-open='1'] { border-color: var(--line-strong); }
+.queue[data-open='1']::before { transform: scaleX(1); }
+@media (prefers-reduced-motion: no-preference) {
+  .queue::before { transition: transform var(--dur-2) var(--ease-slat); }
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-areas:
+    'glyph identity busy'
+    'glyph current  current'
+    'toggle toggle  toggle';
+  gap: 10px 14px;
+  align-items: center;
+  padding: 14px 16px;
+}
+@container metier-queue (min-width: 760px) {
+  .row {
+    grid-template-columns: 40px minmax(0, 1.2fr) minmax(0, 1fr) auto auto;
+    grid-template-areas: 'glyph identity current busy toggle';
+  }
+}
+
+.glyph {
+  grid-area: glyph;
+  align-self: start;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--text);
+}
+@container metier-queue (min-width: 760px) { .glyph { align-self: center; } }
+
+.identity { grid-area: identity; min-width: 0; }
+.queueName {
+  font-variation-settings: 'wdth' 104, 'wght' 720;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.queuePlace { margin-top: 2px; font-size: 0.75rem; color: var(--text-muted); overflow-wrap: anywhere; }
+
+.current { grid-area: current; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.currentKicker {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.currentLabel { font-variation-settings: 'wdth' 108, 'wght' 760; font-size: 0.9375rem; line-height: 1.25; }
+
+.busy {
+  grid-area: busy;
+  justify-self: end;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-variation-settings: 'wght' 640;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  background: color-mix(in oklab, var(--jade-500) 14%, transparent);
+  color: var(--text);
+}
+.busy[data-busy='1'] { background: color-mix(in oklab, var(--signal-500) 18%, transparent); }
+
+.toggle.toggle { grid-area: toggle; justify-self: stretch; }
+@container metier-queue (min-width: 760px) { .toggle.toggle { justify-self: end; } }
+
+.note {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in oklab, var(--jade-500) 10%, transparent);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.noteMark {
+  flex: none;
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--jade-500);
+  transform: translateY(-4px);
+}
+
+/* ---------------------------------------------------------------------
+   L'établi : les métiers, la scène, la confirmation
+   --------------------------------------------------------------------- */
+.bench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  padding: 18px 16px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .bench { animation: bench-in var(--dur-2) var(--ease-slat); }
+}
+@keyframes bench-in { from { opacity: 0; transform: translateY(-6px); } }
+
+@container metier-queue (min-width: 900px) {
+  .bench { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 22px 26px; }
+  .previewCol { position: sticky; top: 16px; align-self: start; }
+  .confirmRow { grid-column: 1 / -1; }
+}
+
+/* Le nom de conteneur est celui que lisent les lattes de metier.module.css
+   (deux colonnes dès 620 px). */
+.choicesCol {
+  container: metier-picker / inline-size;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+/* Téléphone : l'aperçu vient AVANT les lattes, pour que le choix se voie. */
+@container metier-queue (max-width: 899.98px) {
+  .previewCol { order: -1; }
+}
+
+.previewCol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .preview { animation: bench-in var(--dur-2) var(--ease-slat); }
+}
+.previewCaption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-variation-settings: 'wdth' 104, 'wght' 700;
+  font-size: 0.875rem;
+}
+.previewTag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-variation-settings: 'wdth' 88, 'wght' 760;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: var(--surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--text-muted);
+}
+.preview[data-preview='1'] + .previewCaption .previewTag,
+.previewCol:has(.preview[data-preview='1']) .previewTag {
+  background: var(--accent);
+  box-shadow: none;
+  color: var(--accent-ink);
+}
+
+.confirmRow { min-width: 0; }
+.idle {
+  padding: 14px 16px;
+  border-radius: var(--r-slat);
+  border: 1px dashed var(--line-strong);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.warn {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--signal-500) 14%, transparent);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  font-variation-settings: 'wght' 600;
+}

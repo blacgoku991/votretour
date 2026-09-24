@@ -6,7 +6,7 @@ import { Wordmark } from '@/components/Wordmark';
 import { Plaque } from '@/components/objects/Plaque';
 import { Seuil } from '@/components/objects/Seuil';
 import { openQueueNow, type OnboardingResult } from '@/server/actions/onboarding';
-import { onboardingCopy } from './metiers';
+import { metierInstallNote, ONBOARDING_COPY } from './metiers';
 import styles from './onboarding.module.css';
 
 /**
@@ -20,10 +20,11 @@ import styles from './onboarding.module.css';
  * Logique inchangée : ouverture de la file, copie du lien, QR en PNG,
  * affiche, test comme un client, tableau de bord.
  *
- * Les mots suivent le profil RÉELLEMENT créé (renvoyé par le serveur) :
- * « Votre atelier est prêt », « Ouvrir les dépôts maintenant », et un
- * essai en trois gestes propre au métier. Un barbier, ou un métier dont le
- * profil n'est pas encore ouvert, garde l'écran d'aujourd'hui, mot pour mot.
+ * La file créée est toujours au passage : les mots sont ceux d'avant les
+ * profils, mot pour mot, sans aucune promesse d'interface de métier. Pour
+ * une activité qui a un métier propre (garage, restaurant, guichet…), une
+ * phrase honnête, sous le lien : l'équipe Rangvia active l'interface de
+ * ce métier lors de l'installation.
  */
 
 const PLAQUE_POSE = {
@@ -34,7 +35,8 @@ const PLAQUE_POSE = {
 } as React.CSSProperties;
 
 export function ReadyScreen({ result }: { result: OnboardingResult }) {
-  const copy = onboardingCopy(result.profile);
+  const copy = ONBOARDING_COPY;
+  const installNote = metierInstallNote(result.activity);
   const [opened, setOpened] = useState(false);
   const [copied, setCopied] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -133,22 +135,11 @@ export function ReadyScreen({ result }: { result: OnboardingResult }) {
           </Link>
         </div>
 
-        {copy.trial.length > 0 && (
-          <section className={styles.trial} aria-labelledby="essai-titre">
-            <h2 id="essai-titre" className={styles.trialTitle}>Un essai réel, en trois gestes</h2>
-            <ol className={styles.trialSteps}>
-              {copy.trial.map((line, i) => (
-                <li key={i} className={styles.trialStep}>
-                  <span className={styles.trialNum} aria-hidden="true">{i + 1}</span>
-                  <span>{line}</span>
-                </li>
-              ))}
-            </ol>
-            <p className={styles.trialNote}>
-              Rien de fictif n’est ajouté : votre essai est un vrai ticket, qui
-              s’efface avec «&nbsp;Retirer&nbsp;».
-            </p>
-          </section>
+        {installNote && (
+          <p className={styles.readyInstall}>
+            <span className={styles.installMark} aria-hidden="true" />
+            {installNote}
+          </p>
         )}
       </div>
     </main>

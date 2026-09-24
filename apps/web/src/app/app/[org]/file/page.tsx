@@ -4,14 +4,12 @@ import { getStaffRecord, requireOrgAccess } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { getQueueSnapshot } from '@/server/queue';
 import { getProfileQueueSnapshot } from '@/server/profiles/queue';
-import { getProfile, isLegacyProfile, profileForActivity } from '@/lib/profiles';
-import { profileAvailable } from '@/lib/profiles/capabilities';
+import { getProfile } from '@/lib/profiles';
 import { QueueBoard } from './QueueBoard';
 import { boardKindFor, readOnlySnapshot } from './boards/logic';
 import { WorkshopBoard } from './boards/WorkshopBoard';
 import { TableBoard } from './boards/TableBoard';
 import { DeskBoard } from './boards/DeskBoard';
-import { ProfileSuggestion } from './boards/ProfileSuggestion';
 import styles from './board.module.css';
 
 export const metadata: Metadata = { title: 'File en cours', robots: { index: false } };
@@ -99,10 +97,10 @@ export default async function QueuePage({
       getQueueSnapshot(selected.id),
       getStaffRecord(access.user.id, selected.location_id),
     ]);
-    // `queue_snapshot` ajoute la clé `profile` (0035) ; absente, c'est une
-    // base d'avant les profils : le poste d'aujourd'hui.
-    const profile = (snapshot?.queue as { profile?: string } | undefined)?.profile ?? 'walkin';
-    const board = (
+    // Le métier d'une file est attribué par l'équipe Rangvia (espace
+    // super-admin) : le poste ne propose jamais d'en changer. Un garage
+    // encore au passage garde ce poste, exactement celui d'un barbier.
+    return (
       <QueueBoard
         orgSlug={org}
         initialSnapshot={snapshot}
@@ -111,22 +109,6 @@ export default async function QueuePage({
         canConfigure={canConfigure}
         actorStaffId={staff?.id ?? null}
       />
-    );
-    // Un garage, un restaurant ou un guichet inscrit AVANT les profils
-    // reste en passage au fauteuil tant qu'il n'a rien demandé : une carte
-    // discrète lui propose son poste. Un barbier (profil par défaut
-    // walkin) ne lit rien de plus, et sa page ne change pas d'un pixel.
-    const suggested = profileForActivity(access.organization.activity);
-    if (!isLegacyProfile(profile) || isLegacyProfile(suggested) || !canConfigure) return board;
-    const features = await loadFeatures(access.organization.organization_id);
-    if (!profileAvailable(suggested, features)) return board;
-    return (
-      <>
-        <div className="shell">
-          <ProfileSuggestion orgSlug={org} profile={suggested} label={getProfile(suggested).label} />
-        </div>
-        {board}
-      </>
     );
   }
 
@@ -170,16 +152,4 @@ export default async function QueuePage({
     return <TableBoard {...common} initialSnapshot={profileSnapshot} graceMinutes={graceMinutes} />;
   }
   return <DeskBoard {...common} initialSnapshot={profileSnapshot} />;
-}
-
-async function loadFeatures(organizationId: string): Promise<Record<string, unknown> | null> {
-  const { data } = await supabaseAdmin()
-    .from('organization_settings')
-    .select('features')
-    .eq('organization_id', organizationId)
-    .maybeSingle();
-  const features = data?.features;
-  return features && typeof features === 'object' && !Array.isArray(features)
-    ? (features as Record<string, unknown>)
-    : null;
 }

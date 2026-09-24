@@ -8,7 +8,6 @@ import { enforceRateLimit, LIMITS } from '@/server/ratelimit';
 import { audit } from '@/server/audit';
 import { env } from '@/lib/env';
 import { ACTIVITY_PROFILE } from '@/lib/profiles';
-import { profileOptionsSchema } from '@/lib/profiles/options';
 import type { ActivityType, QueueProfile } from '@/lib/profiles/types';
 import { onboardingProfile, reviewOffByDefault } from '@/app/bienvenue/metiers';
 
@@ -66,7 +65,10 @@ export interface OnboardingResult {
   plateUrl: string;
   /** Activité choisie. */
   activity: ActivityType;
-  /** Profil de la file créée : celui du métier s'il est ouvert, sinon walkin. */
+  /**
+   * Profil de la file créée : toujours le passage. Le métier est activé
+   * ensuite par l'équipe Rangvia (espace super-admin).
+   */
   profile: QueueProfile;
 }
 
@@ -76,12 +78,12 @@ export interface OnboardingResult {
  * horaires → période d'essai. À la fin, le professionnel a une URL
  * qu'il peut coller sur un tag NFC et un QR à imprimer.
  *
- * Profil métier : l'activité choisie donne le profil (`ACTIVITY_PROFILE`).
- * S'il est ouvert à tout nouveau compte (`OPEN_PROFILES`), la file naît
- * directement dans ce profil (`create_location`, 0037). Sinon, le métier
- * s'inscrit en walkin, sous l'activité neutre `other`, exactement comme
- * avant les profils (voir `onboardingProfile`). La décision est prise ICI,
- * jamais d'après le navigateur.
+ * Métier : décision du propriétaire, le commerçant DÉCLARE son activité,
+ * enregistrée telle quelle sur l'organisation, mais il ne choisit pas son
+ * métier. La file naît TOUJOURS au passage (walkin) ; l'équipe Rangvia
+ * active l'interface du métier (atelier, table, guichet…) lors de
+ * l'installation, depuis l'espace super-admin. La base le garantit aussi
+ * (`create_location`, 0042) : rien ici ne dépend du navigateur.
  */
 export async function completeOnboarding(
   input: z.input<typeof schema>,
@@ -117,36 +119,9 @@ export async function completeOnboarding(
 
     const organizationId = result.organization.id;
     const locationId = result.location.id;
-    // Le profil que la base a réellement posé fait foi (une base d'avant
-    // 0037 n'en renvoie pas : c'est alors le walkin d'aujourd'hui).
+    // Le profil que la base a réellement posé fait foi : le passage, sauf
+    // base d'avant 0042 (qui déduisait encore le métier de l'activité).
     const profile: QueueProfile = result.queue.profile ?? 'walkin';
-
-    // Profil pas encore ouvert : la file est née en walkin, sous l'activité
-    // neutre `other`, et l'organisation la GARDE (voir `provisionActivity`) :
-    // ses établissements suivants naîtront en walkin eux aussi. Le métier
-    // choisi est conservé dans le journal ci-dessous (`metadata.activity`).
-
-    // Avis demandé explicitement dans un métier où il est coupé par défaut
-    // (guichet de santé ou d'administration déjà ouvert) : le choix du
-    // professionnel l'emporte sur le défaut du profil. L'organisation existe
-    // déjà : un échec ici ne doit pas faire recommencer l'inscription (elle
-    // serait créée deux fois). On le journalise ; la file fonctionne, sans
-    // avis, et le réglage reste modifiable dans Réglages.
-    if (requestReviews && profile === 'desk' && reviewOffByDefault(parsed.activity)) {
-      try {
-        const { data: queueRow, error: readError } = await db.from('queues')
-          .select('profile_options').eq('id', result.queue.id).maybeSingle();
-        if (readError) throw readError;
-        const stored = (queueRow?.profile_options ?? {}) as Record<string, unknown>;
-        const { reviewDelayMinutes: _never, ...rest } = stored;
-        const options = profileOptionsSchema('desk').parse({ ...rest, review: true });
-        const { error: updateError } = await db.from('queues')
-          .update({ profile_options: options }).eq('id', result.queue.id);
-        if (updateError) throw updateError;
-      } catch (reviewError) {
-        console.error('[onboarding] avis non activé sur la file', toAppError(reviewError).message);
-      }
-    }
 
     // Coordonnées et lien d'avis.
     await db.from('locations').update({
@@ -168,10 +143,6 @@ export async function completeOnboarding(
           display_name: name,
           accent: accents[index % accents.length],
           sort_order: index,
-          // Au guichet, une fiche = un guichet : son nom est ce que lit la
-          // personne appelée (« Guichet 3 »). Ailleurs, la colonne n'est
-          // pas envoyée : l'insertion reste celle d'avant les profils.
-          ...(profile === 'desk' ? { desk_label: name } : {}),
         })),
       );
     }
@@ -199,8 +170,8 @@ export async function completeOnboarding(
     await audit({
       organizationId, actorUserId: user.id, action: 'onboarding.completed',
       targetType: 'organization', targetId: organizationId,
-      // `activity` : le métier choisi, même quand l'organisation garde
-      // `other` faute de profil ouvert ; `targetProfile` : celui qu'il aura.
+      // `activity` : l'activité déclarée ; `targetProfile` : le métier que
+      // l'équipe Rangvia activera à l'installation.
       metadata: { activity: parsed.activity, queueMode: parsed.queueMode, profile, targetProfile: choice.target },
     });
 

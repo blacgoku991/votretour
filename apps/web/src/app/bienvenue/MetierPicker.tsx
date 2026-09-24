@@ -24,21 +24,24 @@ import styles from './onboarding.module.css';
  * d'écran. À partir de 720 px, une famille par ligne, son nom à gauche,
  * comme un rayon de métiers.
  *
- * `cue` : sur téléphone, l'aperçu du métier est sous TOUTE la grille, bien
- * plus bas que la tuile touchée. Le parcours passe donc ici, sous la
- * famille du métier choisi, le bouton qui y mène (masqué à partir de
- * 1024 px, où l'aperçu est déjà sous les yeux).
+ * Choisir une tuile DÉCLARE l'activité ; elle ne choisit pas le métier,
+ * que l'équipe Rangvia active à l'installation.
+ *
+ * `note` : sur téléphone, la grille est haute ; ce qui concerne le métier
+ * touché (la phrase de l'installation) se lit donc juste sous SA famille,
+ * pas vingt tuiles plus bas. Le parcours la place aussi sous la grille
+ * pour l'étagère (à partir de 720 px) ; le CSS n'en montre qu'une.
  */
 
 export function MetierPicker({
   value,
   onChange,
-  cue,
+  note,
 }: {
   value: ActivityType;
   onChange: (activity: ActivityType) => void;
   /** Rendu sous la famille du métier choisi (voir plus haut). */
-  cue?: React.ReactNode;
+  note?: React.ReactNode;
 }) {
   return (
     <fieldset className={styles.metiers}>
@@ -77,7 +80,7 @@ export function MetierPicker({
               );
             })}
           </div>
-          {cue && family.activities.includes(value) ? cue : null}
+          {note && family.activities.includes(value) ? note : null}
         </div>
       ))}
     </fieldset>

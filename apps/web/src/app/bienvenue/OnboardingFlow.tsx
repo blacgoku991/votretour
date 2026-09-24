@@ -1,22 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { Wordmark } from '@/components/Wordmark';
 import { TimeField } from '@/components/TimeField';
 import { useReducedMotion } from '@/components/motion/useMotionPreference';
 import { WEEKDAYS } from '@/lib/format';
-import type { ActivityType, QueueProfile } from '@/lib/profiles/types';
+import type { ActivityType } from '@/lib/profiles/types';
 import { completeOnboarding, type OnboardingResult } from '@/server/actions/onboarding';
 import { MetierPicker } from './MetierPicker';
-import { PreviewInvitation, ProfilePreview } from './ProfilePreview';
-import {
-  hasProfilePreview,
-  onboardingCopy,
-  onboardingProfile,
-  previewInvitation,
-  reviewOffByDefault,
-  samplePlaceholders,
-} from './metiers';
+import { metierInstallNote, ONBOARDING_COPY, reviewOffByDefault, samplePlaceholders } from './metiers';
 import { RailNote, StepBand, StepRail } from './StepRail';
 import { ReadyScreen } from './ReadyScreen';
 import styles from './onboarding.module.css';
@@ -30,28 +22,15 @@ import styles from './onboarding.module.css';
  * professionnel), et un écran final qui donne le QR, le lien, et de quoi
  * tester immédiatement comme un client.
  *
- * Le métier se choisit dès le premier écran, dans une grille illustrée
- * (MetierPicker) qui remplace l'ancien menu. Il décide du reste :
- *  - barbier, coiffure, beauté, événement, et tout métier dont le profil
- *    n'est pas encore ouvert : le parcours d'aujourd'hui, mot pour mot ;
- *  - métier au profil ouvert (garage, restaurant, guichet…) : un aperçu
- *    de ce que verront ses clients (ProfilePreview), les mots du métier
- *    (« Qui travaille à l'atelier ? », « Votre atelier est prêt »), et
- *    pas de choix « file commune ou par professionnel », qui ne concerne
- *    que le passage au fauteuil.
- * L'action serveur refait la même décision : le navigateur n'impose rien.
- *
- * Où est l'aperçu ? Il doit être SOUS LES YEUX quand on touche la tuile :
- *  - à partir de 1280 px, dans sa propre colonne, collée à droite du
- *    formulaire (`data-split`, seulement si un profil à aperçu est ouvert :
- *    sinon la page reste celle d'avant) ;
- *  - de 1024 à 1279 px, sous la grille, ouvert, et la page y descend au
- *    premier métier choisi qui en a un ;
- *  - sur téléphone, replié sous la grille, avec un bouton qui y mène juste
- *    sous la famille du métier touché.
- * Les deux exemplaires (colonne et sous la grille) sont rendus ; la mise en
- * page n'en montre qu'un (CSS), l'autre reste en `display: none`, hors de
- * l'arbre d'accessibilité, et son histoire ne se joue pas.
+ * L'activité se déclare dès le premier écran, dans une grille illustrée
+ * (MetierPicker) qui remplace l'ancien menu. Elle est enregistrée telle
+ * quelle, mais elle ne choisit PAS le métier : décision du propriétaire,
+ * la file naît toujours au passage, et l'équipe Rangvia active
+ * l'interface du métier (atelier, table, guichet…) lors de l'installation.
+ * Le parcours est donc celui d'avant les profils, mot pour mot ; pour une
+ * activité qui a un métier propre, une seule phrase honnête s'ajoute sous
+ * la grille, à la place de tout aperçu : « L'équipe Rangvia active
+ * l'interface de votre métier lors de l'installation. »
  *
  * Habillage « Le Rang en relief » : la progression est un rail de lattes
  * (StepRail), les étapes glissent de 16 px en 240 ms, les horaires sont en
@@ -88,12 +67,9 @@ const LEAVE_MS = 100;
 export function OnboardingFlow({
   userName,
   initialActivity,
-  openProfiles,
 }: {
   userName: string | null;
   initialActivity: ActivityType;
-  /** Profils ouverts à tout nouveau compte, lus côté serveur. */
-  openProfiles: readonly QueueProfile[];
 }) {
   const [step, setStep] = useState<Step>('place');
   const [error, setError] = useState<string | null>(null);
@@ -117,35 +93,14 @@ export function OnboardingFlow({
   // le professionnel n'a rien touché (le défaut du métier s'applique).
   const [reviewChoice, setReviewChoice] = useState<boolean | null>(null);
 
-  const open = useMemo(() => new Set(openProfiles), [openProfiles]);
-  const choice = onboardingProfile(form.activity, open);
-  const copy = onboardingCopy(choice.profile);
+  const copy = ONBOARDING_COPY;
   const placeholders = samplePlaceholders(form.activity);
-  // Au moins un profil à aperçu ouvert : la colonne de l'aperçu existe.
-  const invitation = useMemo(() => previewInvitation(open), [open]);
-  const split = invitation !== null;
-  const previewProfile = hasProfilePreview(choice.profile) ? choice.profile : null;
-  const placeName =
-    form.locationName.trim() || form.organizationName.trim() || placeholders.organization;
-
-  // Aperçu sous la grille : replié sur téléphone. `previewRun` rejoue
-  // l'histoire à chaque ouverture.
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewRun, setPreviewRun] = useState(0);
-  const inlinePreviewRef = useRef<HTMLDivElement>(null);
-  const [reveal, setReveal] = useState<{ n: number; block: ScrollLogicalPosition }>({ n: 0, block: 'nearest' });
-  const revealedOnce = useRef(false);
+  const installNote = metierInstallNote(form.activity);
   const reviewOptIn = reviewOffByDefault(form.activity);
   const requestReviews = reviewOptIn ? reviewChoice === true : true;
 
-  // Les étapes du métier : sans le choix du mode de file hors walkin et
-  // event, et avec le nom d'équipe du métier (« Guichets », « Accueil »).
-  const steps = useMemo(
-    () => BASE_STEPS
-      .filter((s) => s.id !== 'queue' || copy.asksQueueMode)
-      .map((s) => (s.id === 'team' ? { ...s, label: copy.teamStep } : s)),
-    [copy.asksQueueMode, copy.teamStep],
-  );
+  // Toujours les cinq étapes d'avant : la file naît au passage.
+  const steps = BASE_STEPS;
 
   // Transition entre étapes : sortie (-16 px), puis entrée (+16 px → 0).
   const reduced = useReducedMotion();
@@ -181,41 +136,10 @@ export function OnboardingFlow({
     }, LEAVE_MS);
   };
 
-  // Amène l'aperçu sous la grille à l'écran (après le rendu qui l'affiche).
-  useEffect(() => {
-    if (reveal.n === 0) return;
-    inlinePreviewRef.current?.scrollIntoView({ block: reveal.block, behavior: reduced ? 'instant' : 'smooth' });
-  }, [reveal, reduced]);
-
   const chooseActivity = (activity: ActivityType) => {
     setForm((current) => ({ ...current, activity }));
     // Un autre métier, un autre défaut pour l'avis : le choix précédent ne suit pas.
     setReviewChoice(null);
-    // De 1024 à 1279 px, l'aperçu est ouvert mais sous la grille, hors de
-    // la vue : au premier métier qui en a un, la page descend juste assez
-    // pour le montrer. Une seule fois, pour ne pas balader la page à
-    // chaque tuile touchée. (Au-delà, il est à droite ; en deçà, replié.)
-    if (
-      !revealedOnce.current
-      && hasProfilePreview(onboardingProfile(activity, open).profile)
-      && window.matchMedia('(min-width: 1024px) and (max-width: 1279.98px)').matches
-    ) {
-      revealedOnce.current = true;
-      setReveal((r) => ({ n: r.n + 1, block: 'nearest' }));
-    }
-  };
-
-  const togglePreview = () => {
-    if (!previewOpen) setPreviewRun((n) => n + 1);
-    setPreviewOpen(!previewOpen);
-  };
-  // Téléphone : le bouton posé sous la famille touchée déplie l'aperçu et y descend.
-  const showPreview = () => {
-    if (!previewOpen) {
-      setPreviewRun((n) => n + 1);
-      setPreviewOpen(true);
-    }
-    setReveal((r) => ({ n: r.n + 1, block: 'start' }));
   };
 
   const submit = () => {
@@ -230,8 +154,7 @@ export function OnboardingFlow({
         city: form.city.trim() || null,
         phone: form.phone.trim() || null,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris',
-        // Hors passage au fauteuil, la file est commune : on ne l'a pas demandé.
-        queueMode: copy.asksQueueMode ? form.queueMode : 'shared',
+        queueMode: form.queueMode,
         googleReviewUrl: requestReviews ? (form.googleReviewUrl.trim() || null) : null,
         // Envoyé seulement là où l'avis est coupé par défaut : la requête
         // d'un barbier reste exactement celle d'avant.
@@ -268,7 +191,7 @@ export function OnboardingFlow({
   );
 
   return (
-    <main className={styles.screen} data-split={split ? '1' : undefined}>
+    <main className={styles.screen}>
       <aside className={styles.aside}>
         <div className={styles.asideInner}>
           <Wordmark />
@@ -281,7 +204,7 @@ export function OnboardingFlow({
         <StepBand steps={steps} index={index} target={copy.remainingTarget} />
       </header>
 
-      <div className={styles.main} data-split={split ? '1' : undefined}>
+      <div className={styles.main}>
         <div
           key={step}
           className={styles.pane}
@@ -305,29 +228,28 @@ export function OnboardingFlow({
                     onChange={(e) => setForm({ ...form, organizationName: e.target.value })} />
                 </div>
                 <div className={`field ${styles.metierField}`}>
+                  {/* Pas d'aperçu : le métier est activé par l'équipe. La
+                      phrase suit la tuile touchée : sous sa famille au
+                      téléphone, sous la grille sur l'étagère (le CSS n'en
+                      montre qu'une, l'autre sort de l'arbre d'accessibilité). */}
                   <MetierPicker
                     value={form.activity}
                     onChange={chooseActivity}
-                    cue={previewProfile && (
-                      <button type="button" className={styles.cue} onClick={showPreview}>
-                        <span className={styles.cueTag}>Aperçu</span>
-                        Voir ce que verront vos clients
-                      </button>
+                    note={installNote && (
+                      <p className={`${styles.installNote} ${styles.installNear}`} role="status">
+                        <span className={styles.installMark} aria-hidden="true" />
+                        {installNote}
+                      </p>
                     )}
                   />
-                  {previewProfile && (
-                    <div className={styles.inlinePreview} ref={inlinePreviewRef}>
-                      <ProfilePreview
-                        variant="inline"
-                        profile={previewProfile}
-                        activity={form.activity}
-                        placeName={placeName}
-                        open={previewOpen}
-                        onToggle={togglePreview}
-                        run={previewRun}
-                      />
-                    </div>
-                  )}
+                  <div className={styles.installFar} aria-live="polite">
+                    {installNote && (
+                      <p className={styles.installNote}>
+                        <span className={styles.installMark} aria-hidden="true" />
+                        {installNote}
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <div className="field">
                   <label htmlFor="place">Nom de l’établissement</label>
@@ -581,21 +503,6 @@ export function OnboardingFlow({
           </div>
         </div>
 
-        {/* À partir de 1280 px : l'aperçu dans sa colonne, sous les yeux. */}
-        {step === 'place' && split && (
-          <div className={styles.sideCol} data-leaving={leaving ? '1' : undefined}>
-            {previewProfile ? (
-              <ProfilePreview
-                variant="side"
-                profile={previewProfile}
-                activity={form.activity}
-                placeName={placeName}
-              />
-            ) : (
-              <PreviewInvitation text={invitation} />
-            )}
-          </div>
-        )}
       </div>
     </main>
   );

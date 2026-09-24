@@ -19,7 +19,7 @@ import type { Conditional, FaqContent, Metier, Plain } from './types';
 /**
  * REGISTRE DES MÉTIERS — le texte des pages `/pour/[metier]`.
  *
- * Trois règles, vérifiées par les tests `metiers-*` :
+ * Quatre règles, vérifiées par les tests `metiers-*` :
  *
  *  1. VRAI AUJOURD'HUI. Tout ce qui dépend d'un profil métier pas encore
  *     ouvert (fiche d'atelier, couverts, numéro de ticket…) porte
@@ -36,7 +36,14 @@ import type { Conditional, FaqContent, Metier, Plain } from './types';
  *     retrouvé dans le fichier source qui l'affiche. Si le produit change
  *     un mot, la page suit, ou le test casse.
  *
- *  3. RIEN D'INVENTÉ. Ni note, ni avis, ni témoignage, ni pourcentage, ni
+ *  3. PAS DE MÉTIER EN LIBRE-SERVICE. Décision du propriétaire : le
+ *     métier d'une file (atelier, table, guichet…) est activé par l'équipe
+ *     Rangvia lors de l'installation ; le commerçant ne le choisit ni ne
+ *     le change lui-même. Aucune page ne promet donc « créez votre
+ *     atelier » ni « changez de métier dans les réglages » : l'appel final
+ *     d'un métier à profil dit que l'équipe l'active à l'installation.
+ *
+ *  4. RIEN D'INVENTÉ. Ni note, ni avis, ni témoignage, ni pourcentage, ni
  *     « x clients ». Les commerces des scènes sont fictifs. Les chiffres
  *     cités sont des réglages réels (importés : délai de l'avis, couverts
  *     maximum…) ou des exemples d'écran, jamais des statistiques.
@@ -1111,7 +1118,7 @@ const garages: Metier = {
     requires: GARAGE_WORKSHOP,
     label: VEHICLE.openQueue,
     title: 'Votre réception, sans file devant.',
-    lead: `Créez votre atelier en quelques minutes : QR code de la réception, fiches de véhicule et notifications sont prêts. ${TRIAL}`,
+    lead: `Ouvrez votre compte en quelques minutes : votre QR code de réception est prêt, et l’équipe Rangvia active votre atelier (fiches de véhicule, étapes, ${q(VEHICLE.call)}) lors de l’installation. ${TRIAL}`,
     fallback: {
       label: 'Ouvrir ma file',
       title: 'Votre réception, sans file devant.',
@@ -1440,7 +1447,7 @@ const reparation: Metier = {
     requires: REPAIR_WORKSHOP,
     label: DEVICE.openQueue,
     title: 'Votre comptoir, enfin dégagé.',
-    lead: `Créez votre atelier en quelques minutes : QR code du comptoir, dossiers et notifications sont prêts. ${TRIAL}`,
+    lead: `Ouvrez votre compte en quelques minutes : votre QR code de comptoir est prêt, et l’équipe Rangvia active votre atelier (dossiers, étapes, ${q(DEVICE.call)}) lors de l’installation. ${TRIAL}`,
     fallback: {
       label: 'Ouvrir ma file',
       title: 'Votre comptoir, enfin dégagé.',
@@ -1796,7 +1803,7 @@ const restaurants: Metier = {
     requires: TABLE_LIST,
     label: TABLE.openQueue,
     title: 'Ce soir, personne sur le trottoir.',
-    lead: `Créez votre liste en quelques minutes : QR code de l’entrée, touches de tables et notifications sont prêts. ${TRIAL}`,
+    lead: `Ouvrez votre compte en quelques minutes : votre QR code d’entrée est prêt, et l’équipe Rangvia active votre salle (couverts, touches de tables) lors de l’installation. ${TRIAL}`,
     fallback: {
       label: 'Ouvrir ma file',
       title: 'Ce soir, personne sur le trottoir.',
@@ -2145,7 +2152,7 @@ const guichets: Metier = {
     requires: DESK_CALLS,
     label: DESK.openQueue,
     title: 'Remplacez la borne par un QR code.',
-    lead: `Créez votre accueil en quelques minutes : QR code de l’entrée, guichets et écran de salle sont prêts. ${TRIAL}`,
+    lead: `Ouvrez votre compte en quelques minutes : votre QR code d’entrée est prêt, et l’équipe Rangvia active vos guichets (numéros, écran de salle) lors de l’installation. ${TRIAL}`,
     fallback: {
       label: 'Ouvrir ma file',
       title: 'Remplacez la borne par un QR code.',
