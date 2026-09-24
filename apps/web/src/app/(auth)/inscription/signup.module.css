@@ -1,5 +1,6 @@
 /* Le métier venu d'une page métier : une petite latte accrochée sous le
-   chapô, avec son encoche, et la promesse qu'on peut en changer. */
+   chapô, avec son encoche, et la promesse qu'on peut en changer. Posée à
+   plat (sans tranche) : ce n'est pas un bouton, on ne la touche pas. */
 .metier {
   display: flex;
   flex-wrap: wrap;
@@ -15,8 +16,7 @@
   margin-left: 14px;
   padding: 0 14px;
   border-radius: var(--r-slat);
-  background: var(--slat);
-  box-shadow: 0 2px 0 var(--slat-edge);
+  background: color-mix(in oklab, var(--text) 6%, transparent);
   color: var(--text);
   font-variation-settings: 'wdth' 104, 'wght' 700;
   font-size: 0.875rem;

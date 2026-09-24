@@ -338,23 +338,15 @@
 }
 .columnLink:hover { color: var(--text); }
 
-/* Mobile : une seule liste-rail compacte, cibles de 44 px. */
-.compact { display: block; }
-@media (min-width: 760px) { .compact { display: none; } }
-.compactList > li { padding: 0; }
-.compactList > li::before { top: 21px; }
-.compactList > li:first-child { border-top: 0; }
-.compactLink {
-  display: flex;
-  align-items: center;
-  min-height: 44px;
-  font-size: 0.9375rem;
-  color: var(--text-muted);
+/* Téléphone : un groupe sous l'autre, chacun sous son étiquette, en
+   grille à deux colonnes filetées (cibles de 44 px). Un seul langage de
+   liste pour tout le pied, plutôt qu'une liste-rail suivie d'une grille. */
+.compact {
+  display: grid;
+  gap: var(--sp-6);
 }
-/* Les métiers, au téléphone : deux colonnes serrées sous leur étiquette,
-   plutôt que sept lignes de plus dans la liste-rail. Cibles de 44 px. */
-.compactMetiers {
-  margin-top: var(--sp-6);
+@media (min-width: 760px) { .compact { display: none; } }
+.compactGroup {
   display: grid;
   gap: var(--sp-2);
 }

@@ -137,7 +137,7 @@ export default async function HomePage() {
                 </h2>
                 <p className={`t-lead ${styles.leadAfter}`}>
                   Un barbier fictif, un vrai poste, un vrai téléphone&nbsp;: ce que vos clients et vous
-                  verrez, sans retouche. La vidéo ne se charge qu’à votre clic.
+                  verrez, sans retouche.
                 </p>
               </header>
               <DemoVideo video={video} subject="Barbiers" className={styles.demoVideo} />

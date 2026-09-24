@@ -66,11 +66,20 @@ describe('pied de page', () => {
     expect(html).not.toContain('>Métiers</p>');
   });
 
-  it('vitrine : absente sans données, dix places libres sans volontaire', () => {
+  it('vitrine : absente sans données ; sans volontaire, la seule place n° 1 à prendre', () => {
     expect(footer({ founders: null })).not.toContain('premiers-commerces');
     const html = footer({ founders: [] });
     expect(html).toContain('id="premiers-commerces"');
-    expect(html.match(/data-kind="free"/g)).toHaveLength(10);
+    expect(html.match(/data-kind="open"/g)).toHaveLength(1);
+    expect(html).not.toContain('data-kind="rest"');
+  });
+
+  it('téléphone : chaque groupe sous son étiquette, dans la même grille', () => {
+    const html = footer({ metiers, legalNotice: true });
+    const compact = html.slice(html.lastIndexOf('aria-label="Pied de page"'));
+    for (const title of ['Produit', 'Métiers', 'Compte', 'Légal']) expect(compact).toContain(`>${title}</p>`);
+    // Plus de liste-rail au téléphone : un seul langage de liste.
+    expect(compact).not.toContain('rail-list');
   });
 
   it('garde la tête de file et « Ouvrir ma file »', () => {

@@ -127,7 +127,6 @@ export function SiteFooter({ legalNotice = false, metiers = [], founders = null 
       ? { ...group, links: [...group.links, { href: '/mentions-legales', label: 'Mentions légales' }] }
       : group),
   ];
-  const compactLinks = groups.filter((group) => group.title !== 'Métiers').flatMap((group) => group.links);
 
   return (
     <footer className={styles.footer}>
@@ -175,26 +174,21 @@ export function SiteFooter({ legalNotice = false, metiers = [], founders = null 
             ))}
           </nav>
 
+          {/* Téléphone : chaque groupe sous son étiquette, en grille à deux
+              colonnes filetées (même langage pour tous, métiers compris). */}
           <nav className={styles.compact} aria-label="Pied de page">
-            <ul className={`rail-list ${styles.compactList}`}>
-              {compactLinks.map((link) => (
-                <li key={link.href}>
-                  <Link href={link.href} className={styles.compactLink}>{link.label}</Link>
-                </li>
-              ))}
-            </ul>
-            {metiers.length > 0 && (
-              <div className={styles.compactMetiers}>
-                <p className="t-label">Métiers</p>
+            {groups.map((group) => (
+              <div key={group.title} className={styles.compactGroup}>
+                <p className="t-label">{group.title}</p>
                 <ul className={styles.compactGrid}>
-                  {metiers.map((link) => (
+                  {group.links.map((link) => (
                     <li key={link.href}>
                       <Link href={link.href} className={styles.compactGridLink}>{link.label}</Link>
                     </li>
                   ))}
                 </ul>
               </div>
-            )}
+            ))}
           </nav>
         </div>
 

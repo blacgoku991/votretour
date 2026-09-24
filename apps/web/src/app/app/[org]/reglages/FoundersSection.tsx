@@ -62,7 +62,7 @@ export function FoundersSection({
   // L'aperçu : le vrai ticket, numéroté à sa place s'il en a une parmi les
   // dix ; sinon, le talon montre « –– » plutôt qu'un numéro qu'il n'a pas.
   const shown = state.optIn && state.place !== null && state.place <= FOUNDERS_PLACES ? state.place : null;
-  const preview: FounderPlace = { place: shown ?? 1, kind: 'taken', name, city };
+  const preview: Extract<FounderPlace, { kind: 'taken' }> = { place: shown ?? 1, kind: 'taken', name, city };
 
   let status: string;
   if (!state.optIn) {
@@ -70,7 +70,9 @@ export function FoundersSection({
   } else if (state.place === null) {
     status = pending ? 'Enregistrement…' : 'Votre accord est enregistré.';
   } else if (state.place <= FOUNDERS_PLACES) {
-    status = `Vous apparaissez en place n° ${state.place} sur ${FOUNDERS_PLACES}, dans le pied de page de chaque page publique.`;
+    // L'ordre est celui d'inscription (0041) : un commerce inscrit avant
+    // vous qui donne son accord plus tard passe devant. On le dit.
+    status = `Vous apparaissez en place n° ${state.place} sur ${FOUNDERS_PLACES}, dans le pied de page de chaque page publique. Les places suivent l’ordre d’inscription\u00a0: la vôtre peut reculer si un commerce inscrit avant vous donne son accord.`;
   } else {
     status = `Les ${FOUNDERS_PLACES} places sont prises par des commerces inscrits avant vous. Vous êtes ${state.place}ᵉ parmi les volontaires, dans l’ordre d’inscription\u00a0: vous apparaîtrez dès qu’une place se libère.`;
   }

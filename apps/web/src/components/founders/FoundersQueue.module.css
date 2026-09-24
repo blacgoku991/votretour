@@ -2,9 +2,14 @@
    LES DIX PREMIERS COMMERCES — tickets pendus au rail du pied de page.
    ---------------------------------------------------------------------
    Le vocabulaire du pied : un rail, des encoches, des objets en relief
-   (tranche dure sous l'objet, aucune ombre floue). Ordinateur : deux
-   rangées de cinq, chaque rangée sous son rail. Téléphone : une pile
-   accrochée à un rail vertical, comme la file du produit.
+   (tranche dure sous l'objet, aucune ombre floue). Ordinateur : rangées
+   de cinq, chaque rangée sous son rail. Téléphone : une pile accrochée à
+   un rail vertical, comme la file du produit.
+
+   Trois sortes de places : le ticket pris (latte en relief) ; LA place à
+   prendre, en pointillé vermillon (la place fantôme du produit, une seule
+   par file) ; et la latte neutre des autres places libres, sur ordinateur
+   seulement, en pointillé filet, sans accent ni relief.
 
    Deux étages par place : le <li> (.ticket) porte le rail et l'encoche,
    immobiles ; la carte (.card) est le ticket lui-même, et c'est elle seule
@@ -35,10 +40,11 @@
   text-wrap: pretty;
 }
 
-/* Couleurs d'une place libre : la place fantôme du produit. */
+/* Couleurs : la place à prendre reprend la latte fantôme du produit
+   (.slat--ghost, 60 % d'accent) ; les autres places libres, le filet. */
 .founders {
-  --free-line: color-mix(in oklab, var(--accent) 42%, transparent);
-  --free-perf: var(--line);
+  --open-line: color-mix(in oklab, var(--accent) 60%, transparent);
+  --rest-line: var(--line-strong);
   --perf: color-mix(in oklab, var(--text) 16%, transparent);
 }
 
@@ -81,10 +87,10 @@
   border-radius: 2px;
   background: var(--rail);
 }
-.ticket[data-kind='free']::before {
+.ticket[data-kind='open']::before {
   height: 0;
   background: none;
-  border-top: 2px dashed var(--free-line);
+  border-top: 2px dashed var(--open-line);
 }
 
 .card {
@@ -133,6 +139,11 @@
   line-clamp: 2;
   overflow: hidden;
 }
+/* Nom long : un corps plus petit, pour qu'il tienne en deux lignes. */
+.name[data-long] {
+  font-size: 0.875rem;
+  font-variation-settings: 'wdth' 100, 'wght' 700;
+}
 .city {
   font-variation-settings: 'wdth' 88, 'wght' 700;
   font-size: 0.6875rem;
@@ -145,25 +156,74 @@
   white-space: nowrap;
 }
 
-/* Place libre : rien n'y est inventé, son numéro et le mot « libre ». */
-.ticket[data-kind='free'] .card {
+/* LA place à prendre : rien n'y est inventé, son numéro et « à prendre ».
+   C'est un lien (vers l'inscription) : il s'éclaire au survol, sans bouger. */
+.openCard {
   background: transparent;
   box-shadow: none;
-  outline: 2px dashed var(--free-line);
+  outline: 2px dashed var(--open-line);
   outline-offset: -2px;
+  text-decoration: none;
   --flap-tile: transparent;
 }
-.ticket[data-kind='free'] .num { opacity: 0.55; color: var(--text); }
-.ticket[data-kind='free'] .num :global(.flap--tile) {
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text) 22%, transparent);
+.openCard .num { color: var(--accent); }
+.openCard .num :global(.flap--tile) {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent);
 }
-.ticket[data-kind='free'] .num :global(.flap--tile)::after { display: none; }
-.ticket[data-kind='free'] .body { border-color: var(--free-perf); }
-.freeLabel {
-  font-size: 0.875rem;
-  line-height: 1.3;
+.openCard .num :global(.flap--tile)::after { display: none; }
+.openCard .body { border-color: color-mix(in oklab, var(--accent) 28%, transparent); }
+.openLabel {
+  font-variation-settings: 'wdth' 104, 'wght' 680;
+  font-size: 0.9375rem;
+  line-height: 1.25;
+  color: var(--text);
+}
+.openCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.openArrow { flex: none; }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .openArrow { transition: transform var(--dur-2) var(--ease-out); }
+}
+@media (hover: hover) {
+  .openCard:hover { background: color-mix(in oklab, var(--accent) 7%, transparent); }
+  .openCard:hover .openArrow { transform: translateX(3px); }
+}
+.openCard:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* Les autres places libres : une latte neutre, au sol, sans relief.
+   Absente au téléphone (la phrase d'en-tête dit combien il en reste). */
+.rest { display: none; }
+.restCard {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 16px;
+  border-radius: var(--r-slat);
+  outline: 2px dashed var(--rest-line);
+  outline-offset: -2px;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
   color: var(--text-muted);
 }
+
+/* Sans aucun commerce : la place n° 1 et l'invitation, sans grille. */
+.founders[data-compact] .foot { margin-top: var(--sp-5); }
 
 .foot {
   margin-top: var(--sp-6);
@@ -197,7 +257,7 @@
 
   /* Le rail de la rangée, au-dessus de la place, jusqu'à la suivante. */
   .ticket::before,
-  .ticket[data-kind='free']::before {
+  .ticket[data-kind='open']::before {
     left: 0;
     right: calc(var(--gap-x) * -1);
     top: calc((var(--notch-h) + 2px) * -1);
@@ -209,7 +269,9 @@
     background: var(--rail);
   }
   .ticket:nth-child(5n + 1)::before { border-radius: 2px 0 0 2px; }
-  .ticket:nth-child(5n)::before { right: 0; border-radius: 0 2px 2px 0; }
+  .ticket:nth-child(5n)::before,
+  .ticket:last-child::before { right: 0; border-radius: 0 2px 2px 0; }
+  .ticket:nth-child(5n + 1):last-child::before { border-radius: 2px; }
   /* L'encoche verticale : du rail au bord du ticket. */
   .ticket::after {
     content: '';
@@ -220,10 +282,48 @@
     height: var(--notch-h);
     background: var(--rail);
   }
-  .ticket[data-kind='free']::after {
+  /* Compact : la place n° 1 a la largeur d'un ticket de la rangée de
+     cinq ; l'invitation occupe le reste, à sa hauteur. */
+  .founders[data-compact] .row {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    column-gap: 12px;
+    align-items: center;
+  }
+  .founders[data-compact] .tickets { grid-template-columns: minmax(0, 1fr); }
+  .founders[data-compact] .foot {
+    grid-column: 2 / -1;
+    margin: 0;
+    /* Centrée sur le ticket, pas sur son rail (au-dessus, --notch-h). */
+    padding: calc(var(--notch-h) + 2px) 0 0 var(--sp-5);
+  }
+
+  .ticket[data-kind='open']::after {
     width: 0;
     background: none;
-    border-left: 2px dashed var(--free-line);
+    border-left: 2px dashed var(--open-line);
+  }
+
+  /* La latte des places libres finit la rangée (--span colonnes). Le rail
+     au-dessus d'elle n'est pas encore posé : un pointillé filet, comme
+     son encoche. */
+  .rest {
+    display: grid;
+    grid-column: span var(--span, 1);
+    align-self: start;
+  }
+  /* Spécificité renforcée : les coins arrondis des bouts de rail (plus
+     haut) rendraient ce pointillé plein. */
+  .tickets .ticket.rest::before {
+    height: 0;
+    background: none;
+    border-top: 2px dashed var(--rest-line);
+    border-radius: 0;
+  }
+  .rest::after {
+    width: 0;
+    background: none;
+    border-left: 2px dashed var(--rest-line);
   }
 
   .card {
@@ -242,7 +342,6 @@
     border-left: 0;
     border-top: 2px dashed var(--perf);
   }
-  .ticket[data-kind='free'] .body { border-color: var(--free-perf); }
 }
 
 /* ---------------------------------------------------------------------
@@ -252,8 +351,6 @@
 .preview {
   width: min(100%, 220px);
   --perf: color-mix(in oklab, var(--text) 16%, transparent);
-  --free-line: color-mix(in oklab, var(--accent) 42%, transparent);
-  --free-perf: var(--line);
 }
 .preview::before,
 .preview::after { display: none; }
@@ -274,7 +371,6 @@
   border-left: 0;
   border-top: 2px dashed var(--perf);
 }
-.preview[data-kind='free'] .body { border-color: var(--free-perf); }
 
 /* ---------------------------------------------------------------------
    Mouvement : chaque ticket se balance jusqu'à sa place en entrant à
@@ -284,7 +380,8 @@
    --------------------------------------------------------------------- */
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) and (min-width: 760px) {
-    .card {
+    .card,
+    .restCard {
       transform-origin: 23px calc(var(--notch-h) * -1);
       animation: ticket-hang linear both;
       animation-timeline: view();

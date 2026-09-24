@@ -45,7 +45,10 @@
 .demo:focus, .clip:focus, .counter:focus { outline: none; }
 
 /* --------------------------------------------- En vrai, en une minute */
-.demoVideo { margin-top: 48px; }
+/* Double classe exprès : `.figure { margin: 0 }` (DemoVideo.module.css) a
+   la même spécificité qu'une classe seule et, chargé après, l'emporterait.
+   On ne touche pas au module de la vidéo : il sert aussi aux pages métier. */
+.demo .demoVideo { margin-top: 48px; }
 
 /* ------------------------------------------------- Pour votre métier */
 .metiersHead {
