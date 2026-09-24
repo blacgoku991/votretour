@@ -1,0 +1,245 @@
+/* LE RAIL D'ÉTAPES — horizontal (pro) et vertical (client).
+
+   Teintes d'étape : une seule couleur forte, le vermillon, pour « Prêt ».
+   Le texte posé sur chaque teinte garde au moins 4,5:1 (encre sur cuivre
+   et vermillon ; blanc sur cobalt et ardoise, comme [data-accent]). */
+
+.hrail,
+.vrail {
+  --tone: var(--text);
+  --tone-ink: var(--surface);
+  --tone-edge: var(--slat-edge);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+:is(.hstep, .vstep)[data-tone='neutral'] { --tone: var(--surface-inverse); --tone-ink: var(--text-inverse); --tone-edge: var(--ink-500); }
+:is(.hstep, .vstep)[data-tone='cobalt']  { --tone: var(--cobalt-500);  --tone-ink: #FFFFFF;         --tone-edge: #2A4BAE; }
+:is(.hstep, .vstep)[data-tone='copper']  { --tone: var(--copper-500);  --tone-ink: var(--ink-1000); --tone-edge: #A96A24; }
+:is(.hstep, .vstep)[data-tone='ardoise'] { --tone: var(--ardoise-500); --tone-ink: #FFFFFF;         --tone-edge: #3F4955; }
+:is(.hstep, .vstep)[data-tone='signal']  { --tone: var(--signal-500);  --tone-ink: var(--ink-1000); --tone-edge: var(--signal-600); }
+
+/* ================================================================ */
+/* HORIZONTAL — la rampe de la fiche du pro                          */
+/* ================================================================ */
+.hrail {
+  display: grid;
+  grid-template-columns: repeat(var(--steps, 6), minmax(0, 1fr));
+  width: 100%;
+  min-width: 0;
+}
+
+.hstep {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Le rail : chaque station trace le segment qui la relie à la précédente.
+   Passé = trait plein ; à venir = pointillé. */
+.hstep + .hstep::before {
+  content: '';
+  position: absolute;
+  top: 5.5px;
+  right: 50%;
+  width: 100%;
+  height: 2px;
+  translate: 0 -50%;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--text) 38%, transparent);
+}
+.hstep:is([data-state='upcoming'])::before {
+  background: none;
+  border-top: 2px dotted var(--rail);
+  height: 0;
+  translate: 0 -1px;
+}
+.hstep[data-state='skipped']::before { background: color-mix(in oklab, var(--text) 22%, transparent); }
+
+/* Chaque station occupe la même boîte de 24 × 11 px, quelle que soit sa
+   forme : les libellés restent alignés sur une seule ligne. */
+.station {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 11px;
+}
+.station::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--text) 55%, var(--surface));
+  box-shadow: 0 0 0 3px var(--surface);
+}
+.hstep[data-state='upcoming'] .station::before {
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--surface), inset 0 0 0 1.5px var(--line-strong);
+}
+.hstep[data-state='skipped'] .station::before {
+  width: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--text-faint);
+  box-shadow: 0 0 0 3px var(--surface);
+}
+/* La station courante : une latte miniature teintée, en relief. */
+.hstep[data-state='current'] .station::before {
+  width: 24px;
+  height: 11px;
+  border-radius: 4px;
+  background: var(--tone);
+  box-shadow: 0 2px 0 var(--tone-edge), 0 0 0 3px var(--surface);
+}
+
+.hlabel {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  font-variation-settings: 'wdth' 84, 'wght' 560;
+  color: var(--text-muted);
+}
+.hstep[data-state='upcoming'] .hlabel,
+.hstep[data-state='skipped'] .hlabel { color: var(--text-faint); }
+.hstep[data-state='skipped'] .hlabel { text-decoration: line-through; text-decoration-thickness: 1px; }
+.hstep[data-state='current'] .hlabel {
+  /* L'étape en cours ne se coupe jamais : elle peut déborder un peu sur
+     les colonnes voisines, dont les libellés sont courts. */
+  max-width: none;
+  overflow: visible;
+  color: var(--text);
+  font-variation-settings: 'wdth' 88, 'wght' 760;
+}
+
+/* ================================================================ */
+/* VERTICAL — le Rang dont les lattes sont les étapes                 */
+/* ================================================================ */
+.vrail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--slat-gap);
+  padding-left: var(--sp-5);
+}
+/* Le rail, avec ses embouts. */
+.vrail::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: var(--rail-w);
+  border-radius: var(--rail-w);
+  background: var(--rail);
+}
+
+.vstep { position: relative; }
+
+.vslat {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--slat-h);
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-slat);
+  background: var(--slat);
+  color: var(--slat-text);
+  box-shadow: 0 2px 0 var(--slat-edge);
+}
+/* L'encoche : le trait part du rail et s'ancre dans la latte. */
+.vslat::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--sp-5) * -1);
+  top: 50%;
+  translate: 0 -50%;
+  width: var(--sp-5);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+
+.vlabel {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  line-height: 1.25;
+  font-variation-settings: 'wdth' 96, 'wght' 600;
+}
+.vtime,
+.vsince {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8125rem;
+  font-variation-settings: 'wdth' 92, 'wght' 600;
+}
+
+/* Passée : en os, estompée, cochée, avec son heure. */
+.vstep[data-state='done'] .vslat { opacity: 0.72; }
+.check {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* En cours : plus haute, teintée, en relief ; elle porte le verbe. */
+.vstep[data-state='current'] .vslat {
+  min-height: calc(var(--slat-h) * 1.75);
+  background: var(--tone);
+  color: var(--tone-ink);
+  box-shadow: 0 3px 0 var(--tone-edge), 0 10px 26px -12px color-mix(in oklab, var(--tone) 70%, transparent);
+  /* Le verbe sur sa ligne, « depuis 10:15 » dessous : jamais écrasés. */
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding-block: 10px;
+}
+.vstep[data-state='current'] .vslat::before { background: var(--tone); height: 4px; }
+.vstep[data-state='current'] .vlabel {
+  flex: none;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: normal;
+  font-size: 1.0625rem;
+  font-variation-settings: 'wdth' 104, 'wght' 740;
+  letter-spacing: -0.01em;
+}
+.vstep[data-state='current'] .vsince { opacity: 0.82; }
+
+/* À venir : en pointillé, comme la latte fantôme. */
+.vstep[data-state='upcoming'] .vslat {
+  background: transparent;
+  color: var(--text-faint);
+  box-shadow: none;
+  border: 2px dashed var(--line-strong);
+}
+.vstep[data-state='upcoming'] .vslat::before {
+  background: none;
+  border-top: 2px dashed var(--line-strong);
+  height: 0;
+}
+
+/* « Prêt », en attente : son pointillé annonce déjà le vermillon. */
+.vstep[data-state='upcoming'][data-tone='signal'] .vslat {
+  border-color: color-mix(in oklab, var(--signal-500) 55%, transparent);
+  color: var(--text-muted);
+}

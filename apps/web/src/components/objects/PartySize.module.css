@@ -1,0 +1,128 @@
+/* LE CHEVALET — couverts d'un groupe, posé sur la table.
+
+   Vu de trois quarts, sans perspective ni dégradé : la face avant, la
+   tranche en haut (le pli, là où les deux faces se rejoignent), le flanc
+   droit en triangle (on voit l'intérieur du chevalet, dans l'ombre), et
+   l'ombre de contact statique. Mesures en unités de conteneur : le
+   chevalet est son propre conteneur. */
+
+.tent {
+  --tent-w: 128px;
+  /* En attente : la matière des lattes, qui suit le thème le plus proche
+     (os en clair, encre en sombre). */
+  --tent-face: var(--slat);
+  --tent-ink: var(--text);
+  --tent-fold: color-mix(in oklab, var(--slat) 78%, var(--ink-1000));
+  --tent-inside: color-mix(in oklab, var(--slat) 45%, var(--ink-1000));
+  container-type: inline-size;
+  position: relative;
+  display: inline-block;
+  width: var(--tent-w);
+  max-width: 100%;
+  vertical-align: middle;
+  flex: none;
+}
+.tent[data-size='sm'] { --tent-w: 88px; }
+.tent[data-size='lg'] { --tent-w: 184px; }
+
+.tent[data-state='called'] {
+  --tent-face: var(--copper-500);
+  --tent-ink: var(--ink-1000);
+  --tent-fold: #B7772E;
+  --tent-inside: #7A4C18;
+}
+.tent[data-state='ready'] {
+  --tent-face: var(--signal-500);
+  --tent-ink: var(--ink-1000);
+  --tent-fold: var(--signal-600);
+  --tent-inside: #8E2408;
+}
+
+.body {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  /* Le flanc déborde à droite : on lui réserve sa place. */
+  padding-right: 13cqw;
+}
+
+.face {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4cqw;
+  min-height: 70cqw;
+  padding: 12cqw 5cqw 8cqw;
+  border-radius: 3cqw 3cqw 2cqw 2cqw;
+  background: var(--tent-face);
+  color: var(--tent-ink);
+  /* Pied du chevalet : une tranche dure, comme sous les lattes. */
+  box-shadow: 0 1.8cqw 0 var(--tent-fold);
+}
+/* La tranche en haut : le pli, bande sombre sur toute la largeur. */
+.face::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4.6cqw;
+  border-radius: 3cqw 3cqw 0 0;
+  background: var(--tent-fold);
+}
+
+/* Le flanc droit : triangle de l'intérieur du chevalet, du pli au pied. */
+.side {
+  position: absolute;
+  z-index: 0;
+  top: 1cqw;
+  bottom: -1.8cqw;
+  right: 1cqw;
+  width: 14cqw;
+  background: var(--tent-inside);
+  clip-path: polygon(0 0, 100% 100%, 0 100%);
+}
+
+.number {
+  --flap-size: 33cqw;
+  --flap-tile: var(--ink-800);
+  display: inline-flex;
+  gap: 1.4cqw;
+  color: var(--bone-100);
+}
+.number :global(.flap--tile) {
+  box-shadow: var(--edge-light), 0 0.05em 0 var(--ink-1000);
+}
+
+.unit {
+  font-variation-settings: 'wdth' 88, 'wght' 760;
+  font-size: max(8px, 7.2cqw);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  line-height: 1;
+  opacity: 0.78;
+}
+.name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variation-settings: 'wdth' 88, 'wght' 800;
+  font-size: max(10px, 9.5cqw);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+/* Ombre de contact : statique, sous le pied. */
+.shadow {
+  display: block;
+  height: 9cqw;
+  margin: 0 8cqw 0 2cqw;
+  background: radial-gradient(closest-side, rgb(0 0 0 / 0.38), transparent);
+  pointer-events: none;
+}

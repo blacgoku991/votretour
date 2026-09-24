@@ -18,6 +18,11 @@ export const QUEUE_ERROR_CODES = {
   VT012: 'plate_locked',
   VT013: 'plate_unavailable',
   VT014: 'invalid_quantity',
+  // Profils métier : codes propres, prêts si la migration 0034 quitte un
+  // jour les codes partagés avec les plaques (voir PROFILE_OVERLOADS).
+  VT015: 'invalid_details',
+  VT016: 'too_many_messages',
+  VT017: 'queue_not_empty',
 } as const;
 
 export type QueueErrorCode = (typeof QUEUE_ERROR_CODES)[keyof typeof QUEUE_ERROR_CODES];
@@ -37,6 +42,9 @@ const MESSAGES: Record<QueueErrorCode, string> = {
   plate_locked: "Ce tag a été verrouillé : il ne peut plus être réécrit.",
   plate_unavailable: "Cette plaque n’est pas disponible : elle est déjà attribuée ou mise au rebut.",
   invalid_quantity: 'Un lot compte entre 1 et 1000 plaques.',
+  invalid_details: 'Certaines informations ne sont pas valides. Vérifiez-les et réessayez.',
+  too_many_messages: 'Trop de messages pour ce client. Patientez un peu avant d’en envoyer un autre.',
+  queue_not_empty: 'Terminez ou videz la file avant de changer de profil.',
 };
 
 const HTTP_STATUS: Record<QueueErrorCode, number> = {
@@ -54,6 +62,9 @@ const HTTP_STATUS: Record<QueueErrorCode, number> = {
   plate_locked: 409,
   plate_unavailable: 409,
   invalid_quantity: 422,
+  invalid_details: 422,
+  too_many_messages: 429,
+  queue_not_empty: 409,
 };
 
 export class AppError extends Error {
@@ -70,6 +81,26 @@ export class AppError extends Error {
   }
 }
 
+/**
+ * Codes partagés. La migration 0034 (profils métier) lève VT011, VT012 et
+ * VT013, déjà employés par les plaques (0013, 0017, 0018) : « Informations
+ * invalides » n'est pas « Plaque introuvable ». Le code seul ne suffit donc
+ * pas ; le début du message SQL, écrit par nous et stable, départage. Tout
+ * message qui ne commence pas par le préfixe garde le sens « plaque »
+ * d'aujourd'hui : rien ne change pour le chemin existant.
+ */
+const PROFILE_OVERLOADS: Partial<Record<keyof typeof QUEUE_ERROR_CODES, { prefix: string; code: QueueErrorCode }>> = {
+  VT011: { prefix: 'Informations invalides', code: 'invalid_details' },
+  VT012: { prefix: 'Trop de messages', code: 'too_many_messages' },
+  VT013: { prefix: 'Terminez ou videz la file', code: 'queue_not_empty' },
+};
+
+function resolveQueueCode(sqlState: string, message: string | null | undefined): QueueErrorCode | undefined {
+  const overload = PROFILE_OVERLOADS[sqlState as keyof typeof QUEUE_ERROR_CODES];
+  if (overload && (message ?? '').startsWith(overload.prefix)) return overload.code;
+  return QUEUE_ERROR_CODES[sqlState as keyof typeof QUEUE_ERROR_CODES];
+}
+
 type PostgrestLike = { code?: string | null; message?: string | null; details?: string | null };
 
 function isPostgrestError(value: unknown): value is PostgrestLike {
@@ -82,7 +113,7 @@ export function toAppError(error: unknown): AppError {
 
   if (isPostgrestError(error)) {
     const sqlState = error.code ?? '';
-    const mapped = QUEUE_ERROR_CODES[sqlState as keyof typeof QUEUE_ERROR_CODES];
+    const mapped = resolveQueueCode(sqlState, error.message);
     if (mapped) {
       return new AppError(mapped, MESSAGES[mapped], HTTP_STATUS[mapped]);
     }

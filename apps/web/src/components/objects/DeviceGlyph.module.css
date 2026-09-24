@@ -1,0 +1,9 @@
+/* Pictogrammes d'appareils : aucune couleur propre, ils prennent celle du
+   texte. Les deux boutons de la console sont des points pleins. */
+.glyph {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+  overflow: visible;
+}
+.glyph[data-kind='console'] circle { fill: currentColor; }

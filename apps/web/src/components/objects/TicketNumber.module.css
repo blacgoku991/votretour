@@ -1,0 +1,63 @@
+/* LE NUMÉRO DE TICKET — tuiles de gare (classes .flap de globals.css).
+
+   Toutes les mesures sont en em de --flap-size : le numéro, le tiret, la
+   flèche et le guichet grandissent ensemble. */
+
+.ticket {
+  --flap-tile: var(--ink-700);
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 0.28em;
+  row-gap: 0.12em;
+  font-size: var(--flap-size);
+  line-height: 1;
+  /* Tableau d'affichage : os sur encre, dans les deux thèmes. */
+  color: var(--bone-100);
+  max-width: 100%;
+}
+
+.cells {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.12em;
+}
+.cells :global(.flap-row) { gap: 0.06em; }
+/* Relief : une tranche d'encre sous chaque tuile, comme sous les lattes. */
+.cells :global(.flap--tile) {
+  box-shadow: var(--edge-light), 0 0.045em 0 var(--ink-1000);
+}
+
+.dash {
+  width: 0.26em;
+  height: 0.085em;
+  border-radius: 0.04em;
+  background: var(--text-faint);
+  flex: none;
+}
+
+/* ----------------------------------------------- « → GUICHET 3 » */
+.dest {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.16em;
+  font-size: 0.56em;
+  color: var(--text);
+  white-space: nowrap;
+}
+.arrow {
+  width: 0.95em;
+  height: 0.95em;
+  flex: none;
+  fill: none;
+  stroke: var(--signal-500);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Guichets en capitales étroites, comme sur un tableau de gare. */
+.desk {
+  font-variation-settings: 'wdth' 70, 'wght' 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

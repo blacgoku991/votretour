@@ -1,0 +1,590 @@
+/* Planche des profils métier — mise en page seulement : les objets
+   portent leur propre dessin (components/objects/*). */
+
+.page {
+  min-height: 100dvh;
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* ============================================================ En-tête */
+.hero {
+  position: relative;
+  background: var(--floor);
+  border-bottom: 1px solid var(--line);
+  overflow: clip;
+}
+.heroInner {
+  position: relative;
+  display: grid;
+  gap: 40px;
+  padding-block: 40px 48px;
+}
+.heroText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-title);
+}
+
+.toc { margin-top: 8px; }
+.toc :global(.rail-list) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+@media (max-width: 479px) {
+  .toc :global(.rail-list) { grid-template-columns: minmax(0, 1fr); }
+}
+.toc :global(.rail-list > li) { padding: 0; border-top: 0; }
+.toc :global(.rail-list > li::before) { top: 21px; }
+.tocLink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-variation-settings: 'wdth' 100, 'wght' 620;
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+}
+.tocLink:hover { color: var(--text); }
+.tocNum {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8125rem;
+  color: var(--floor-number);
+}
+
+/* La nature morte : les objets posés sur le comptoir, chacun à sa place.
+   Téléphone : une colonne ; bureau : une composition en quinconce. */
+.still {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  align-items: center;
+  gap: 28px;
+  padding: 28px 0 8px;
+}
+.stillPlate { width: 100%; display: flex; justify-content: center; }
+.stillTicket { display: flex; justify-content: center; }
+.stillTent { display: flex; justify-content: center; }
+.stillRail {
+  width: 100%;
+  max-width: 420px;
+  padding: 18px 18px 16px;
+  border-radius: var(--r-card);
+  background: var(--ink-800);
+  box-shadow: var(--edge-light), 0 3px 0 var(--ink-1000);
+}
+
+@media (min-width: 1024px) {
+  .heroInner {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    align-items: center;
+    gap: 56px;
+    min-height: 640px;
+    padding-block: 72px;
+  }
+  .still {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-rows: auto auto auto;
+    gap: 36px 24px;
+    padding: 0;
+  }
+  .stillPlate { grid-column: 1 / 5; grid-row: 1; justify-content: flex-start; }
+  .stillTent { grid-column: 5 / 7; grid-row: 1 / 3; align-self: center; }
+  .stillTicket { grid-column: 1 / 5; grid-row: 2; justify-content: flex-start; }
+  .stillRail { grid-column: 1 / 7; grid-row: 3; max-width: none; }
+}
+
+/* ============================================================ Sections */
+.main { padding-bottom: 120px; }
+
+.section {
+  display: grid;
+  gap: 28px;
+  padding-block: 56px;
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 16px;
+}
+.section:first-child { border-top: 0; }
+@media (min-width: 1024px) {
+  .section {
+    grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
+    column-gap: 56px;
+    padding-block: 72px;
+  }
+  .sectionHead { position: sticky; top: 24px; align-self: start; }
+}
+.sectionHead { display: flex; flex-direction: column; align-items: flex-start; }
+.sectionTitle { margin-top: 14px; }
+.sectionNote { margin-top: var(--gap-title); max-width: 42ch; }
+.body { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+
+/* Clair et sombre côte à côte (empilés sur téléphone). */
+.pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+@media (min-width: 1180px) {
+  .pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+  padding: 44px 20px 24px;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+}
+.panelTag {
+  position: absolute;
+  top: 16px;
+  left: 20px;
+}
+
+.fig {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0;
+  min-width: 0;
+}
+.figStage {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  max-width: 100%;
+}
+.fig[data-wide='true'] { flex-basis: 100%; }
+.fig[data-wide='true'] .figStage { width: 100%; }
+.figRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 24px 28px;
+}
+
+.code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.8125rem;
+  color: var(--text);
+}
+
+/* ---------------------------------------------- Tableau « Véhicules prêts » */
+.tvStrip {
+  --text: var(--bone-100);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 12px;
+  background: var(--floor);
+  color: var(--bone-100);
+}
+.tvTitle {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 0.875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tvTitle::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 10px;
+  border-radius: 2px;
+  background: var(--signal-500);
+  vertical-align: 1px;
+}
+.tvList {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tvList > li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: 'plate model' 'plate at';
+  align-items: center;
+  column-gap: 14px;
+}
+.tvList > li > :first-child { grid-area: plate; }
+.tvModel {
+  grid-area: model;
+  font-variation-settings: 'wdth' 100, 'wght' 700;
+  font-size: 0.9375rem;
+}
+.tvAt {
+  grid-area: at;
+  font-size: 0.8125rem;
+  color: #9AA3AF;
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------- Tableau des saisies */
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+}
+.table {
+  width: 100%;
+  min-width: 560px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.table caption { text-align: left; padding: 14px 16px 6px; }
+.table th {
+  text-align: left;
+  padding: 10px 16px;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--line);
+}
+.table th:nth-child(1), .table th:nth-child(2) { width: 22%; }
+.table th:nth-child(4) { width: 20%; }
+.table td { padding: 10px 16px; border-top: 1px solid var(--line); vertical-align: middle; }
+.refusal { color: var(--danger-text, var(--brique-500)); }
+
+/* --------------------------------------------------------- Rail et fiche */
+.railStack { display: flex; flex-direction: column; gap: 22px; }
+
+.pro { display: flex; justify-content: center; }
+
+/* La fiche d'atelier : une latte dont l'encoche devient l'œillet d'une
+   étiquette de clé (un cercle creusé dans la latte). */
+.workCard {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 20px 22px 44px;
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: 0 2px 0 var(--slat-edge);
+}
+.eyelet {
+  position: absolute;
+  left: 15px;
+  top: 30px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: inset 0 1.5px 2px rgb(0 0 0 / 0.35), 0 0 0 2px var(--line-strong);
+}
+/* Le cordon de l'étiquette qui part de l'œillet. */
+.eyelet::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  width: 2px;
+  height: 30px;
+  translate: -50% 0;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.workTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.workMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9375rem;
+}
+.workMeta strong { font-variation-settings: 'wdth' 100, 'wght' 720; }
+
+/* Le téléphone du client : une colonne à portée de pouce. */
+.phones {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));
+  gap: 20px;
+  justify-items: center;
+}
+.phone {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px 18px 22px;
+  border-radius: 26px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+}
+.phonePlate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding-block: 6px 4px;
+}
+.phoneModel {
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+}
+.promise { margin-top: 2px; }
+
+/* ------------------------------------------------------------- Tickets */
+.callBoard {
+  /* Tableau d'appel : encre, quel que soit le thème du panneau. */
+  --text: var(--bone-100);
+  --text-faint: #69737F;
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  border-radius: 12px;
+  background: var(--floor);
+  color: var(--bone-100);
+}
+.callBoard :global(.t-label) { color: #9AA3AF; }
+.callNow { display: flex; flex-direction: column; gap: 12px; }
+.callRecent {
+  list-style: none;
+  padding: 14px 0 0;
+  border-top: 1px solid color-mix(in oklab, var(--bone-100) 10%, transparent);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 22px;
+}
+@media (min-width: 720px) {
+  .callBoard { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: center; }
+  .callRecent {
+    flex-direction: column;
+    padding: 0 0 0 22px;
+    border-top: 0;
+    border-left: 1px solid color-mix(in oklab, var(--bone-100) 10%, transparent);
+  }
+}
+
+.demoPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 20px;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+}
+.flapDemo { display: flex; flex-direction: column; gap: 20px; align-items: flex-start; }
+.flapActions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+
+/* ------------------------------------------------------------ Chevalets */
+.tents {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 28px 26px;
+}
+
+/* ------------------------------------------------------------ Appareils */
+.glyphs {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 10px;
+}
+.glyphChip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 96px;
+  padding: 14px 6px 12px;
+  border-radius: 14px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: 0 2px 0 var(--slat-edge);
+  font-variation-settings: 'wdth' 92, 'wght' 650;
+  font-size: 0.8125rem;
+  text-align: center;
+}
+.glyphChip:first-child {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 2px 0 var(--slat-edge-self);
+}
+.glyphRow { display: flex; flex-wrap: wrap; gap: 18px; color: var(--text-muted); }
+
+/* Le ticket de dépôt : une latte dont le bord droit est une souche
+   détachable, dentelée (masque de demi-cercles de 6 px). */
+.depot {
+  display: flex;
+  align-items: stretch;
+  max-width: 400px;
+  border-radius: var(--r-card) 0 0 var(--r-card);
+  background: var(--surface-raised);
+  box-shadow: 0 2px 0 var(--slat-edge);
+  -webkit-mask: radial-gradient(circle 4px at 100% 50%, #0000 97%, #000) 0 0 / 100% 12px repeat-y;
+  mask: radial-gradient(circle 4px at 100% 50%, #0000 97%, #000) 0 0 / 100% 12px repeat-y;
+}
+.depotMain {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 18px 18px 20px;
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: var(--r-card) 0 0 var(--r-card);
+}
+.depotDevice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9375rem;
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+}
+.depotStub {
+  flex: none;
+  width: 92px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-left: 2px dashed var(--line-strong);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+.depotStubNo {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-variant-numeric: tabular-nums;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+/* -------------------------------------------------------------- Touches */
+.vocab {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+@media (min-width: 720px) {
+  .vocab { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.vocabRow {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+}
+.vocabHead { display: flex; flex-direction: column; gap: 8px; }
+.vocabKeys {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  align-items: start;
+  gap: 10px;
+}
+.vocabKeys :global(.btn) { text-wrap: balance; }
+.vocabKeys :global(.btn--key) {
+  font-size: clamp(1rem, 0.9rem + 0.5vw, 1.25rem);
+  padding-inline: 12px;
+  text-align: center;
+}
+.vocabKeys :global(.btn--lg) { min-height: 72px; padding-inline: 12px; text-align: center; }
+.vocabCounter { margin-top: -4px; }
+
+/* ------------------------------------------------------- Écran verrouillé */
+.locks {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lock {
+  position: relative;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px 14px 14px 12px;
+  border-radius: 20px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-1);
+}
+.lockIcon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--ink-900);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--bone-100) 12%, transparent);
+  position: relative;
+}
+/* Le repère de l'icône : une latte vermillon accrochée à son rail. */
+.lockIcon::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--bone-100) 40%, transparent);
+}
+.lockIcon::after {
+  content: '';
+  position: absolute;
+  left: 15px;
+  right: 8px;
+  top: 15px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--signal-500);
+}
+.lockText { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lockApp {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-variation-settings: 'wdth' 92, 'wght' 650;
+}
+.lockTitle {
+  font-variation-settings: 'wdth' 100, 'wght' 720;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+}
+.lockBody { font-size: 0.875rem; line-height: 1.4; color: var(--text-muted); }
+.lockTag {
+  grid-column: 2;
+  justify-self: start;
+  margin-top: 6px;
+}
