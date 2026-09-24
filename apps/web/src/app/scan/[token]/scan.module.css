@@ -61,6 +61,69 @@
 .pass[data-tone='ready'] { --tone: var(--jade-500); }
 .pass[data-tone='ko'] { --tone: var(--brique-500); }
 
+/* En-tête du pass : numéro court à gauche, provenance du QR à droite.
+   L'agent sait d'un coup d'œil s'il a scanné la page web ou un billet
+   Wallet (dont le numéro « A-042 » se compare alors au billet). */
+.passTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+/* Téléphone : provenance toujours sous le numéro, quelle que soit la
+   longueur du libellé (« Page web » tiendrait, « Google Wallet » non). */
+@media (max-width: 479px) {
+  .passTop { flex-direction: column; align-items: flex-start; }
+}
+.source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-variation-settings: 'wdth' 92, 'wght' 650;
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* Billet Wallet : la teinte de l'accent, discrète (information, pas verdict). */
+.source:not([data-source='web']) {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  color: color-mix(in oklab, var(--accent) 70%, var(--bone-100));
+}
+.sourceIcon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Numéro humain et vague, en tuiles : les mêmes que sur le billet. */
+.ticket {
+  /* Tuiles un cran au-dessus de la surface du pass, lisibles de loin. */
+  --flap-tile: var(--ink-600);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin: 2px 0 0;
+}
+.ticket > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ticket dd { margin: 0; }
+
 .client {
   font-variation-settings: 'wdth' 110, 'wght' 780;
   font-size: clamp(1.75rem, 1.4rem + 1.6vw, 2.25rem);

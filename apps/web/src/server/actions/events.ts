@@ -6,11 +6,16 @@ import { AppError, toAppError } from '@/lib/errors';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { env } from '@/lib/env';
 import { audit } from '@/server/audit';
-import { assertQueueAccess } from '@/server/auth';
+import { assertQueueAccess, getMyOrganizations, getSessionUser } from '@/server/auth';
 import { propagate, setQueueStatus } from '@/server/queue';
 import { dispatchEventEntryNotification } from '@/server/notifications/dispatch';
 import { enforceRateLimit, LIMITS } from '@/server/ratelimit';
-import { eventAccessPath, verifyEventPassSignature } from '@/lib/event-pass';
+import { walletStatuses } from '@/server/wallet/providers';
+import {
+  checkScanProof, eventAccessPath,
+  SCAN_OTP_RE, SCAN_SIG_RE, SCAN_WALLET_CODE_RE,
+  type ScanProof,
+} from '@/lib/event-pass';
 
 type Result<T> =
   | { ok: true; data: T }
@@ -29,6 +34,8 @@ const createSchema = z.object({
   passValidMinutes: z.number().int().min(1).max(120).default(10),
   graceMinutes: z.number().int().min(0).max(60).default(5),
   publicNote: z.string().trim().max(500).nullish(),
+  /** Absent : la valeur par défaut de la base (accepté). */
+  walletQrEnabled: z.boolean().optional(),
 });
 
 export async function createEventCampaign(
@@ -49,6 +56,7 @@ export async function createEventCampaign(
       grace_minutes: parsed.graceMinutes,
       public_note: parsed.publicNote ?? null,
       created_by: access.user.id,
+      ...(parsed.walletQrEnabled === undefined ? {} : { wallet_qr_enabled: parsed.walletQrEnabled }),
     }).select('id').single();
 
     if (error || !data) throw error ?? new Error('Création impossible.');
@@ -64,6 +72,7 @@ export async function createEventCampaign(
         waveSize: parsed.waveSize,
         passValidMinutes: parsed.passValidMinutes,
         graceMinutes: parsed.graceMinutes,
+        ...(parsed.walletQrEnabled === undefined ? {} : { walletQrEnabled: parsed.walletQrEnabled }),
       },
     });
 
@@ -262,11 +271,151 @@ export async function callEventWave(
   }
 }
 
-const redeemSchema = z.object({
-  passId: z.string().regex(/^[0-9A-Za-z]{12,32}$/),
-  slot: z.number().int().positive(),
-  signature: z.string().min(16).max(64),
+/* --------------------------------------------------------------------
+   Billet Wallet au contrôle : réglage par événement
+   -------------------------------------------------------------------- */
+
+const walletSettingsSchema = z.object({
+  orgSlug: z.string().trim().min(1).max(80),
+  eventIds: z.array(z.string().uuid()).max(200),
 });
+
+/**
+ * État du réglage « Accepter le billet Wallet au contrôle » pour la fiche
+ * événement, et `available` : faux tant qu'aucun fournisseur Wallet n'est
+ * prêt (identifiants non fournis, certificat expiré…) ou que l'organisation
+ * a coupé le Wallet. Sans billet Wallet possible, la case n'aurait pas de
+ * sens : la fiche ne la montre pas (masquage propre, § 11 du plan).
+ *
+ * Lecture seule, réservée aux membres de l'organisation désignée : les
+ * événements sont filtrés par organisation, un identifiant d'une autre
+ * organisation ne renvoie rien.
+ */
+export async function readEventWalletSettings(
+  input: z.input<typeof walletSettingsSchema>,
+): Promise<Result<{ available: boolean; enabled: Record<string, boolean> }>> {
+  try {
+    const parsed = walletSettingsSchema.parse(input);
+    const user = await getSessionUser();
+    if (!user) throw new AppError('unauthorized', 'Connectez-vous pour continuer.', 401);
+    const organization = (await getMyOrganizations()).find((o) => o.slug === parsed.orgSlug);
+    if (!organization) {
+      throw new AppError('forbidden', "Vous n'avez pas accès à cet établissement.", 403);
+    }
+
+    const db = supabaseAdmin();
+    const [settings, events, statuses] = await Promise.all([
+      db.from('organization_settings')
+        .select('features')
+        .eq('organization_id', organization.organization_id)
+        .maybeSingle(),
+      parsed.eventIds.length
+        ? db.from('event_campaigns')
+          .select('id, wallet_qr_enabled')
+          .eq('organization_id', organization.organization_id)
+          .in('id', parsed.eventIds)
+        : Promise.resolve({ data: [], error: null }),
+      walletStatuses(),
+    ]);
+    if (events.error) throw events.error;
+
+    // Même lecture que la base (features ->> 'wallet' <> 'false').
+    const features = (settings.data?.features ?? {}) as Record<string, unknown>;
+    const walletOn = features.wallet !== false && features.wallet !== 'false';
+    const anyReady = Object.values(statuses).some((status) => status.ready);
+
+    const enabled: Record<string, boolean> = {};
+    for (const row of (events.data ?? []) as { id: string; wallet_qr_enabled: boolean | null }[]) {
+      enabled[row.id] = row.wallet_qr_enabled !== false;
+    }
+    return { ok: true, data: { available: walletOn && anyReady, enabled } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+const walletQrSchema = z.object({
+  eventId: z.string().uuid(),
+  enabled: z.boolean(),
+});
+
+/**
+ * Coupe ou rétablit le billet Wallet au contrôle d'un événement.
+ *
+ * Coupé : seul le QR tournant de /pass est accepté ; un code Wallet déjà
+ * émis est refusé dès le scan suivant (la page de contrôle relit la
+ * colonne à chaque passage). Le déclencheur Wallet de 0021 redessine les
+ * passes concernés : leur QR disparaît. Même permission que la création.
+ */
+export async function setEventWalletQr(
+  input: z.input<typeof walletQrSchema>,
+): Promise<Result<{ enabled: boolean }>> {
+  try {
+    const parsed = walletQrSchema.parse(input);
+    const event = await readEvent(parsed.eventId);
+    const access = await assertQueueAccess(event.queue_id, 'queue.configure');
+    await enforceRateLimit(
+      `event-settings:${access.user.id}`,
+      LIMITS.staffAction.max,
+      LIMITS.staffAction.window,
+    );
+
+    if (event.status === 'sold_out' || event.status === 'ended') {
+      throw new AppError('event_closed', 'Un événement terminé ne peut plus être reconfiguré.', 409);
+    }
+
+    const { error } = await supabaseAdmin()
+      .from('event_campaigns')
+      .update({ wallet_qr_enabled: parsed.enabled })
+      .eq('id', event.id)
+      .eq('organization_id', access.organizationId);
+    if (error) throw error;
+
+    await audit({
+      organizationId: access.organizationId,
+      actorUserId: access.user.id,
+      action: 'event.wallet_qr_changed',
+      targetType: 'event',
+      targetId: event.id,
+      metadata: { enabled: parsed.enabled },
+    });
+
+    return { ok: true, data: { enabled: parsed.enabled } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/* --------------------------------------------------------------------
+   Contrôle à l'entrée
+   -------------------------------------------------------------------- */
+
+const passIdSchema = z.string().regex(/^[0-9A-Za-z]{12,32}$/);
+
+/**
+ * Une preuve par forme de QR (lib/event-pass.ts, parseScanProof) : les
+ * bornes sont les mêmes que celles de la page de contrôle, si bien qu'une
+ * preuve affichée comme « valide » passe toujours ce schéma.
+ */
+const redeemSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('slot'),
+    passId: passIdSchema,
+    slot: z.number().int().positive(),
+    sig: z.string().regex(SCAN_SIG_RE),
+  }),
+  z.object({
+    kind: z.literal('wallet'),
+    passId: passIdSchema,
+    w: z.string().regex(SCAN_WALLET_CODE_RE),
+  }),
+  z.object({
+    kind: z.literal('totp'),
+    passId: passIdSchema,
+    t: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    otp: z.string().regex(SCAN_OTP_RE),
+  }),
+]);
 
 export async function redeemEventPass(
   input: z.input<typeof redeemSchema>,
@@ -276,7 +425,7 @@ export async function redeemEventPass(
     const db = supabaseAdmin();
     const { data: pass } = await db
       .from('event_access_passes')
-      .select('token_hash, event_id, event_campaigns(queue_id, organization_id)')
+      .select('token_hash, queue_entry_id, event_campaigns(queue_id, wallet_qr_enabled)')
       .eq('public_id', parsed.passId)
       .maybeSingle();
 
@@ -284,19 +433,17 @@ export async function redeemEventPass(
       throw new AppError('not_found', 'Laisser-passer introuvable.', 404);
     }
 
-    const tokenHash = pass.token_hash;
-    if (!verifyEventPassSignature(tokenHash, parsed.slot, parsed.signature)) {
-      throw new AppError('invalid_pass', 'Ce QR a expiré. Demandez au client de rouvrir son laisser-passer.', 409);
-    }
-
-    const eventRelation = Array.isArray(pass?.event_campaigns)
-      ? pass?.event_campaigns[0]
-      : pass?.event_campaigns;
+    const eventRelation = Array.isArray(pass.event_campaigns)
+      ? pass.event_campaigns[0]
+      : pass.event_campaigns;
 
     if (!eventRelation?.queue_id) {
       throw new AppError('not_found', 'Laisser-passer introuvable.', 404);
     }
 
+    // L'appartenance d'abord, la preuve ensuite : un compte d'une autre
+    // organisation ne peut pas se servir de cette action pour tester des
+    // codes, et chaque essai compte dans la limite de débit.
     const access = await assertQueueAccess(eventRelation.queue_id, 'queue.operate');
 
     await enforceRateLimit(
@@ -304,6 +451,31 @@ export async function redeemEventPass(
       LIMITS.staffAction.max,
       LIMITS.staffAction.window,
     );
+
+    const tokenHash = pass.token_hash as string;
+    const proof: ScanProof = parsed.kind === 'slot'
+      ? { kind: 'slot', slot: parsed.slot, sig: parsed.sig }
+      : parsed.kind === 'wallet'
+        ? { kind: 'wallet', w: parsed.w }
+        : { kind: 'totp', t: parsed.t, otp: parsed.otp };
+    const verdict = await checkScanProof(db, {
+      tokenHash,
+      queueEntryId: pass.queue_entry_id as string,
+      // Relu ici, au moment du rachat : l'interrupteur coupé entre
+      // l'affichage de la page et le geste de l'agent l'emporte.
+      walletQrEnabled: eventRelation.wallet_qr_enabled !== false,
+      proof,
+    });
+    if (!verdict.ok) {
+      if (verdict.reason === 'wallet_disabled') {
+        throw new AppError(
+          'wallet_not_accepted',
+          'Le billet Wallet n’est pas accepté pour cet événement. Demandez au client d’ouvrir son laisser-passer.',
+          409,
+        );
+      }
+      throw new AppError('invalid_pass', 'Ce QR a expiré. Demandez au client de rouvrir son laisser-passer.', 409);
+    }
 
     const { data, error } = await db.rpc('redeem_event_pass', {
       p_token_hash: tokenHash,
@@ -327,7 +499,7 @@ export async function redeemEventPass(
       action: 'event.pass_checked',
       targetType: 'event_pass',
       targetId: result.passPublicId ?? null,
-      metadata: { result: result.status },
+      metadata: { result: result.status, via: verdict.source },
     });
 
     return {

@@ -1,10 +1,13 @@
 'use client';
 
-import { useId, useMemo, useState, useTransition } from 'react';
+import { useEffect, useId, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { callEventWave, changeEventState, createEventCampaign } from '@/server/actions/events';
+import {
+  callEventWave, changeEventState, createEventCampaign,
+  readEventWalletSettings, setEventWalletQr,
+} from '@/server/actions/events';
 import { FlapNumber, FlapText } from '@/components/FlapNumber';
-import { PageHeader } from '@/components/Page';
+import { PageHeader, Toggle } from '@/components/Page';
 import { Barrier } from './Barrier';
 import { WavePreview } from './WavePreview';
 import styles from './events.module.css';
@@ -23,8 +26,22 @@ type EventRow = {
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
+  /** Facultatif : lu par readEventWalletSettings quand la page ne le fournit pas. */
+  wallet_qr_enabled?: boolean | null;
   stats: { waiting: number; issued: number; redeemed: number; expired: number; revoked: number };
 };
+
+/**
+ * Billet Wallet au contrôle. `available` : un fournisseur Wallet est prêt
+ * et l'organisation ne l'a pas coupé. Sinon aucun billet Wallet ne peut
+ * exister, et la fiche ne parle pas de Wallet du tout.
+ */
+type WalletSettings = { available: boolean; enabled: Record<string, boolean> };
+
+const WALLET_LABEL = 'Accepter le billet Wallet au contrôle';
+const walletHint = (on: boolean) => (on
+  ? 'Le QR du billet Apple Wallet ou Google Wallet ouvre l’entrée, une seule fois, pendant l’accès.'
+  : 'Seul le QR tournant de la page web ouvre l’entrée. Utile pour un drop très convoité.');
 
 const STATUS: Record<string, { label: string; tone: 'live' | 'paused' | 'soldout' | 'ended' | 'draft' }> = {
   live: { label: 'En direct', tone: 'live' },
@@ -63,10 +80,47 @@ export function EventsPanel({
   const [waveSize, setWaveSize] = useState(10);
   const [validMinutes, setValidMinutes] = useState(10);
   const [graceMinutes, setGraceMinutes] = useState(5);
+  // Même défaut que la base (event_campaigns.wallet_qr_enabled).
+  const [walletQr, setWalletQr] = useState(true);
+  const [wallet, setWallet] = useState<WalletSettings | null>(null);
+  const [walletBusy, setWalletBusy] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+
+  // Réglage Wallet : lu après l'affichage, pour ne jamais retarder la
+  // liste. Tant qu'il n'est pas connu, rien n'est montré (ni case grisée,
+  // ni place réservée) : sans fournisseur prêt, il ne le sera jamais.
+  const eventKey = events.map((event) => event.id).join(',');
+  useEffect(() => {
+    let alive = true;
+    const eventIds = eventKey ? eventKey.split(',') : [];
+    readEventWalletSettings({ orgSlug, eventIds })
+      .then((result) => { if (alive && result.ok) setWallet(result.data); })
+      .catch(() => { /* réglage facultatif : la page reste utilisable sans lui */ });
+    return () => { alive = false; };
+  }, [orgSlug, eventKey]);
+
+  const walletQrOf = (event: EventRow) =>
+    wallet?.enabled[event.id] ?? (event.wallet_qr_enabled !== false);
+
+  const toggleWalletQr = (eventId: string, enabled: boolean) => {
+    if (walletBusy) return;
+    const previous = wallet;
+    setWalletBusy(eventId);
+    setError(null);
+    // Optimiste : l'interrupteur suit le doigt, et revient si le serveur refuse.
+    setWallet((w) => (w ? { ...w, enabled: { ...w.enabled, [eventId]: enabled } } : w));
+    startTransition(async () => {
+      const result = await setEventWalletQr({ eventId, enabled });
+      setWalletBusy(null);
+      if (!result.ok) {
+        setWallet(previous);
+        setError(result.error);
+      }
+    });
+  };
 
   const act = (
     eventId: string,
@@ -181,6 +235,9 @@ export function EventsPanel({
                   waveSize: clamp(waveSize, 1, 200),
                   passValidMinutes: clamp(validMinutes, 1, 120),
                   graceMinutes: clamp(graceMinutes, 0, 60),
+                  // Sans Wallet disponible, la case n'a pas été montrée :
+                  // on laisse la base décider.
+                  ...(wallet?.available ? { walletQrEnabled: walletQr } : {}),
                 });
                 setBusy(null);
                 if (!result.ok) { setError(result.error); return; }
@@ -268,6 +325,19 @@ export function EventsPanel({
                   label="la grâce"
                 />
               </FormRow>
+
+              {wallet?.available && (
+                <div className={`${styles.row} ${styles.walletFormRow}`}>
+                  <div className={styles.rowText}>
+                    <p className={styles.rowLabel}>{WALLET_LABEL}</p>
+                    <p className={styles.rowHint}>{walletHint(walletQr)}</p>
+                  </div>
+                  <div className={`${styles.rowControl} ${styles.walletControl}`}>
+                    <span className={styles.walletState} aria-hidden="true">{walletQr ? 'Accepté' : 'Refusé'}</span>
+                    <Toggle label={WALLET_LABEL} checked={walletQr} onChange={setWalletQr} />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className={styles.formFoot}>
@@ -331,6 +401,14 @@ export function EventsPanel({
                 busy={busy === event.id}
                 onAct={act}
                 onWave={wave}
+                wallet={wallet?.available
+                  ? {
+                    enabled: walletQrOf(event),
+                    canChange: canConfigure,
+                    saving: walletBusy === event.id,
+                    onChange: (enabled) => toggleWalletQr(event.id, enabled),
+                  }
+                  : null}
               />
             ))}
           </ol>
@@ -341,13 +419,20 @@ export function EventsPanel({
 }
 
 function EventLine({
-  event, canOperate, busy, onAct, onWave,
+  event, canOperate, busy, onAct, onWave, wallet,
 }: {
   event: EventRow;
   canOperate: boolean;
   busy: boolean;
   onAct: (eventId: string, action: 'start' | 'pause' | 'resume' | 'sold_out' | 'end') => void;
   onWave: (eventId: string, count: number) => void;
+  /** null : Wallet indisponible, rien n'est montré. */
+  wallet: {
+    enabled: boolean;
+    canChange: boolean;
+    saving: boolean;
+    onChange: (enabled: boolean) => void;
+  } | null;
 }) {
   const status = STATUS[event.status] ?? STATUS.draft!;
   const { waiting, issued, redeemed, expired, revoked } = event.stats;
@@ -446,6 +531,34 @@ function EventLine({
                 onClick={() => onAct(event.id, 'end')}>Fin de l’événement</button>
             </span>
           )}
+        </div>
+      )}
+
+      {wallet && !closed && (
+        <div className={styles.walletStrip} data-on={wallet.enabled ? '1' : '0'}>
+          <span className={styles.walletGlyph} aria-hidden="true">
+            <svg viewBox="0 0 20 20">
+              <rect x="2.5" y="4.5" width="15" height="11" rx="2.5" />
+              <path d="M2.5 8.5h15M5.5 12h4" />
+            </svg>
+          </span>
+          <div className={styles.walletText}>
+            <p className={styles.walletTitle}>{WALLET_LABEL}</p>
+            <p className={styles.walletHint} aria-live="polite">
+              {walletHint(wallet.enabled)}
+            </p>
+          </div>
+          <div className={styles.walletControl}>
+            <span className={styles.walletState} aria-hidden="true">
+              {wallet.saving ? 'Enregistrement…' : wallet.enabled ? 'Accepté' : 'Refusé'}
+            </span>
+            <Toggle
+              label={WALLET_LABEL}
+              checked={wallet.enabled}
+              disabled={!wallet.canChange}
+              onChange={wallet.onChange}
+            />
+          </div>
         </div>
       )}
     </li>

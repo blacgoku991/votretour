@@ -639,3 +639,101 @@
   padding-top: var(--sp-4);
   border-top: 1px solid var(--line);
 }
+
+/* ---------------------------------------------------------------------
+   Billet Wallet au contrôle (§ 10 du plan Wallet)
+   Montré seulement si un fournisseur Wallet est prêt : sans lui, aucun
+   billet Wallet n'existe et la fiche n'en parle pas.
+   --------------------------------------------------------------------- */
+.walletControl {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.walletFormRow .walletControl { justify-content: flex-start; }
+@media (min-width: 640px) {
+  .walletFormRow .walletControl { justify-content: flex-end; }
+}
+.walletState {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+/* Réglage d'un événement : une languette posée sous ses commandes. */
+.walletStrip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-field);
+  background: var(--surface-raised);
+}
+.walletGlyph {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  overflow: hidden;
+}
+/* Accepté : le pictogramme prend l'accent, par un calque d'opacité
+   (aucune transition de couleur). */
+.walletGlyph::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent-soft);
+  opacity: 0;
+}
+.walletGlyph svg {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.walletStrip[data-on='1'] .walletGlyph { color: var(--accent); }
+.walletStrip[data-on='1'] .walletGlyph::before { opacity: 1; }
+.walletStrip[data-on='1'] .walletState { color: var(--text); }
+@media (prefers-reduced-motion: no-preference) {
+  .walletGlyph::before { transition: opacity var(--dur-2) var(--ease-out); }
+}
+
+.walletText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.walletTitle {
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+}
+.walletHint {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+/* Téléphone : le texte d'abord ; l'aide dit déjà l'état, le libellé
+   « Accepté / Refusé » et le pictogramme cèdent la place. */
+@media (max-width: 559px) {
+  .walletStrip { grid-template-columns: minmax(0, 1fr) auto; padding-left: 14px; }
+  .walletGlyph,
+  .walletStrip .walletState { display: none; }
+}
