@@ -105,6 +105,18 @@ const nextConfig: NextConfig = {
           { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
         ],
       },
+      /* Lien de suivi /s/<jeton> et son rattachement : le jeton est dans
+         l'URL. Pas de Referer vers un autre site, pas de cache, pas
+         d'indexation. Déclarés après la règle générale : pour une même
+         clé, Next retient la dernière règle qui correspond. */
+      ...['/s/:path*', '/api/client/claim'].map((source) => ({
+        source,
+        headers: [
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'Cache-Control', value: 'no-store' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      })),
     ];
   },
 };
