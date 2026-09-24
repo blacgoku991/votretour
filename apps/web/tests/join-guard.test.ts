@@ -198,15 +198,13 @@ describe('resolveJoinPath', () => {
     })).resolves.toEqual({ kind: 'profile', profile: 'desk' });
   });
 
-  it('garde défensive : profil ni ouvert ni activé → servi comme aujourd’hui', async () => {
+  it('métiers ouverts à tous : une file à métier est servie dans son parcours, même sans la clé features', async () => {
+    // Le métier d'une file n'est posé que par l'équipe (super-admin) : il
+    // n'y a plus de profil « ni ouvert ni activé » à protéger.
     const none = vi.fn(async () => null);
     await expect(resolveJoinPath({
       profile: 'vehicle', eventId: null, source: 'qr', profilesHeader: null, loadFeatures: none,
-    })).resolves.toEqual({ kind: 'legacy' });
-    // Et un ancien App Clip n'est alors pas refusé : la file lui est lisible.
-    await expect(resolveJoinPath({
-      profile: 'vehicle', eventId: null, source: 'appclip', profilesHeader: null, loadFeatures: none,
-    })).resolves.toEqual({ kind: 'legacy' });
+    })).resolves.toEqual({ kind: 'profile', profile: 'vehicle' });
   });
 });
 
@@ -296,13 +294,13 @@ describe('POST /api/client/join', () => {
     expect(state.sessions).toEqual([{ organizationId: ORG, options: expect.objectContaining({ displayName: null }) }]);
   });
 
-  it('garde défensive : organisation sans profils, profil non ouvert → parcours d’aujourd’hui', async () => {
+  it('file à métier attribuée, organisation sans clé features : parcours du métier', async () => {
     state.entryPoint = entryPoint('table');
     state.features = null;
     const response = await join({ name: 'Karim', details: { partySize: 4 } });
     expect(response.status).toBe(200);
-    expect(state.joinProfileQueue).toEqual([]);
-    expect(state.joinQueue).toHaveLength(1);
+    expect(state.joinQueue).toEqual([]);
+    expect(state.joinProfileQueue).toHaveLength(1);
   });
 });
 

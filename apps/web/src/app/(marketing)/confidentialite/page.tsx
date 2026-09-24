@@ -63,6 +63,30 @@ function sections(
     ),
   },
   {
+    id: 'vehicules-appareils',
+    title: 'Véhicules, appareils et autres informations de métier',
+    body: (
+      <>
+        <p>
+          Selon le métier de l’établissement, votre passage peut porter quelques
+          informations de plus, toujours limitées à ce qu’il faut pour vous servir :
+        </p>
+        <ul>
+          <li><strong>Garage</strong> : l’immatriculation (si le garage la demande), le modèle, le motif de la visite, et le devis (libellé, montant, votre accord ou votre refus).</li>
+          <li><strong>Réparation</strong> : le type et le modèle de l’appareil, et son numéro de dossier.</li>
+          <li><strong>Restaurant</strong> : le nombre de couverts.</li>
+          <li><strong>Guichet</strong> : un numéro de ticket. Pour un établissement de santé, aucun prénom ni texte libre n’est demandé, et aucun avis n’est sollicité par défaut.</li>
+        </ul>
+        <p>
+          Sur l’écran de la salle, une immatriculation n’apparaît jamais en entier :
+          seuls ses trois derniers caractères sont visibles, ou seulement le modèle,
+          ou rien, selon le réglage du garage. Ces informations sont effacées en même temps que le
+          prénom, à la fin de la durée de conservation choisie par l’établissement.
+        </p>
+      </>
+    ),
+  },
+  {
     id: 'duree',
     title: 'Combien de temps',
     body: (

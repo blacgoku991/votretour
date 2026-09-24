@@ -52,16 +52,31 @@ export const CAPABILITY_PROFILE: Readonly<Record<ProfileCapability, QueueProfile
 };
 
 /**
- * Profils ouverts à tout nouveau compte. `walkin` et `event` sont le
- * produit d'aujourd'hui : ils le restent. Modifié UNIQUEMENT par un lot P9.
+ * Profils servis. Tous les métiers sont ouverts : le métier d'une file
+ * n'est jamais choisi par le commerçant, il est attribué par l'équipe
+ * Rangvia à l'installation (super-admin, `assignQueueProfile`).
  */
-export const OPEN_PROFILES: ReadonlySet<QueueProfile> = new Set<QueueProfile>(['walkin', 'event']);
+export const OPEN_PROFILES: ReadonlySet<QueueProfile> = new Set<QueueProfile>([
+  'walkin', 'event', 'vehicle', 'device', 'table', 'desk', 'retail',
+]);
 
 /**
  * Capacités livrées. Modifié UNIQUEMENT par un lot P9, dans la même PR
  * que `OPEN_PROFILES`.
  */
-export const PROFILE_CAPABILITIES: readonly ProfileCapability[] = [];
+export const PROFILE_CAPABILITIES: readonly ProfileCapability[] = [
+  'profile.garage.dropoff',
+  'profile.garage.vehicle_ready',
+  'profile.garage.quote',
+  'profile.garage.key_tag',
+  'profile.repair.dropoff',
+  'profile.repair.device_ready',
+  'profile.restaurant.party_size',
+  'profile.restaurant.table_ready',
+  'profile.restaurant.delayed_review',
+  'profile.counter.desk_number',
+  'profile.counter.ticket_number',
+];
 
 export function hasCapability(capability: ProfileCapability): boolean {
   return PROFILE_CAPABILITIES.includes(capability);

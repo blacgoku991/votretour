@@ -187,20 +187,20 @@ describe('options', () => {
 });
 
 describe('capacités', () => {
-  it('rien n’est promis tant qu’aucun profil n’est ouvert', () => {
-    expect(PROFILE_CAPABILITIES).toEqual([]);
-    expect([...OPEN_PROFILES].sort()).toEqual(['event', 'walkin']);
+  it('tous les métiers sont ouverts et toutes leurs capacités livrées (le métier est attribué par l’équipe)', () => {
+    expect([...OPEN_PROFILES].sort()).toEqual(['desk', 'device', 'event', 'retail', 'table', 'vehicle', 'walkin']);
+    expect([...PROFILE_CAPABILITIES].sort()).toEqual(Object.keys(CAPABILITY_PROFILE).sort());
   });
 
   it('chaque capacité livrée appartient à un profil ouvert', () => {
     for (const c of PROFILE_CAPABILITIES) expect(OPEN_PROFILES.has(CAPABILITY_PROFILE[c])).toBe(true);
   });
 
-  it('un profil non ouvert reste disponible à une organisation qui l’a activé', () => {
-    expect(profileAvailable('walkin')).toBe(true);
-    expect(profileAvailable('vehicle')).toBe(false);
-    expect(profileAvailable('vehicle', { profiles: true })).toBe(true);
-    expect(profileAvailable('vehicle', { profiles: 'true' })).toBe(false);
+  it('tout métier est servi dès que l’équipe l’a attribué, sans dépendre de la clé features', () => {
+    for (const profile of ['walkin', 'vehicle', 'device', 'table', 'desk', 'retail', 'event'] as const) {
+      expect(profileAvailable(profile)).toBe(true);
+      expect(profileAvailable(profile, { profiles: 'true' })).toBe(true);
+    }
   });
 });
 

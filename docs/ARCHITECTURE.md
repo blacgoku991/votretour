@@ -5,6 +5,10 @@ un choix, ce qu'il coûte, et ce qui a été écarté.
 
 ---
 
+> Profils métier (garage, réparation, restaurant, guichet, retrait) : voir
+> [docs/PROFILS.md](PROFILS.md). Le métier d'une file est attribué par
+> l'équipe Rangvia (super-admin), jamais choisi par le commerçant.
+
 ## 1. La logique de file vit dans PostgreSQL, pas dans TypeScript
 
 ### Le problème
