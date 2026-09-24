@@ -20,9 +20,12 @@
 -- Sûr dans les deux cas :
 --   · base neuve (0016 finale) : la contrainte n'existe pas, l'index
 --     existe déjà — chaque instruction est sans effet ;
---   · base de production (0016 première version) : la contrainte tombe,
---     l'index partiel est créé. Aucun doublon possible parmi les codes non
---     consommés, puisque l'ancienne contrainte les interdisait tous.
+--   · base qui aurait reçu la première version de 0016 : la contrainte
+--     tombe, l'index partiel est créé. Aucun doublon possible parmi les
+--     codes non consommés, puisque l'ancienne contrainte les interdisait
+--     tous. (La v1 n'a vécu que 25 minutes sur la branche ChatGPT, le
+--     23/09, et la production tourne sur la 0016 finale : ce cas est
+--     vraisemblablement théorique, mais il ne coûte rien de le couvrir.)
 --
 -- Le reste de l'écart entre les deux branches ne touche pas la base :
 -- colonnes de visuel (hero_title, logo_url, cover_url, accent_hex,

@@ -85,10 +85,16 @@ export const TARGET_TYPE_LABEL: Record<string, string> = {
   profile: 'Utilisateur',
 };
 
-/** Actions connues du journal, rédigées une à une. */
-const AUDIT_ACTION_LABEL: Record<string, string> = {
+/**
+ * Actions connues du journal, rédigées une à une. Toute action écrite par
+ * le code (`audit({ action })`) ou par une migration doit y figurer :
+ * tests/audit-labels.test.ts le vérifie, sans quoi la traduction mot à
+ * mot laisse passer de l'anglais dans la salle de contrôle.
+ */
+export const AUDIT_ACTION_LABEL: Record<string, string> = {
   'organization.created': 'Établissement créé',
   'organization.created_by_platform': 'Établissement créé par la plateforme',
+  'organization.created_by_platform_v2': 'Établissement créé par la plateforme',
   'organization.updated_by_platform': 'Établissement modifié par la plateforme',
   'organization.configuration_updated': 'Configuration de l’établissement modifiée',
   'organization.suspended': 'Établissement suspendu',
@@ -96,8 +102,13 @@ const AUDIT_ACTION_LABEL: Record<string, string> = {
   'organization.sessions_revoked': 'Sessions de l’établissement révoquées',
   'organization.deleted_by_platform': 'Établissement supprimé par la plateforme',
   'queue.configured': 'File configurée',
+  'queue.profile_assigned': 'Métier attribué à la file par la plateforme',
+  'queue.profile_changed': 'Métier de la file changé',
+  'queue.profile_options_updated': 'Options du métier modifiées',
   'queue.created': 'File créée',
   'queue.updated': 'File modifiée',
+  // `queue.${status}` (changeQueueStatus) écrit « open », pas « opened ».
+  'queue.open': 'File ouverte',
   'queue.opened': 'File ouverte',
   'queue.closed': 'File fermée',
   'queue.paused': 'File mise en pause',
@@ -109,8 +120,13 @@ const AUDIT_ACTION_LABEL: Record<string, string> = {
   'event.paused': 'Événement mis en pause',
   'event.paused_by_platform': 'Événement mis en pause par la plateforme',
   'event.resumed': 'Événement relancé',
+  'event.resumed_by_platform': 'Événement relancé par la plateforme',
   'event.started': 'Événement lancé',
+  'event.started_by_platform': 'Événement lancé par la plateforme',
   'event.ended': 'Événement terminé',
+  'event.ended_by_platform': 'Événement terminé par la plateforme',
+  'event.sold_out': 'Événement déclaré complet',
+  'event.sold_out_by_platform': 'Événement déclaré complet par la plateforme',
   'event.pass_checked': 'Pass contrôlé',
   'event.wave_called': 'Vague appelée',
   'event.wave_called_by_platform': 'Vague appelée par la plateforme',
@@ -126,6 +142,10 @@ const AUDIT_ACTION_LABEL: Record<string, string> = {
   'plate_stock.batch_exported': 'Lot de plaques exporté',
   'plate_stock.plate_released': 'Plaque remise en stock',
   'plate_stock.plate_withdrawn': 'Plaque retirée du stock',
+  'plate_stock.plate_assigned': 'Plaque du stock attribuée',
+  'plate_stock.plate_reassigned': 'Plaque du stock réattribuée',
+  'plate_stock.plate_voided': 'Plaque du stock annulée',
+  'plate_stock.plate_restored': 'Plaque du stock rétablie',
   'display.pair_code_created': 'Code d’appairage d’écran créé',
   'display.updated': 'Écran modifié',
   'display.revoked': 'Écran révoqué',
@@ -134,6 +154,9 @@ const AUDIT_ACTION_LABEL: Record<string, string> = {
   'member.updated': 'Membre modifié',
   'member.removed': 'Membre retiré',
   'staff.created': 'Collaborateur ajouté',
+  'staff.desk_label_updated': 'Nom du guichet modifié',
+  'message_template.saved': 'Modèle de message enregistré',
+  'message_template.deleted': 'Modèle de message supprimé',
   'settings.updated': 'Réglages modifiés',
   'location.updated': 'Site modifié',
   'plan.updated': 'Offre modifiée',
@@ -142,7 +165,12 @@ const AUDIT_ACTION_LABEL: Record<string, string> = {
   'plans.single_offer': 'Passage à l’offre unique',
   'quota.override': 'Quota ajusté',
   'onboarding.completed': 'Mise en route terminée',
+  'founders.opt_in': 'Présence parmi les premiers commerces acceptée',
+  'founders.opt_out': 'Présence parmi les premiers commerces retirée',
   'billing.checkout_started': 'Paiement commencé',
+  'billing.setup_fee_paid': 'Frais d’installation payés',
+  'billing.setup_done': 'Installation marquée faite',
+  'billing.setup_reopened': 'Installation remise à faire',
 };
 
 const VERB_LABEL: Record<string, string> = {
