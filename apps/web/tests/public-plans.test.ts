@@ -1,0 +1,167 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  PLANS_REVALIDATE_SECONDS,
+  PLANS_TAG,
+  PUBLIC_PLAN_COLUMNS,
+  cheapestPlan,
+  formatPlanPrice,
+  getPublicPlans,
+  parsePublicPlan,
+  parsePublicPlans,
+  publicPlansUrl,
+  type FetchLike,
+  type PublicPlanOffer,
+} from '@/lib/public-plans';
+
+/**
+ * OFFRES PUBLIQUES — lues avec la clé anon, mises en cache sous
+ * l'étiquette `plans`, et jamais inventées : sans réponse fiable, pas de
+ * prix du tout.
+ */
+
+const SOURCE = readFileSync(fileURLToPath(new URL('../src/lib/public-plans.ts', import.meta.url)), 'utf8');
+/** Le code seul : les commentaires, eux, ont le droit d'expliquer pourquoi on n'utilise pas service_role. */
+const CODE = SOURCE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
+/** Une ligne telle que PostgREST la renvoie (0012 : l'offre Starter). */
+const STARTER = {
+  code: 'starter',
+  name: 'Starter',
+  tagline: 'Un commerce, une file, zéro friction.',
+  description: 'Pour un salon, un garage ou une boutique.',
+  price_month_cents: 1900,
+  price_year_cents: 19000,
+  currency: 'EUR',
+  trial_days: 14,
+  max_locations: 1,
+  max_staff: 3,
+  max_plates: 2,
+  max_queues: 1,
+  history_days: 30,
+};
+const PRO = { ...STARTER, code: 'pro', name: 'Pro', price_month_cents: 4900, price_year_cents: 49000, max_plates: -1 };
+
+function source(fetch: FetchLike) {
+  return { supabaseUrl: 'https://base.test/', anonKey: 'cle-anon', fetch };
+}
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+describe('la requête', () => {
+  it('ne demande que les colonnes affichables, les offres actives et publiques, dans l’ordre', () => {
+    const url = new URL(publicPlansUrl('https://base.test/'));
+    expect(url.origin + url.pathname).toBe('https://base.test/rest/v1/plans');
+    expect(url.searchParams.get('select')).toBe(PUBLIC_PLAN_COLUMNS.join(','));
+    expect(url.searchParams.get('is_active')).toBe('eq.true');
+    expect(url.searchParams.get('is_public')).toBe('eq.true');
+    expect(url.searchParams.get('order')).toBe('sort_order.asc,code.asc');
+  });
+
+  it('ne transporte aucun secret ni aucune donnée interne', () => {
+    for (const column of PUBLIC_PLAN_COLUMNS) {
+      expect(column).not.toMatch(/stripe|features|^id$|created|updated|is_/);
+    }
+    expect(publicPlansUrl('https://base.test')).not.toMatch(/stripe|features|\*/);
+  });
+
+  it('passe par la clé anon, jamais par la clé service_role', async () => {
+    const fetch = vi.fn<FetchLike>(async () => json([STARTER]));
+    await getPublicPlans(source(fetch));
+    const init = fetch.mock.calls[0]?.[1];
+    const headers = new Headers(init?.headers);
+    expect(headers.get('apikey')).toBe('cle-anon');
+    expect(headers.get('authorization')).toBe('Bearer cle-anon');
+    expect(init?.method).toBe('GET');
+    // Le module ne sait même pas où trouver la clé privilégiée.
+    expect(CODE).not.toMatch(/serviceRoleKey|service_role|SERVICE_ROLE|supabaseAdmin|supabase\/admin/i);
+    expect(SOURCE).toMatch(/^import 'server-only';/);
+  });
+
+  it('se met en cache sous l’étiquette « plans », une heure au plus', async () => {
+    const fetch = vi.fn<FetchLike>(async () => json([STARTER]));
+    await getPublicPlans(source(fetch));
+    const init = fetch.mock.calls[0]?.[1];
+    expect(PLANS_TAG).toBe('plans');
+    expect(init?.next?.tags).toEqual(['plans']);
+    expect(init?.next?.revalidate).toBe(PLANS_REVALIDATE_SECONDS);
+    expect(PLANS_REVALIDATE_SECONDS).toBeLessThanOrEqual(3600);
+    expect(init?.cache).toBe('force-cache');
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe('la réponse', () => {
+  it('rend les offres valides, dans l’ordre reçu', async () => {
+    const plans = await getPublicPlans(source(async () => json([STARTER, PRO])));
+    expect(plans?.map((p) => p.code)).toEqual(['starter', 'pro']);
+    expect(plans?.[1]?.max_plates).toBe(-1);
+  });
+
+  it('une liste vide reste une liste vide : aucune offre publique', async () => {
+    expect(await getPublicPlans(source(async () => json([])))).toEqual([]);
+  });
+
+  it.each([
+    ['base injoignable', async () => { throw new TypeError('fetch failed'); }],
+    ['délai dépassé', async () => { throw new DOMException('timeout', 'TimeoutError'); }],
+    ['erreur HTTP', async () => json({ message: 'boom' }, 503)],
+    ['refus', async () => json({ message: 'permission denied' }, 401)],
+    ['JSON illisible', async () => new Response('<html>', { status: 200 })],
+    ['réponse qui n’est pas une liste', async () => json({ plans: [STARTER] })],
+  ] as const)('%s : null, jamais un prix inventé', async (_label, impl) => {
+    expect(await getPublicPlans(source(impl as FetchLike))).toBeNull();
+  });
+
+  it('ne recopie que les colonnes connues, même si la base en renvoie d’autres', () => {
+    const plan = parsePublicPlan({ ...STARTER, stripe_price_id_month: 'price_secret', features: { api: true }, id: 'x' });
+    expect(plan).not.toBeNull();
+    expect(Object.keys(plan ?? {}).sort()).toEqual([...PUBLIC_PLAN_COLUMNS].sort());
+    expect(JSON.stringify(plan)).not.toContain('price_secret');
+  });
+
+  it.each([
+    ['prix mensuel nul', { price_month_cents: 0 }],
+    ['prix négatif', { price_month_cents: -100 }],
+    ['prix décimal', { price_month_cents: 19.5 }],
+    ['prix en texte', { price_month_cents: '1900' }],
+    ['code invalide', { code: 'Starter!' }],
+    ['nom vide', { name: '   ' }],
+    ['devise inconnue', { currency: 'euro' }],
+    ['quota invalide', { max_staff: -2 }],
+    ['essai manquant', { trial_days: null }],
+  ])('écarte une ligne douteuse : %s', (_label, patch) => {
+    expect(parsePublicPlan({ ...STARTER, ...patch })).toBeNull();
+    expect(parsePublicPlans([{ ...STARTER, ...patch }, PRO])?.map((p) => p.code)).toEqual(['pro']);
+  });
+
+  it('garde la première ligne d’un code en double, et tolère une accroche vide', () => {
+    const plans = parsePublicPlans([STARTER, { ...STARTER, name: 'Doublon' }, { ...PRO, tagline: '', description: null }]);
+    expect(plans?.map((p) => p.name)).toEqual(['Starter', 'Pro']);
+    expect(plans?.[1]?.tagline).toBeNull();
+    expect(plans?.[1]?.description).toBeNull();
+  });
+
+  it('refuse ce qui n’est pas une liste', () => {
+    expect(parsePublicPlans(null)).toBeNull();
+    expect(parsePublicPlans({})).toBeNull();
+    expect(parsePublicPlans('[]')).toBeNull();
+  });
+});
+
+describe('l’affichage', () => {
+  it('écrit les prix à la française, sans décimales inutiles, avec des espaces insécables', () => {
+    expect(formatPlanPrice(1900, 'EUR')).toBe('19\u00a0€');
+    expect(formatPlanPrice(129000, 'EUR')).toBe('1\u00a0290\u00a0€');
+    expect(formatPlanPrice(2490, 'EUR')).toBe('24,90\u00a0€');
+    expect(formatPlanPrice(1900, 'EUR')).not.toMatch(/[ \u202f]/);
+  });
+
+  it('trouve l’offre d’entrée, ou rien', () => {
+    const plans: PublicPlanOffer[] = [PRO, STARTER];
+    expect(cheapestPlan(plans)?.code).toBe('starter');
+    expect(cheapestPlan([])).toBeNull();
+  });
+});
