@@ -5,6 +5,10 @@ import { PageHeader, Section, Stat } from '@/components/Page';
 import { ColumnChart, BarList } from '@/components/Chart';
 import { formatDurationBounded, formatNumber, formatPercent } from '@/lib/format';
 import { SOURCE_LABEL } from '@/lib/copy';
+import { isLegacyProfile, isQueueProfile } from '@/lib/profiles';
+import type { QueueProfile } from '@/lib/profiles/types';
+import { ProfileStats } from './ProfileStats';
+import { parseProfileStats } from './profileStatsModel';
 import styles from './stats.module.css';
 
 export const metadata: Metadata = { title: 'Statistiques', robots: { index: false } };
@@ -69,6 +73,7 @@ export default async function StatsPage({
     { data },
     { count: notificationsSent },
     { count: reviewClicks },
+    { data: locationQueues },
   ] = await Promise.all([
     db.rpc('location_stats', {
       p_location_id: current.id,
@@ -86,7 +91,19 @@ export default async function StatsPage({
       .eq('location_id', current.id)
       .gte('created_at', from)
       .lte('created_at', to),
+    db.from('queues').select('name, profile').eq('location_id', current.id).order('created_at'),
   ]);
+
+  // Statistiques par métier : seulement si l'établissement a une file à
+  // métier. Un barbier ne déclenche ni la requête ni le moindre pixel.
+  const queueNames: Partial<Record<QueueProfile, string[]>> = {};
+  for (const q of (locationQueues ?? []) as { name: string; profile: string }[]) {
+    if (!isQueueProfile(q.profile) || isLegacyProfile(q.profile)) continue;
+    (queueNames[q.profile] ??= []).push(q.name);
+  }
+  const profileView = Object.keys(queueNames).length > 0
+    ? parseProfileStats((await db.rpc('profile_stats', { p_location_id: current.id, p_from: from, p_to: to })).data)
+    : null;
 
   const stats = data as Stats | null;
   const joined = stats?.totals.joined ?? 0;
@@ -281,6 +298,8 @@ export default async function StatsPage({
           <BarList rows={bySource} caption="Origine des inscriptions" token="--chart-1" />
         </Section>
       </div>
+
+      {profileView && <ProfileStats view={profileView} queueNames={queueNames} rangeLabel={range.label} />}
 
       <p className={styles.note}>
         Les données personnelles sont effacées au-delà de votre durée de conservation ;

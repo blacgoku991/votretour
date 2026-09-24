@@ -237,6 +237,26 @@
   .issue { justify-content: flex-end; }
 }
 
+/* ---------------------------------------------------------------------
+   Colonne « fiche » (organisations qui ont une file à métier seulement) :
+   plaque masquée, numéro de ticket, couverts, guichet.
+   --------------------------------------------------------------------- */
+.metaFiche { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
+.metaFiche + * { margin-left: 0; }
+.cFiche { color: var(--text); }
+.ficheText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+@media (min-width: 1100px) {
+  .timeline[data-fiche='1'] .head,
+  .timeline[data-fiche='1'] .row {
+    grid-template-columns: 64px minmax(0, 1.1fr) minmax(0, 1.5fr) 92px 92px minmax(0, 0.9fr) minmax(0, 0.9fr) 112px;
+  }
+  .timeline[data-fiche='1'] .cFiche {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
 /* Pagination */
 .pager {
   display: grid;

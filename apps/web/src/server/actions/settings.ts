@@ -6,6 +6,8 @@ import { toAppError } from '@/lib/errors';
 import { assertOrgMembership, assertQueueAccess } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { audit } from '@/server/audit';
+import { AppError } from '@/lib/errors';
+import { hasStages, isQueueProfile } from '@/lib/profiles';
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string; code: string };
 
@@ -75,6 +77,17 @@ export async function updateLocation(
 /* ------------------------------------------------------------------
    Réglages de file
    ------------------------------------------------------------------ */
+
+/**
+ * Durée de vie d'un ticket oublié. 24 h au plus pour une file où l'on
+ * attend sur place (barbier, table, guichet) : la borne d'avant, que les
+ * barbiers gardent. Jusqu'à 30 jours pour une file à étapes (atelier
+ * véhicule, atelier appareil, commandes) : une réparation dure souvent
+ * plusieurs jours, et la fiche ne doit pas expirer pendant qu'elle est
+ * sur le pont. La base porte la même borne haute (0033).
+ */
+const ENTRY_TTL_MAX = 1440;
+const ENTRY_TTL_MAX_STAGED = 43_200;
 const queueSchema = z.object({
   queueId: z.string().uuid(),
   name: z.string().trim().min(1).max(80).optional(),
@@ -89,7 +102,7 @@ const queueSchema = z.object({
   absentMoveBackBy: z.number().int().min(1).max(20).optional(),
   absentGraceMinutes: z.number().int().min(0).max(120).optional(),
   maxActiveEntries: z.number().int().min(1).max(500).nullish(),
-  entryTtlMinutes: z.number().int().min(15).max(1440).optional(),
+  entryTtlMinutes: z.number().int().min(15).max(ENTRY_TTL_MAX_STAGED).optional(),
 });
 
 export async function updateQueueSettings(
@@ -98,6 +111,15 @@ export async function updateQueueSettings(
   try {
     const parsed = queueSchema.parse(input);
     const access = await assertQueueAccess(parsed.queueId, 'queue.configure');
+
+    if (parsed.entryTtlMinutes !== undefined && parsed.entryTtlMinutes > ENTRY_TTL_MAX) {
+      const { data: row } = await supabaseAdmin()
+        .from('queues').select('profile').eq('id', parsed.queueId).maybeSingle();
+      const profile = isQueueProfile(row?.profile) ? row.profile : 'walkin';
+      if (!hasStages(profile)) {
+        throw new AppError('validation', 'Une file sans étapes garde ses tickets 24 h au plus.', 422);
+      }
+    }
 
     const map: Record<string, string> = {
       name: 'name', mode: 'mode', advanceMode: 'advance_mode',

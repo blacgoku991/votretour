@@ -26,7 +26,10 @@ export default async function SettingsPage({
   const list = locations ?? [];
   const current = list.find((l) => l.id === lieu) ?? list[0] ?? null;
 
-  const [{ data: settings }, { data: queues }, { data: hours }, { data: services }] =
+  const [
+    { data: settings }, { data: queues }, { data: hours }, { data: services },
+    { data: organization }, { data: staff }, { data: templateRows },
+  ] =
     await Promise.all([
       db.from('organization_settings').select('*').eq('organization_id', organizationId).maybeSingle(),
       current
@@ -40,6 +43,16 @@ export default async function SettingsPage({
         ? db.from('services').select('id, name, duration_minutes, price_cents, is_active')
             .eq('location_id', current.id).eq('is_active', true).order('sort_order')
         : Promise.resolve({ data: [] }),
+      // Profils métier : l'activité (suggestion d'un métier), les fiches
+      // (une fiche = un guichet) et les modèles de messages retouchés.
+      db.from('organizations').select('activity').eq('id', organizationId).maybeSingle(),
+      current
+        ? db.from('staff').select('id, display_name, desk_label, is_active')
+            .eq('location_id', current.id).order('sort_order').order('created_at')
+        : Promise.resolve({ data: [] }),
+      db.from('message_templates')
+        .select('profile, key, label, body, is_active, location_id, sort_order')
+        .eq('organization_id', organizationId).is('location_id', null),
     ]);
 
   return (
@@ -47,6 +60,10 @@ export default async function SettingsPage({
       orgSlug={org}
       organizationId={organizationId}
       canManage={access.can('settings.manage')}
+      canConfigure={access.can('queue.configure')}
+      activity={(organization?.activity as string | undefined) ?? null}
+      staff={(staff ?? []) as never}
+      templateRows={(templateRows ?? []) as never}
       locations={list as never}
       currentLocation={current as never}
       settings={settings as never}

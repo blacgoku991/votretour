@@ -9,6 +9,12 @@ import {
   updateOpeningHours, upsertService, deleteService, createLocation,
 } from '@/server/actions/settings';
 import { WEEKDAYS, formatPrice } from '@/lib/format';
+import { hasStages, isLegacyProfile, isQueueProfile } from '@/lib/profiles';
+import { OPEN_PROFILES, profileAvailable } from '@/lib/profiles/capabilities';
+import type { QueueProfile } from '@/lib/profiles/types';
+import { ProfileSection, type DeskStaff } from './ProfileSection';
+import { TemplatesSection } from './TemplatesSection';
+import { mergeTemplates, type StoredTemplateRow } from './templateRows';
 import { SettingsTocRail, SettingsTocSelect, type TocEntry } from './SettingsToc';
 import { ThresholdRang } from './ThresholdRang';
 import styles from './settings.module.css';
@@ -19,6 +25,13 @@ import styles from './settings.module.css';
  * Regroupés par ce que le professionnel cherche, pas par table de base
  * de données : l'établissement, la file, l'avis Google, les horaires,
  * les prestations, et les données personnelles.
+ *
+ * Profils métier : la section « Métier de la file » (et « Messages »
+ * pour un métier qui en envoie) n'apparaît que si elle a quelque chose à
+ * dire : l'organisation a les profils activés (`features.profiles`), la
+ * file est déjà dans un autre métier, ou un métier est ouvert à tous
+ * (`OPEN_PROFILES`). Un barbier d'aujourd'hui ne voit donc RIEN de
+ * nouveau : ses réglages restent identiques au pixel près (captures R0).
  *
  * Mise en page : un sommaire collant en rail à partir de 1200 px, une
  * liste « Aller à la section » en dessous. Les horaires passent par
@@ -38,10 +51,13 @@ interface Queue {
   allow_staff_choice: boolean; allow_service_choice: boolean;
   notify_ahead_threshold: number; absent_policy: string; absent_move_back_by: number;
   max_active_entries: number | null; entry_ttl_minutes: number;
+  /** Colonnes des profils (0033) : absentes d'une base d'avant, d'où le repli walkin. */
+  profile?: string | null; profile_options?: unknown; ticket_prefix?: string | null;
 }
 interface OrgSettings {
   data_retention_days: number; show_people_ahead: boolean; allow_client_leave: boolean;
   send_completion_review: boolean; brand_accent: string; support_email: string | null;
+  features?: Record<string, unknown> | null;
 }
 interface Service {
   id: string; name: string; duration_minutes: number | null; price_cents: number | null;
@@ -50,6 +66,7 @@ interface Service {
 export function SettingsManager({
   orgSlug, organizationId, canManage, locations, currentLocation, settings,
   queues, selectedQueueId, hours, services,
+  canConfigure = canManage, activity = null, staff = [], templateRows = [],
 }: {
   orgSlug: string;
   organizationId: string;
@@ -61,6 +78,14 @@ export function SettingsManager({
   selectedQueueId: string | null;
   hours: { weekday: number; opens_at: string | null; closes_at: string | null; is_closed: boolean }[];
   services: Service[];
+  /** Permission `queue.configure` (métier de la file, messages, guichets). */
+  canConfigure?: boolean;
+  /** Activité de l'organisation : elle seule fonde une suggestion de métier. */
+  activity?: string | null;
+  /** Fiches de l'établissement : une fiche = un guichet. */
+  staff?: DeskStaff[];
+  /** Surcharges des modèles de messages de l'organisation. */
+  templateRows?: StoredTemplateRow[];
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +95,21 @@ export function SettingsManager({
   // Un établissement peut avoir plusieurs files (comptoir et atelier,
   // par exemple) : on règle celle que l'on regarde, pas la première.
   const queue = queues.find((q) => q.id === selectedQueueId) ?? queues[0] ?? null;
+
+  const features = settings?.features && typeof settings.features === 'object' ? settings.features : null;
+  const profile: QueueProfile = queue && isQueueProfile(queue.profile) ? queue.profile : 'walkin';
+  const openBeyondToday = [...OPEN_PROFILES].some((p) => !isLegacyProfile(p));
+  const showProfile = queue !== null && (features?.profiles === true || !isLegacyProfile(profile) || openBeyondToday);
+  const showTemplates = showProfile && !isLegacyProfile(profile) && profileAvailable(profile, features);
+  // Une réparation dure plusieurs jours : jusqu'à 30 jours pour une file à
+  // étapes. Les autres gardent exactement la liste d'avant.
+  const ttlChoices = hasStages(profile)
+    ? [1440, 2880, 4320, 10_080, 20_160, 43_200]
+    : [60, 120, 180, 240, 360, 480, 720];
+  if (queue && hasStages(profile) && !ttlChoices.includes(queue.entry_ttl_minutes)) {
+    ttlChoices.push(queue.entry_ttl_minutes);
+    ttlChoices.sort((a, b) => a - b);
+  }
 
   const [place, setPlace] = useState({
     name: currentLocation?.name ?? '',
@@ -149,7 +189,9 @@ export function SettingsManager({
   const toc: TocEntry[] = [
     { id: 'etablissement', label: 'Établissement' },
     { id: 'avis-google', label: 'Avis Google' },
+    ...(showProfile ? [{ id: 'metier', label: 'Métier de la file' }] : []),
     ...(queue ? [{ id: 'file', label: 'Fonctionnement de la file' }] : []),
+    ...(showTemplates ? [{ id: 'messages', label: 'Messages' }] : []),
     { id: 'horaires', label: 'Horaires' },
     { id: 'prestations', label: 'Prestations' },
     { id: 'donnees', label: 'Données personnelles' },
@@ -236,6 +278,28 @@ export function SettingsManager({
               )}
             </Section>
           </div>
+
+          {/* ---------------- Métier de la file ---------------- */}
+          {showProfile && queue && (
+            <div id="metier" className={styles.anchor}>
+              <ProfileSection
+                orgSlug={orgSlug}
+                queue={{
+                  id: queue.id,
+                  name: queue.name,
+                  profile,
+                  profile_options: queue.profile_options ?? {},
+                  ticket_prefix: queue.ticket_prefix ?? 'A',
+                }}
+                activity={activity}
+                features={features}
+                canConfigure={canConfigure}
+                staff={staff}
+                run={run}
+                pending={pending}
+              />
+            </div>
+          )}
 
           {/* ---------------- File ---------------- */}
           {queue && (
@@ -359,12 +423,28 @@ export function SettingsManager({
                     onChange={(e) => run(() => updateQueueSettings({
                       queueId: queue.id, entryTtlMinutes: Number(e.target.value),
                     }))}>
-                    {[60, 120, 180, 240, 360, 480, 720].map((n) => (
-                      <option key={n} value={n}>{n / 60} h</option>
+                    {ttlChoices.map((n) => (
+                      <option key={n} value={n}>{ttlLabel(n)}</option>
                     ))}
                   </select>
                 </SettingRow>
               </Section>
+            </div>
+          )}
+
+          {/* ---------------- Messages ---------------- */}
+          {showTemplates && (
+            <div id="messages" className={styles.anchor}>
+              <TemplatesSection
+                orgSlug={orgSlug}
+                profile={profile}
+                templates={mergeTemplates(profile, templateRows)}
+                locationName={currentLocation.name}
+                locationPhone={currentLocation.phone}
+                canConfigure={canConfigure}
+                run={run}
+                pending={pending}
+              />
             </div>
           )}
 
@@ -599,6 +679,13 @@ export function SettingsManager({
       </div>
     </div>
   );
+}
+
+/** « 4 h » (la forme d'avant, inchangée), « 7 jours » au-delà de 24 h. */
+function ttlLabel(minutes: number): string {
+  if (minutes < 1440 || minutes % 1440 !== 0) return `${Math.round((minutes / 60) * 10) / 10} h`.replace('.', ',');
+  const days = minutes / 1440;
+  return `${days} jour${days > 1 ? 's' : ''}`;
 }
 
 function NewLocationForm({

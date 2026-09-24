@@ -1,0 +1,253 @@
+/* =====================================================================
+   STATISTIQUES PAR MÉTIER — sous les statistiques de toujours.
+   Mêmes jetons que Chart.module.css (--chart-1, --chart-2, --chart-grid,
+   --chart-track) : barres fines, extrémité arrondie côté donnée, filets
+   de 1 px, texte en jetons de texte, jamais dans la couleur de la série.
+   On n'anime que transform et opacity, une fois, si le mouvement est
+   permis ; sans mouvement, tout est visible d'emblée.
+   ===================================================================== */
+
+.root {
+  container: metiers / inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 44px;
+  padding-top: 36px;
+  border-top: 1px solid var(--line);
+}
+
+.head { display: flex; flex-direction: column; gap: 8px; max-width: 72ch; }
+.kicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.kickerNotch { width: 14px; height: 2px; border-radius: 2px; background: var(--accent); }
+.title {
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+  font-size: clamp(1.375rem, 1.1rem + 1vw, 1.875rem);
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+.lead { font-size: 0.9375rem; line-height: 1.5; color: var(--text-muted); text-wrap: pretty; }
+
+.block { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+.blockHead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-strong);
+}
+.blockTitle {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 0.875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.blockQueues { font-size: 0.8125rem; color: var(--text-muted); }
+
+.empty {
+  padding: 16px 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+/* Bande KPI : 5 cellules, la première en tête (même logique que la
+   bande du haut de page). */
+.kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.kpis > :first-child { grid-column: span 2; }
+@container metiers (min-width: 560px) {
+  .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .kpis > :first-child { grid-column: span 2; grid-row: span 2; justify-content: flex-end; }
+}
+@container metiers (min-width: 1000px) {
+  .kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .kpis > :first-child { grid-row: auto; }
+}
+/* Trois cellules : une rangée dès qu'il y a la place. */
+@container metiers (min-width: 560px) {
+  .kpis3 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .kpis3 > :first-child { grid-row: auto; }
+}
+
+.twoUp { display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; }
+@container metiers (min-width: 820px) {
+  .twoUp { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 56px; }
+}
+
+/* ---------------------------------------------------------------------
+   Jauge : taux d'accord des devis
+   --------------------------------------------------------------------- */
+.meter { margin: 0; display: flex; flex-direction: column; gap: 14px; }
+.meterValue { display: flex; align-items: baseline; gap: 10px; }
+.meterBig {
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+  font-size: clamp(2.5rem, 2rem + 2vw, 3.25rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.meterUnit { font-size: 0.9375rem; color: var(--text-muted); }
+/* La piste est la part refusée : un pas plus clair de la même rampe. */
+.meterTrack {
+  position: relative;
+  display: block;
+  height: 12px;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--chart-2) 26%, var(--surface));
+  overflow: hidden;
+}
+.meterFill {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  background: var(--chart-2);
+  transform-origin: 0 50%;
+}
+/* Écart de 2 px, couleur de la surface, entre la part acceptée et le reste. */
+.meterFill::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--surface);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .meterFill { animation: grow-x var(--dur-4) var(--ease-slat) both; }
+}
+@keyframes grow-x { from { transform: scaleX(0); } }
+
+.meterLegend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 20px;
+  margin: 4px 0 0;
+}
+@container metiers (min-width: 480px) {
+  .meterLegend { grid-template-columns: repeat(4, minmax(0, auto)); justify-content: start; }
+}
+.meterLegend > div { display: flex; flex-direction: column; gap: 2px; }
+.meterLegend dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.meterLegend dd {
+  margin: 0;
+  font-variation-settings: 'wdth' 110, 'wght' 750;
+  font-size: 1.0625rem;
+}
+.keyAccepted, .keyDeclined { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.keyAccepted { background: var(--chart-2); }
+.keyDeclined { background: color-mix(in oklab, var(--chart-2) 26%, var(--surface)); }
+
+/* ---------------------------------------------------------------------
+   Lattes : temps par étape (ordre du rail, emphase sur la plus longue)
+   --------------------------------------------------------------------- */
+.lanes { margin: 0; display: flex; flex-direction: column; gap: 14px; }
+.laneList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.lane {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'label value' 'track track';
+  gap: 6px 12px;
+  align-items: baseline;
+}
+@container metiers (min-width: 560px) {
+  .lane { grid-template-columns: 150px minmax(0, 1fr) 72px; grid-template-areas: 'label track value'; align-items: center; }
+}
+.laneLabel { grid-area: label; font-size: 0.875rem; font-variation-settings: 'wght' 600; min-width: 0; }
+.laneValue {
+  grid-area: value;
+  text-align: right;
+  font-variation-settings: 'wdth' 110, 'wght' 750;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+.laneTrack {
+  grid-area: track;
+  position: relative;
+  display: block;
+  height: 10px;
+  border-radius: 4px;
+  background: var(--chart-track);
+}
+.laneFill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 0 4px 4px 0;
+  /* Les autres étapes : en retrait. L'étape la plus longue : l'accent. */
+  background: color-mix(in oklab, var(--text) 30%, transparent);
+  transform-origin: 0 50%;
+}
+.lane[data-longest='1'] .laneFill { background: var(--chart-1); }
+.lane[data-longest='1'] .laneLabel { font-variation-settings: 'wght' 760; }
+@media (prefers-reduced-motion: no-preference) {
+  .laneFill { animation: grow-x var(--dur-4) var(--ease-slat) both; animation-delay: calc(var(--i, 0) * 40ms); }
+}
+.laneNote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.laneNoteKey { width: 14px; height: 4px; border-radius: 2px; background: var(--chart-1); flex: none; }
+
+/* ---------------------------------------------------------------------
+   Colonnes : attente par taille de groupe (ordonnées)
+   --------------------------------------------------------------------- */
+.cols { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.colPlot {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
+  gap: 12px;
+  height: 180px;
+  padding-top: 22px;
+  border-bottom: 1px solid var(--chart-grid);
+}
+.col {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+}
+.colBar {
+  width: min(24px, 60%);
+  border-radius: 4px 4px 0 0;
+  background: var(--chart-1);
+  transform-origin: 50% 100%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .colBar { animation: grow-y var(--dur-4) var(--ease-slat) both; animation-delay: calc(var(--i, 0) * 40ms); }
+}
+@keyframes grow-y { from { transform: scaleY(0); } }
+.colValue {
+  margin-bottom: 6px;
+  font-variation-settings: 'wdth' 110, 'wght' 750;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+.colAxis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.colLabel { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
+.colLabel strong { font-variation-settings: 'wght' 700; font-size: 0.8125rem; }
+.colLabel span { font-size: 0.75rem; color: var(--text-muted); }

@@ -3,6 +3,10 @@ import { requireOrgAccess } from '@/server/auth';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { integrationStatus } from '@/lib/env';
 import { notificationCopy } from '@/lib/copy';
+import { getProfile, isLegacyProfile, isQueueProfile } from '@/lib/profiles';
+import { profileNotificationCopy, type ProfileCopyContext } from '@/lib/profiles/copy';
+import { formatTicketNo } from '@/lib/profiles/ticket';
+import type { ProfileNotificationKind, QueueProfile } from '@/lib/profiles/types';
 import { PageHeader, Section, SettingRow, Stat, EmptyState } from '@/components/Page';
 import { Reveal } from '@/components/motion/Reveal';
 import { formatDateTime, formatNumber, relativeTime } from '@/lib/format';
@@ -19,7 +23,80 @@ const KIND_LABEL: Record<string, string> = {
   removed: 'Retiré de la file',
   queue_closed: 'File fermée',
   custom: 'Message',
+  // Profils métier (0032) : un changement d'étape, un devis, un rappel.
+  stage_update: 'Étape du suivi',
+  quote_ready: 'Devis à valider',
+  recall: 'Rappel',
+  // Événements et drops (0015).
+  event_access: 'Accès à l’événement',
+  event_sold_out: 'Événement complet',
+  event_ended: 'Événement terminé',
 };
+
+interface PreviewItem { key: string; pos: string; posLabel: string; copy: { title: string; body: string } }
+
+/**
+ * Aperçu d'une file à métier : les textes EXACTS du métier
+ * (`profileNotificationCopy`, le même appel que l'envoi réel), dans
+ * l'ordre où ils partent, avec des valeurs d'exemple. Jamais de prénom ni
+ * d'immatriculation complète : c'est la règle de l'écran verrouillé, et
+ * l'aperçu la montre telle quelle (« FX-482-KL » devient « ••-••2-KL »).
+ */
+function profilePreview(
+  profile: QueueProfile,
+  locationName: string,
+  threshold: number,
+  queue: { ticket_prefix?: string | null; absent_grace_minutes?: number | null },
+): PreviewItem[] {
+  const base: ProfileCopyContext = { profile, locationName };
+  const item = (
+    key: string, pos: string, posLabel: string, kind: ProfileNotificationKind, ctx: Partial<ProfileCopyContext> = {},
+  ): PreviewItem => ({ key, pos, posLabel, copy: profileNotificationCopy(kind, { ...base, ...ctx }) });
+  const hours = { status: 'open', closesAt: '19:00' } as const;
+  switch (profile) {
+    case 'vehicle':
+    case 'device': {
+      const details = profile === 'vehicle'
+        ? { registration: 'FX-482-KL', country: 'FR' as const, model: 'Peugeot 208' }
+        : { deviceKind: 'phone' as const, model: 'iPhone 13' };
+      const ticketNo = profile === 'device' ? formatTicketNo('device', 42) : null;
+      return [
+        item('stage_update', '1', 'reçu', 'stage_update', { stage: 'received', details, ticketNo }),
+        item('quote_ready', '2', 'devis', 'quote_ready', {
+          details, quote: { amountCents: 18400, label: profile === 'vehicle' ? 'Plaquettes + disques AV' : 'Écran d’origine' },
+        }),
+        item('stage_update:parts', '3', 'pièce', 'stage_update', { stage: 'waiting_parts', details, ticketNo }),
+        item('your_turn', '4', 'prêt', 'your_turn', { details, ticketNo, hours }),
+        item('visit_completed', '✓', 'rendu', 'visit_completed', { details }),
+      ];
+    }
+    case 'table':
+      return [
+        ...(threshold >= 2 ? [item('ahead_two', String(threshold), 'avant', 'ahead_two', { peopleAhead: threshold })] : []),
+        item('ahead_one', '1', 'avant', 'ahead_one'),
+        item('your_turn', '0', 'table', 'your_turn', { graceMinutes: queue.absent_grace_minutes ?? 5 }),
+        item('recall', '!', 'rappel', 'recall', { remainingMinutes: 2 }),
+        item('visit_completed', '✓', 'après', 'visit_completed'),
+      ];
+    case 'desk': {
+      const ticketNo = formatTicketNo('desk', 42, queue.ticket_prefix ?? 'A');
+      return [
+        ...(threshold >= 2 ? [item('ahead_two', String(threshold), 'devant', 'ahead_two', { peopleAhead: threshold, ticketNo })] : []),
+        item('ahead_one', '1', 'devant', 'ahead_one', { ticketNo }),
+        item('your_turn', '0', 'appel', 'your_turn', { ticketNo, deskLabel: 'Guichet 3' }),
+        item('recall', '!', 'rappel', 'recall', { ticketNo, deskLabel: 'Guichet 3' }),
+      ];
+    }
+    case 'retail':
+      return [
+        item('stage_update', '1', 'prépa', 'stage_update', { stage: 'preparing', details: { orderRef: '1234' } }),
+        item('your_turn', '0', 'prête', 'your_turn', { stage: 'ready', details: { orderRef: '1234' } }),
+        item('visit_completed', '✓', 'remise', 'visit_completed'),
+      ];
+    default:
+      return [];
+  }
+}
 
 const CHANNEL_LABEL: Record<string, string> = {
   web_push: 'Navigateur (Android / PWA)',
@@ -78,7 +155,7 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
   ]);
 
   const { data: firstQueue } = firstLocation
-    ? await db.from('queues').select('notify_ahead_threshold')
+    ? await db.from('queues').select('notify_ahead_threshold, profile, ticket_prefix, absent_grace_minutes')
         .eq('location_id', firstLocation.id).order('created_at').limit(1).maybeSingle()
     : { data: null };
 
@@ -96,14 +173,18 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
   // ---- Aperçu : les vrais messages, dans l'ordre où ils partent ----
   const locationName = firstLocation?.name ?? access.organization.name;
   const threshold = Math.max(1, Number(firstQueue?.notify_ahead_threshold ?? 2));
-  const preview: { key: string; pos: string; posLabel: string; copy: { title: string; body: string } }[] = [];
-  if (threshold >= 2) {
+  const queueProfile: QueueProfile = isQueueProfile(firstQueue?.profile) ? firstQueue.profile : 'walkin';
+  const profiled = !isLegacyProfile(queueProfile);
+  const preview: PreviewItem[] = profiled
+    ? profilePreview(queueProfile, locationName, threshold, firstQueue ?? {}).map((p) => ({ ...p, copy: typoCopy(p.copy) }))
+    : [];
+  if (!profiled && threshold >= 2) {
     preview.push({
       key: 'ahead_two', pos: String(threshold), posLabel: 'devant',
       copy: typoCopy(notificationCopy('ahead_two', { locationName, peopleAhead: threshold })),
     });
   }
-  preview.push(
+  if (!profiled) preview.push(
     { key: 'ahead_one', pos: '1', posLabel: 'devant', copy: typoCopy(notificationCopy('ahead_one', { locationName })) },
     { key: 'your_turn', pos: '0', posLabel: 'à vous', copy: typoCopy(notificationCopy('your_turn', { locationName })) },
     { key: 'visit_completed', pos: '✓', posLabel: 'servi', copy: typoCopy(notificationCopy('visit_completed', { locationName })) },
@@ -121,14 +202,21 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
         <section className={styles.preview} aria-labelledby="apercu-titre">
           <div className={styles.previewHead}>
             <h2 id="apercu-titre" className={`t-label ${styles.previewTitle}`}>Ce que reçoivent vos clients</h2>
-            <p className={styles.previewDesc}>
-              Les textes exacts, au nom de {locationName}. La première part à {threshold}{' '}
-              personne{threshold > 1 ? 's' : ''} devant : c’est réglable dans Réglages.
-            </p>
+            {profiled ? (
+              <p className={styles.previewDesc}>
+                Les textes exacts du métier « {getProfile(queueProfile).label} », au nom de {locationName},
+                avec des valeurs d’exemple. Jamais de prénom ni d’immatriculation complète sur l’écran verrouillé.
+              </p>
+            ) : (
+              <p className={styles.previewDesc}>
+                Les textes exacts, au nom de {locationName}. La première part à {threshold}{' '}
+                personne{threshold > 1 ? 's' : ''} devant : c’est réglable dans Réglages.
+              </p>
+            )}
           </div>
           <ol className={styles.lock}>
             {preview.map((item, i) => (
-              <Reveal as="li" key={item.key} index={i} className={styles.lockItem} data-kind={item.key}>
+              <Reveal as="li" key={item.key} index={i} className={styles.lockItem} data-kind={item.key.split(':')[0]}>
                 <span className={styles.pos} aria-hidden="true">
                   <span className={styles.posNum}>{item.pos}</span>
                   <span className={styles.posLbl}>{item.posLabel}</span>
