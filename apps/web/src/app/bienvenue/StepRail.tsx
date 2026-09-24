@@ -9,15 +9,18 @@ import styles from './onboarding.module.css';
 /**
  * LA PROGRESSION, dessinée comme la file.
  *
- * Ordinateur : un rail vertical de 5 lattes libellées. L'étape en cours
+ * Ordinateur : un rail vertical de lattes libellées (5, ou 4 hors passage
+ * au fauteuil, où le choix du mode de file n'a pas lieu d'être). L'étape en cours
  * est la latte vermillon ; une étape validée PASSE (elle se relève comme
  * un volet et s'efface, 420 ms) et laisse une encoche jade. En revenant
  * en arrière, la latte redescend par la même transition.
  *
- * Mobile : un bandeau de 56 px avec le volet compact et 5 segments.
+ * Mobile : un bandeau de 56 px avec le volet compact et un segment par
+ * étape.
  *
  * Le volet « n étapes avant votre file » est décoratif (FlapNumber
  * static) : la phrase complète est lue une fois par le lecteur d'écran.
+ * Sa fin suit le métier : « avant votre atelier », « avant votre salle ».
  */
 
 export interface RailStep {
@@ -33,7 +36,12 @@ export function stepWord(remaining: number): string {
 /** Durée de la chute du volet : le mot suit le chiffre, il ne le devance pas. */
 const FLAP_MS = 440;
 
-function Remaining({ remaining, size, compact }: { remaining: number; size: string; compact?: boolean }) {
+/** Fin de phrase par défaut, celle du parcours d'aujourd'hui. */
+const DEFAULT_TARGET = 'avant votre file';
+
+function Remaining({
+  remaining, size, compact, target,
+}: { remaining: number; size: string; compact?: boolean; target: string }) {
   const reduced = useReducedMotion();
   const [word, setWord] = useState(() => stepWord(remaining));
   useEffect(() => {
@@ -43,20 +51,22 @@ function Remaining({ remaining, size, compact }: { remaining: number; size: stri
   }, [remaining, reduced]);
   return (
     <p className={compact ? styles.remainingCompact : styles.remaining}>
-      <FlapNumber static value={remaining} size={size} label={`${remaining} ${stepWord(remaining)} avant votre file`} />
+      <FlapNumber static value={remaining} size={size} label={`${remaining} ${stepWord(remaining)} ${target}`} />
       <span className={styles.remainingText} aria-hidden="true">
-        <span>{word}</span> <span>avant votre file</span>
+        <span>{word}</span> <span>{target}</span>
       </span>
     </p>
   );
 }
 
-export function StepRail({ steps, index, greeting }: { steps: RailStep[]; index: number; greeting: string }) {
+export function StepRail({
+  steps, index, greeting, target = DEFAULT_TARGET,
+}: { steps: RailStep[]; index: number; greeting: string; target?: string }) {
   const remaining = steps.length - index;
   return (
     <div className={styles.railBlock}>
       <p className={styles.greeting}>{greeting}</p>
-      <Remaining remaining={remaining} size="4.5rem" />
+      <Remaining remaining={remaining} size="4.5rem" target={target} />
       <ol className={styles.rail} aria-label="Étapes">
         {steps.map((step, i) => {
           const state = i < index ? 'done' : i === index ? 'current' : 'todo';
@@ -95,16 +105,21 @@ export function RailNote() {
   return <p className={styles.railNote}>Tout reste modifiable ensuite, depuis votre tableau de bord.</p>;
 }
 
-export function StepBand({ steps, index }: { steps: RailStep[]; index: number }) {
+export function StepBand({
+  steps, index, target = DEFAULT_TARGET,
+}: { steps: RailStep[]; index: number; target?: string }) {
   const remaining = steps.length - index;
   return (
     <div className={styles.band}>
       <div className={styles.bandRow}>
-        <Remaining remaining={remaining} size="2rem" compact />
+        <Remaining remaining={remaining} size="2rem" compact target={target} />
         <Wordmark compact />
-
       </div>
-      <span className={styles.segments} aria-hidden="true">
+      <span
+        className={styles.segments}
+        aria-hidden="true"
+        style={{ ['--segments' as string]: steps.length } as React.CSSProperties}
+      >
         {steps.map((step, i) => (
           <span
             key={step.id}

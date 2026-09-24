@@ -202,7 +202,7 @@
   right: var(--gutter);
   bottom: -1px;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(var(--segments, 5), 1fr);
   gap: 4px;
 }
 .segment {
@@ -566,6 +566,816 @@
 }
 
 /* ======================================================================
+   LA GRILLE DE MÉTIERS (MetierPicker)
+   ----------------------------------------------------------------------
+   Des tuiles en relief, comme des lattes posées à plat. Le métier choisi
+   prend le vermillon et se soulève : c'est « vous ».
+   Téléphone : deux tuiles par ligne ; une tuile seule dans sa famille
+   occupe la ligne entière, ce qui rythme la grille sans titres.
+   À partir de 720 px : une étagère de 4 colonnes, chaque famille coiffée
+   de son nom, les familles côte à côte selon leur taille.
+   Seuls transform et opacity s'animent : le vermillon arrive par une
+   couche en fondu (::before), la tuile monte de 2 px.
+   ====================================================================== */
+.metierField { gap: 14px; }
+
+.metiers {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* La légende a l'allure des libellés de champ (`.field > label`). */
+.metiersLegend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.family { min-width: 0; }
+/* Téléphone : le nom de famille reste lu par les lecteurs d'écran. */
+.familyLabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+
+.tile {
+  position: relative;
+  display: block;
+  min-width: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Le vrai bouton radio couvre la tuile, invisible : clic, toucher,
+   clavier et lecteur d'écran passent par lui. */
+.tileInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.tileFace {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border-radius: var(--r-slat);
+  background: var(--surface-raised);
+  color: var(--text);
+  /* Bord fin, et une tranche de 2 px dessous : la tuile est posée. */
+  box-shadow:
+    inset 0 0 0 1px var(--line-strong),
+    0 2px 0 color-mix(in oklab, var(--ink-1000) 55%, transparent);
+  isolation: isolate;
+}
+/* La couche vermillon, prête, invisible : elle arrive en fondu. */
+.tileFace::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--accent);
+  box-shadow:
+    0 3px 0 var(--slat-edge-self),
+    0 14px 30px -14px color-mix(in oklab, var(--accent) 85%, transparent);
+  opacity: 0;
+}
+.tileGlyph {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--text-muted);
+}
+.tileLabel {
+  min-width: 0;
+  font-variation-settings: 'wdth' 94, 'wght' 650;
+  font-size: 0.9375rem;
+  line-height: 1.15;
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+
+.tile:hover .tileFace { box-shadow: inset 0 0 0 1px var(--text-faint), 0 2px 0 color-mix(in oklab, var(--ink-1000) 55%, transparent); }
+
+.tile[data-checked='1'] .tileFace {
+  color: var(--accent-ink);
+  box-shadow: none;
+  transform: translateY(-2px);
+}
+.tile[data-checked='1'] .tileFace::before { opacity: 1; }
+.tile[data-checked='1'] .tileGlyph { color: var(--accent-ink); }
+.tile[data-checked='1'] .tileLabel { font-variation-settings: 'wdth' 94, 'wght' 740; }
+
+/* Focus clavier : visible sur la tuile, pas sur le bouton invisible. */
+.tileInput:focus-visible + .tileFace {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tileFace { transition: transform var(--dur-2) var(--ease-slat); }
+  .tileFace::before { transition: opacity var(--dur-1) var(--ease-out); }
+  .tile:active .tileFace { transform: translateY(1px); transition-duration: var(--dur-1); }
+  .tile[data-checked='1'] .tileGlyph { animation: glyph-set var(--dur-3) var(--ease-slat); }
+}
+@keyframes glyph-set {
+  from { transform: scale(0.72) rotate(-8deg); }
+}
+
+@media (min-width: 720px) {
+  /* L'étagère : 4 colonnes ; une famille occupe autant de colonnes qu'elle
+     a de métiers (--n, posé par le composant), son nom au-dessus. */
+  .metiers {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px 8px;
+  }
+  .metiersLegend { margin-bottom: 16px; }
+  .family {
+    grid-column: span var(--n, 1);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .familyLabel {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-variation-settings: 'wdth' 88, 'wght' 650;
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* Le trait d'étagère qui prolonge le nom de famille. */
+  .familyLabel::after {
+    content: '';
+    flex: 1 1 auto;
+    height: 1px;
+    min-width: 8px;
+    background: var(--line);
+  }
+  .tiles { grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+  .tile:last-child:nth-child(odd) { grid-column: auto; }
+  /* Tuile debout : pictogramme en haut, nom dessous, deux lignes au plus. */
+  .tileFace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 22px auto;
+    align-items: start;
+    gap: 10px;
+    min-height: 88px;
+    padding: 14px 14px 12px;
+  }
+}
+
+/* ======================================================================
+   L'APERÇU (ProfilePreview)
+   ----------------------------------------------------------------------
+   Une scène posée sur le sol, toujours sombre (--floor) : le téléphone
+   du client, la touche du poste, l'écran de la salle. Sur téléphone,
+   repliée derrière « Voir ce que verront vos clients » ; ouverte d'office
+   à partir de 1024 px.
+   Les maquettes sont dessinées à leur taille réelle puis réduites par
+   `zoom` : les objets du produit gardent exactement leurs proportions.
+   ====================================================================== */
+.preview {
+  position: relative;
+  border-radius: var(--r-card);
+  background: var(--floor);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line), 0 1px 0 color-mix(in oklab, var(--bone-100) 5%, transparent);
+  overflow: clip;
+}
+
+.previewHead {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 0 16px;
+}
+.previewTag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: var(--r-pill);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 70%, transparent);
+  color: var(--accent);
+  font-variation-settings: 'wdth' 88, 'wght' 750;
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+/* Téléphone : le titre est dit par le bouton ; il reste le nom de la section. */
+.previewTitle { display: none; }
+.previewToggle {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  margin: 0 -16px 0 0;
+  padding: 0 16px 0 0;
+  background: none;
+  border: 0;
+  color: var(--text);
+  text-align: left;
+  font-variation-settings: 'wdth' 96, 'wght' 650;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+/* Pour que tout le bandeau soit la cible, le bouton s'étend dessus. */
+.previewToggle::before { content: ''; position: absolute; inset: 0; }
+.previewToggle::after {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-right: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+  transform: translateY(-2px) rotate(45deg);
+}
+.preview[data-open='1'] .previewToggle::after { transform: translateY(2px) rotate(-135deg); }
+.previewToggle:focus-visible { outline: none; }
+.previewToggle:focus-visible::before {
+  border-radius: var(--r-card);
+  box-shadow: inset 0 0 0 2px var(--text);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .previewToggle::after { transition: transform var(--dur-2) var(--ease-slat); }
+}
+
+.previewBody {
+  display: none;
+  container: preview / inline-size;
+}
+.preview[data-open='1'] .previewBody { display: block; }
+
+/* ---- La scène ------------------------------------------------------- */
+.stage {
+  /* Échelles des maquettes (voir les requêtes de conteneur). */
+  --pz: 0.5;
+  --sz: 0.4;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  padding: 22px 14px 20px;
+  border-top: 1px solid var(--line);
+  /* Le marquage au sol, comme sur l'accueil. */
+  background-image: repeating-linear-gradient(to bottom, var(--floor-line) 0 1px, transparent 1px 52px);
+  background-position: 0 26px;
+}
+@container preview (min-width: 320px) { .stage { --pz: 0.54; --sz: 0.43; } }
+@container preview (min-width: 440px) { .stage { --pz: 0.58; --sz: 0.56; } }
+@container preview (min-width: 600px) {
+  .stage {
+    --pz: 0.62;
+    --sz: 0.5;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 26px;
+    padding: 30px 22px 24px;
+  }
+}
+.stageNote {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  font-variation-settings: 'wdth' 88, 'wght' 650;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.stageSide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+}
+
+.phoneFig,
+.keyFig,
+.screenFig {
+  position: relative;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.figCaption {
+  font-variation-settings: 'wdth' 88, 'wght' 650;
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* La flaque de lumière au pied du téléphone, quand il annonce « prêt ». */
+.phoneFig::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  width: 260px;
+  height: 90px;
+  translate: -50% 0;
+  background: radial-gradient(closest-side, var(--spill), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+.previewBody[data-phase='after'] .phoneFig::before { opacity: 1; }
+
+/* ---- Le téléphone (dessiné à 300 × 600, réduit par --pz) ------------ */
+.phone {
+  zoom: var(--pz);
+  position: relative;
+  width: 300px;
+  height: 580px;
+  padding: 10px;
+  border-radius: 46px;
+  background: var(--ink-1000);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in oklab, var(--bone-100) 14%, transparent),
+    inset 0 0 0 9px #000,
+    0 40px 70px -26px rgb(0 0 0 / 0.9);
+}
+.phoneScreen {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 36px;
+  background: var(--surface);
+  color: var(--text);
+  overflow: clip;
+}
+.phoneStatus {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding: 4px 28px 0;
+  font-variation-settings: 'wdth' 100, 'wght' 680;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.phoneIsland {
+  position: absolute;
+  left: 50%;
+  top: 11px;
+  width: 92px;
+  height: 27px;
+  translate: -50% 0;
+  border-radius: 999px;
+  background: #000;
+  /* L'îlot reste au-dessus du rideau, comme sur un vrai téléphone. */
+  z-index: 3;
+}
+.phoneBars {
+  width: 24px;
+  height: 11px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+  position: relative;
+}
+.phoneBars::after {
+  content: '';
+  position: absolute;
+  inset: 2.5px 6px 2.5px 2.5px;
+  border-radius: 1.5px;
+  background: currentColor;
+}
+.phoneHeader {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 20px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.phonePlace {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variation-settings: 'wdth' 100, 'wght' 720;
+  font-size: 15px;
+}
+.phoneLive {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.phoneBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  /* Centré dans la hauteur libre : le rideau, en tombant, laisse voir
+     l'essentiel (l'étape « Prêt », le couvert, le numéro). */
+  justify-content: center;
+  gap: 12px;
+  padding: 18px 20px;
+  min-height: 0;
+}
+.phoneCenter { align-items: center; text-align: center; gap: 16px; }
+.phoneKicker {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.phoneMeta {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.phoneTicketRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.phoneDevice {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: 16px;
+}
+.phoneAhead {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.phoneAheadText {
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: 16px;
+  color: var(--text-muted);
+}
+.phoneChip {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.phoneOrder {
+  font-variation-settings: 'wdth' 120, 'wght' 800;
+  font-size: 44px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.phoneFoot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+.phoneFoot svg { flex: none; color: var(--jade-500); }
+/* Le rail d'étapes prend la largeur de l'écran. */
+.phoneBody .swap { align-self: stretch; }
+
+/* Le rideau : il tombe quand le pro touche la touche. */
+.curtain {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 236px;
+  padding: 66px 24px 26px;
+  border-radius: 0 0 28px 28px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 5px 0 var(--slat-edge-self), 0 30px 50px -24px rgb(0 0 0 / 0.8);
+  transform: translateY(-104%);
+}
+.curtainKicker {
+  font-variation-settings: 'wdth' 88, 'wght' 750;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.curtainTitle {
+  font-variation-settings: 'wdth' 116, 'wght' 800;
+  font-size: 34px;
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+.curtainText {
+  font-size: 14px;
+  line-height: 1.4;
+  font-variation-settings: 'wdth' 100, 'wght' 600;
+}
+.previewBody[data-phase='after'] .curtain { transform: none; }
+
+/* Deux états dans la même case. */
+.swap {
+  display: grid;
+  justify-items: inherit;
+}
+.swapBefore,
+.swapAfter {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: inherit;
+  min-width: 0;
+}
+.phoneCenter .swapBefore,
+.phoneCenter .swapAfter { align-items: center; }
+.swapAfter { opacity: 0; }
+.previewBody[data-phase='after'] .swapBefore { opacity: 0; }
+.previewBody[data-phase='after'] .swapAfter { opacity: 1; }
+
+/* ---- La touche du poste --------------------------------------------- */
+.previewKey {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  margin-bottom: 4px;
+  padding: 0 24px;
+  border-radius: var(--r-key);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-variation-settings: 'wdth' 108, 'wght' 780;
+  font-size: 1.125rem;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.previewKey::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 100%;
+  height: 4px;
+  border-radius: 0 0 10px 10px;
+  background: var(--signal-600);
+  transform-origin: top;
+}
+.previewBody[data-phase='press'] .previewKey { transform: translateY(3px); }
+.previewBody[data-phase='press'] .previewKey::after { transform: scaleY(0.25); }
+
+/* ---- L'écran de la salle (dessiné à 640 × 360, réduit par --sz) ------ */
+.screenFrame {
+  zoom: var(--sz);
+  width: 664px;
+  padding: 12px;
+  border-radius: 20px;
+  background: #000;
+  box-shadow:
+    inset 0 0 0 2px color-mix(in oklab, var(--bone-100) 10%, transparent),
+    0 40px 70px -30px rgb(0 0 0 / 0.9);
+}
+.tvScreen {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  background: var(--ink-900);
+  color: var(--text);
+  overflow: clip;
+  background-image: repeating-linear-gradient(to bottom, var(--floor-line) 0 1px, transparent 1px 52px);
+}
+.screenTitle {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.screenSideLabel {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  height: 100%;
+}
+.boardMain {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 28px 24px;
+  min-width: 0;
+}
+.boardRows { display: flex; flex-direction: column; gap: 10px; }
+.boardRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 62px;
+  padding: 8px 18px;
+  border-radius: var(--r-slat);
+  background: var(--slat);
+  color: var(--text);
+  box-shadow: 0 2px 0 var(--slat-edge);
+  white-space: nowrap;
+}
+.boardLabel {
+  font-variation-settings: 'wdth' 110, 'wght' 780;
+  font-size: 24px;
+}
+.boardName {
+  flex: 1;
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+  font-size: 28px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.boardDevice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-variation-settings: 'wdth' 100, 'wght' 680;
+  font-size: 20px;
+}
+.boardSince {
+  margin-left: auto;
+  font-size: 15px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* La ligne qui vient d'arriver : repère vermillon, elle glisse en place. */
+.boardFresh { display: block; opacity: 0; transform: translateY(-14px); }
+.boardFresh .boardRow { box-shadow: inset 4px 0 0 var(--accent), 0 2px 0 var(--slat-edge); }
+.previewBody[data-phase='after'] .boardFresh { opacity: 1; transform: none; }
+/* Avant : les lignes déjà prêtes occupent la place de la nouvelle ; elles
+   descendent d'un cran quand elle arrive, comme la file. */
+.boardRows > :not(.boardFresh) { transform: translateY(-72px); }
+.previewBody[data-phase='after'] .boardRows > :not(.boardFresh) { transform: none; }
+
+.boardSide {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 22px;
+  padding: 24px 22px;
+  border-left: 1px solid var(--line);
+}
+.boardStat { display: flex; flex-direction: column; gap: 6px; }
+.boardValue {
+  font-variation-settings: 'wdth' 120, 'wght' 800;
+  font-size: 40px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Guichet : le tableau d'appel, jamais un nom. */
+.callBoard {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  padding: 28px 30px 24px;
+  gap: 10px;
+}
+.callNow { display: flex; align-items: center; }
+.callNow .swap { justify-items: start; }
+.callPast {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.callPastRows {
+  display: flex;
+  gap: 24px;
+  font-variation-settings: 'wdth' 110, 'wght' 700;
+  font-size: 21px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Le mouvement : une fois, transform et opacity seulement ------- */
+@media (prefers-reduced-motion: no-preference) {
+  .curtain { transition: transform var(--dur-4) var(--ease-slat); }
+  .swapBefore, .swapAfter { transition: opacity var(--dur-3) var(--ease-out) 120ms; }
+  .boardFresh {
+    transition:
+      opacity var(--dur-3) var(--ease-out) 380ms,
+      transform var(--dur-4) var(--ease-slat) 380ms;
+  }
+  .phoneFig::before { transition: opacity var(--dur-5) var(--ease-out) 200ms; }
+  .boardRows > :not(.boardFresh) { transition: transform var(--dur-4) var(--ease-slat) 300ms; }
+  .previewKey, .previewKey::after { transition: transform var(--dur-2) var(--ease-out); }
+  .previewBody[data-phase='press'] .previewKey,
+  .previewBody[data-phase='press'] .previewKey::after { transition-duration: var(--dur-1); }
+  /* La scène entre à l'ouverture : elle monte de 12 px. */
+  .preview[data-open='1'] .stage { animation: stage-in var(--dur-3) var(--ease-out); }
+}
+@keyframes stage-in { from { opacity: 0; transform: translateY(12px); } }
+
+@media (min-width: 1024px) {
+  /* Ordinateur : l'aperçu est toujours ouvert, le bouton disparaît. */
+  .previewToggle { display: none; }
+  .previewTitle {
+    display: block;
+    font-variation-settings: 'wdth' 100, 'wght' 680;
+    font-size: 0.9375rem;
+  }
+  .previewBody { display: block; }
+  .preview .stage { animation: none; }
+}
+
+/* ======================================================================
+   AVIS COUPÉ PAR DÉFAUT (santé, administration) : l'interrupteur
+   ====================================================================== */
+.reviewSwitch {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-left: 22px;
+  padding: 16px;
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  cursor: pointer;
+}
+.reviewSwitch .switch { margin-top: 1px; }
+.reviewSwitchText { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+/* ======================================================================
    ÉCRAN FINAL
    ====================================================================== */
 .ready {
@@ -725,4 +1535,87 @@
   }
   .readyFloor { flex: 1; height: auto; min-height: 160px; }
   .readySeuil.readySeuil { padding: 52px 36px 56px; }
+}
+
+/* ----------------------------------------------------------------------
+   L'essai réel, propre au métier : trois lattes accrochées au rail
+   ---------------------------------------------------------------------- */
+.trial {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 460px;
+  margin-top: 36px;
+  padding-top: 28px;
+  border-top: 1px solid var(--line);
+}
+.trialTitle {
+  font-variation-settings: 'wdth' 104, 'wght' 700;
+  font-size: 1.0625rem;
+  letter-spacing: -0.01em;
+}
+.trialSteps {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.trialSteps::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.trialStep {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 9px 14px 9px 10px;
+  border-radius: var(--r-slat);
+  background: var(--slat);
+  color: var(--text);
+  box-shadow: var(--edge-light), 0 2px 0 var(--slat-edge);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+/* L'encoche : la latte rejoint le rail. */
+.trialStep::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 50%;
+  width: 18px;
+  height: 2px;
+  translate: 0 -50%;
+  border-radius: 2px;
+  background: var(--rail);
+}
+/* Le numéro, en tuile de volet. */
+.trialNum {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 34px;
+  border-radius: 6px;
+  background: var(--ink-700);
+  color: var(--bone-100);
+  box-shadow: var(--edge-light), 0 1px 0 var(--ink-1000);
+  font-variation-settings: 'wdth' 125, 'wght' 820;
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+}
+.trialNote {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-muted);
 }

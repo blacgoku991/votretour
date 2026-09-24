@@ -1,12 +1,21 @@
 'use client';
 
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { Wordmark } from '@/components/Wordmark';
 import { TimeField } from '@/components/TimeField';
 import { useReducedMotion } from '@/components/motion/useMotionPreference';
-import { ACTIVITY_OPTIONS } from '@/lib/copy';
 import { WEEKDAYS } from '@/lib/format';
+import type { ActivityType, QueueProfile } from '@/lib/profiles/types';
 import { completeOnboarding, type OnboardingResult } from '@/server/actions/onboarding';
+import { MetierPicker } from './MetierPicker';
+import { ProfilePreview } from './ProfilePreview';
+import {
+  hasProfilePreview,
+  onboardingCopy,
+  onboardingProfile,
+  reviewOffByDefault,
+  samplePlaceholders,
+} from './metiers';
 import { RailNote, StepBand, StepRail } from './StepRail';
 import { ReadyScreen } from './ReadyScreen';
 import styles from './onboarding.module.css';
@@ -20,6 +29,17 @@ import styles from './onboarding.module.css';
  * professionnel), et un écran final qui donne le QR, le lien, et de quoi
  * tester immédiatement comme un client.
  *
+ * Le métier se choisit dès le premier écran, dans une grille illustrée
+ * (MetierPicker) qui remplace l'ancien menu. Il décide du reste :
+ *  - barbier, coiffure, beauté, événement, et tout métier dont le profil
+ *    n'est pas encore ouvert : le parcours d'aujourd'hui, mot pour mot ;
+ *  - métier au profil ouvert (garage, restaurant, guichet…) : un aperçu
+ *    de ce que verront ses clients (ProfilePreview), les mots du métier
+ *    (« Qui travaille à l'atelier ? », « Votre atelier est prêt »), et
+ *    pas de choix « file commune ou par professionnel », qui ne concerne
+ *    que le passage au fauteuil.
+ * L'action serveur refait la même décision : le navigateur n'impose rien.
+ *
  * Habillage « Le Rang en relief » : la progression est un rail de lattes
  * (StepRail), les étapes glissent de 16 px en 240 ms, les horaires sont en
  * 24 h (TimeField, « 09 h 00 ») et envoient toujours « HH:MM ».
@@ -27,7 +47,7 @@ import styles from './onboarding.module.css';
 
 type Step = 'place' | 'team' | 'queue' | 'review' | 'hours' | 'done';
 
-const STEPS: { id: Step; label: string }[] = [
+const BASE_STEPS: { id: Exclude<Step, 'done'>; label: string }[] = [
   { id: 'place', label: 'Établissement' },
   { id: 'team', label: 'Équipe' },
   { id: 'queue', label: 'File' },
@@ -52,7 +72,16 @@ const DEFAULT_HOURS: Hours[] = WEEKDAYS.map((_, index) => ({
 /** Durée de la sortie d'une étape ; l'entrée, en CSS, dure 140 ms : 240 ms en tout. */
 const LEAVE_MS = 100;
 
-export function OnboardingFlow({ userName }: { userName: string | null }) {
+export function OnboardingFlow({
+  userName,
+  initialActivity,
+  openProfiles,
+}: {
+  userName: string | null;
+  initialActivity: ActivityType;
+  /** Profils ouverts à tout nouveau compte, lus côté serveur. */
+  openProfiles: readonly QueueProfile[];
+}) {
   const [step, setStep] = useState<Step>('place');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<OnboardingResult | null>(null);
@@ -60,7 +89,7 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
 
   const [form, setForm] = useState({
     organizationName: '',
-    activity: 'barber',
+    activity: initialActivity,
     locationName: '',
     addressLine1: '',
     postalCode: '',
@@ -71,6 +100,25 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
   });
   const [staffNames, setStaffNames] = useState<string[]>(['']);
   const [hours, setHours] = useState<Hours[]>(DEFAULT_HOURS);
+  // Avis Google dans un métier où il est coupé par défaut : null tant que
+  // le professionnel n'a rien touché (le défaut du métier s'applique).
+  const [reviewChoice, setReviewChoice] = useState<boolean | null>(null);
+
+  const open = useMemo(() => new Set(openProfiles), [openProfiles]);
+  const choice = onboardingProfile(form.activity, open);
+  const copy = onboardingCopy(choice.profile);
+  const placeholders = samplePlaceholders(form.activity);
+  const reviewOptIn = reviewOffByDefault(form.activity);
+  const requestReviews = reviewOptIn ? reviewChoice === true : true;
+
+  // Les étapes du métier : sans le choix du mode de file hors walkin et
+  // event, et avec le nom d'équipe du métier (« Guichets », « Accueil »).
+  const steps = useMemo(
+    () => BASE_STEPS
+      .filter((s) => s.id !== 'queue' || copy.asksQueueMode)
+      .map((s) => (s.id === 'team' ? { ...s, label: copy.teamStep } : s)),
+    [copy.asksQueueMode, copy.teamStep],
+  );
 
   // Transition entre étapes : sortie (-16 px), puis entrée (+16 px → 0).
   const reduced = useReducedMotion();
@@ -91,7 +139,7 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
     titleRef.current?.focus();
   }, [step]);
 
-  const index = STEPS.findIndex((s) => s.id === step);
+  const index = steps.findIndex((s) => s.id === step);
 
   const goTo = (target: Step, dir: 1 | -1) => {
     if (leaving) return;
@@ -106,20 +154,30 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
     }, LEAVE_MS);
   };
 
+  const chooseActivity = (activity: ActivityType) => {
+    setForm((current) => ({ ...current, activity }));
+    // Un autre métier, un autre défaut pour l'avis : le choix précédent ne suit pas.
+    setReviewChoice(null);
+  };
+
   const submit = () => {
     setError(null);
     startTransition(async () => {
       const response = await completeOnboarding({
         organizationName: form.organizationName.trim(),
-        activity: form.activity as never,
+        activity: form.activity,
         locationName: form.locationName.trim() || form.organizationName.trim(),
         addressLine1: form.addressLine1.trim() || null,
         postalCode: form.postalCode.trim() || null,
         city: form.city.trim() || null,
         phone: form.phone.trim() || null,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris',
-        queueMode: form.queueMode,
-        googleReviewUrl: form.googleReviewUrl.trim() || null,
+        // Hors passage au fauteuil, la file est commune : on ne l'a pas demandé.
+        queueMode: copy.asksQueueMode ? form.queueMode : 'shared',
+        googleReviewUrl: requestReviews ? (form.googleReviewUrl.trim() || null) : null,
+        // Envoyé seulement là où l'avis est coupé par défaut : la requête
+        // d'un barbier reste exactement celle d'avant.
+        ...(reviewOptIn ? { requestReviews } : {}),
         staffNames: staffNames.map((n) => n.trim()).filter(Boolean),
         openingHours: hours.map((h) => ({
           weekday: h.weekday,
@@ -139,12 +197,12 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
     return <ReadyScreen result={result} />;
   }
 
-  const greeting = `${userName ? `Bonjour ${userName.split(' ')[0]}.` : 'Bienvenue.'} Créons votre file.`;
+  const greeting = `${userName ? `Bonjour ${userName.split(' ')[0]}.` : 'Bienvenue.'} Créons ${copy.target}.`;
   const kicker = (
     <p className="t-kicker">
       <span className="t-kicker__num" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
       <span className="sr-only">{`Étape ${index + 1}`}</span>
-      {`sur ${String(STEPS.length).padStart(2, '0')} · ${STEPS[index]?.label ?? ''}`}
+      {`sur ${String(steps.length).padStart(2, '0')} · ${steps[index]?.label ?? ''}`}
     </p>
   );
   const title = (text: React.ReactNode) => (
@@ -156,13 +214,13 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
       <aside className={styles.aside}>
         <div className={styles.asideInner}>
           <Wordmark />
-          <StepRail steps={STEPS} index={index} greeting={greeting} />
+          <StepRail steps={steps} index={index} greeting={greeting} target={copy.remainingTarget} />
           <RailNote />
         </div>
       </aside>
 
       <header className={styles.mobileHead}>
-        <StepBand steps={STEPS} index={index} />
+        <StepBand steps={steps} index={index} target={copy.remainingTarget} />
       </header>
 
       <div className={styles.main}>
@@ -179,28 +237,31 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
               <div className={styles.stepHead}>
                 {kicker}
                 {title('Votre commerce')}
-                <p className={styles.lead}>C&apos;est le nom que verront vos clients.</p>
+                <p className={styles.lead}>C’est le nom que verront vos clients.</p>
               </div>
               <div className="field-rail">
                 <div className="field">
                   <label htmlFor="org">Nom du commerce</label>
                   <input id="org" className={`input ${styles.input}`} autoFocus value={form.organizationName}
-                    placeholder="Barber House" autoComplete="organization"
+                    placeholder={placeholders.organization} autoComplete="organization"
                     onChange={(e) => setForm({ ...form, organizationName: e.target.value })} />
                 </div>
-                <div className="field">
-                  <label htmlFor="activity">Activité</label>
-                  <select id="activity" className={`select ${styles.input}`} value={form.activity}
-                    onChange={(e) => setForm({ ...form, activity: e.target.value })}>
-                    {ACTIVITY_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
+                <div className={`field ${styles.metierField}`}>
+                  <MetierPicker value={form.activity} onChange={chooseActivity} />
+                  {hasProfilePreview(choice.profile) && (
+                    <ProfilePreview
+                      profile={choice.profile}
+                      activity={form.activity}
+                      placeName={
+                        form.locationName.trim() || form.organizationName.trim() || placeholders.organization
+                      }
+                    />
+                  )}
                 </div>
                 <div className="field">
-                  <label htmlFor="place">Nom de l&apos;établissement</label>
+                  <label htmlFor="place">Nom de l’établissement</label>
                   <input id="place" className={`input ${styles.input}`} value={form.locationName}
-                    placeholder="Barber House — Paris 11" aria-describedby="place-aide"
+                    placeholder={placeholders.location} aria-describedby="place-aide"
                     onChange={(e) => setForm({ ...form, locationName: e.target.value })} />
                   <p className="hint" id="place-aide">Utile si vous avez plusieurs adresses. Sinon, laissez vide.</p>
                 </div>
@@ -241,11 +302,8 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
             <div className={styles.stepBody}>
               <div className={styles.stepHead}>
                 {kicker}
-                {title('Qui travaille ici ?')}
-                <p className={styles.lead}>
-                  Un prénom suffit. Vous pourrez en ajouter à tout moment — et ils
-                  n&apos;ont pas besoin de compte pour apparaître dans la file.
-                </p>
+                {title(copy.teamTitle)}
+                <p className={styles.lead}>{copy.teamLead}</p>
               </div>
               <div className="field-rail">
                 {staffNames.map((name, i) => (
@@ -253,8 +311,8 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
                     <div className={styles.staffRow}>
                       <input
                         className={`input ${styles.input}`}
-                        aria-label={`Professionnel ${i + 1}`}
-                        placeholder={i === 0 ? 'Vous' : `Professionnel ${i + 1}`}
+                        aria-label={copy.teamFieldLabel(i)}
+                        placeholder={copy.teamPlaceholder(i)}
                         value={name}
                         onChange={(e) => {
                           const next = [...staffNames];
@@ -264,7 +322,7 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
                       />
                       {staffNames.length > 1 && (
                         <button type="button" className="btn btn--quiet btn--sm"
-                          aria-label={`Retirer le professionnel ${i + 1}`}
+                          aria-label={copy.teamRemoveLabel(i)}
                           onClick={() => setStaffNames(staffNames.filter((_, j) => j !== i))}>
                           Retirer
                         </button>
@@ -275,7 +333,7 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
               </div>
               <button type="button" className={`btn btn--ghost btn--sm ${styles.addStaff}`}
                 onClick={() => setStaffNames([...staffNames, ''])}>
-                <span aria-hidden="true" className={styles.plus}>+</span> Ajouter un professionnel
+                <span aria-hidden="true" className={styles.plus}>+</span> {copy.teamAdd}
               </button>
             </div>
           )}
@@ -284,9 +342,9 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
             <div className={styles.stepBody}>
               <div className={styles.stepHead}>
                 {kicker}
-                {title('Comment travaillez-vous ?')}
+                {title('Comment travaillez-vous ?')}
                 <p className={styles.lead}>
-                  C&apos;est le seul choix qui change vraiment le fonctionnement. Il reste
+                  C’est le seul choix qui change vraiment le fonctionnement. Il reste
                   modifiable ensuite.
                 </p>
               </div>
@@ -312,33 +370,60 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
               <div className={styles.stepHead}>
                 {kicker}
                 {title('Votre lien d’avis Google')}
-                <p className={styles.lead}>
-                  À la fin de chaque passage, le client reçoit un remerciement avec un bouton
-                  qui ouvre directement ce lien. C&apos;est proposé à tout le monde, sans
-                  filtrage.
-                </p>
+                {reviewOptIn ? (
+                  <p className={styles.lead}>
+                    {form.activity === 'health'
+                      ? 'Dans la santé, solliciter des avis pose des questions de déontologie : Rangvia n’en demande donc aucun par défaut. La fin de visite reste discrète, sans bouton d’avis.'
+                      : 'Dans un service administratif, une demande d’avis n’a pas toujours sa place : Rangvia n’en demande donc aucune par défaut.'}
+                    {' '}Vous pouvez l’activer ici, ou plus tard dans Réglages.
+                  </p>
+                ) : (
+                  <p className={styles.lead}>
+                    À la fin de chaque passage, le client reçoit un remerciement avec un bouton
+                    qui ouvre directement ce lien. C’est proposé à tout le monde, sans
+                    filtrage.
+                  </p>
+                )}
               </div>
-              <div className="field-rail">
-                <div className="field">
-                  <label htmlFor="review">Lien « Rédiger un avis »</label>
-                  <input id="review" className={`input ${styles.input}`} type="url" inputMode="url"
-                    placeholder="https://g.page/r/..."
-                    value={form.googleReviewUrl}
-                    onChange={(e) => setForm({ ...form, googleReviewUrl: e.target.value })} />
-                </div>
-              </div>
-              <details className={styles.help}>
-                <summary>Où trouver ce lien&nbsp;?</summary>
-                <ol>
-                  <li>Ouvrez votre fiche d&apos;établissement Google (Google Business Profile).</li>
-                  <li>Cliquez sur <strong>Demander des avis</strong> — Google affiche un lien court.</li>
-                  <li>Copiez-le et collez-le ici.</li>
-                </ol>
-                <p>
-                  Vous pouvez aussi passer cette étape et le renseigner plus tard dans
-                  Réglages.
-                </p>
-              </details>
+              {reviewOptIn && (
+                <label className={styles.reviewSwitch}>
+                  <input type="checkbox" className={styles.switch} checked={requestReviews}
+                    onChange={(e) => setReviewChoice(e.target.checked)} />
+                  <span className={styles.reviewSwitchText}>
+                    <span className="t-section">Proposer un avis Google en fin de visite</span>
+                    <span className={styles.modeDesc}>
+                      {requestReviews
+                        ? 'Le remerciement portera un bouton vers votre fiche Google.'
+                        : 'Désactivé : aucun avis ne sera demandé.'}
+                    </span>
+                  </span>
+                </label>
+              )}
+              {requestReviews && (
+                <>
+                  <div className="field-rail">
+                    <div className="field">
+                      <label htmlFor="review">Lien « Rédiger un avis »</label>
+                      <input id="review" className={`input ${styles.input}`} type="url" inputMode="url"
+                        placeholder="https://g.page/r/..."
+                        value={form.googleReviewUrl}
+                        onChange={(e) => setForm({ ...form, googleReviewUrl: e.target.value })} />
+                    </div>
+                  </div>
+                  <details className={styles.help}>
+                    <summary>Où trouver ce lien&nbsp;?</summary>
+                    <ol>
+                      <li>Ouvrez votre fiche d’établissement Google (Google Business Profile).</li>
+                      <li>Cliquez sur <strong>Demander des avis</strong> — Google affiche un lien court.</li>
+                      <li>Copiez-le et collez-le ici.</li>
+                    </ol>
+                    <p>
+                      Vous pouvez aussi passer cette étape et le renseigner plus tard dans
+                      Réglages.
+                    </p>
+                  </details>
+                </>
+              )}
             </div>
           )}
 
@@ -348,7 +433,7 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
                 {kicker}
                 {title('Vos horaires')}
                 <p className={styles.lead}>
-                  Indicatif&nbsp;: la file s&apos;ouvre et se ferme d&apos;un geste depuis le
+                  Indicatif&nbsp;: la file s’ouvre et se ferme d’un geste depuis le
                   tableau de bord.
                 </p>
               </div>
@@ -407,23 +492,23 @@ export function OnboardingFlow({ userName }: { userName: string | null }) {
           <div className={styles.nav}>
             {index > 0 && (
               <button type="button" className={`btn btn--quiet btn--lg ${styles.back}`}
-                onClick={() => goTo(STEPS[index - 1]!.id, -1)}>
+                onClick={() => goTo(steps[index - 1]!.id, -1)}>
                 Retour
               </button>
             )}
-            {index < STEPS.length - 1 ? (
+            {index < steps.length - 1 ? (
               <button
                 type="button"
                 className="btn btn--signal btn--lg grow"
                 disabled={step === 'place' && form.organizationName.trim().length < 2}
-                onClick={() => goTo(STEPS[index + 1]!.id, 1)}
+                onClick={() => goTo(steps[index + 1]!.id, 1)}
               >
                 Continuer
               </button>
             ) : (
               <button type="button" className="btn btn--signal btn--lg grow"
                 disabled={pending} onClick={submit}>
-                {pending ? 'Création…' : 'Créer ma file'}
+                {pending ? 'Création…' : copy.createCta}
               </button>
             )}
           </div>

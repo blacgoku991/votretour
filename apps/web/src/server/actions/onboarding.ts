@@ -7,6 +7,10 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { enforceRateLimit, LIMITS } from '@/server/ratelimit';
 import { audit } from '@/server/audit';
 import { env } from '@/lib/env';
+import { ACTIVITY_PROFILE } from '@/lib/profiles';
+import { profileOptionsSchema } from '@/lib/profiles/options';
+import type { ActivityType, QueueProfile } from '@/lib/profiles/types';
+import { onboardingProfile, reviewOffByDefault } from '@/app/bienvenue/metiers';
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string; code: string };
 
@@ -16,13 +20,13 @@ function fail(error: unknown): Result<never> {
   return { ok: false, error: appError.message, code: appError.code };
 }
 
+const ACTIVITIES = Object.keys(ACTIVITY_PROFILE) as [ActivityType, ...ActivityType[]];
+
 const schema = z.object({
   organizationName: z.string().trim().min(2, "Indiquez le nom de votre commerce.").max(120),
-  activity: z.enum([
-    'barber', 'hair_salon', 'nail_bar', 'beauty', 'phone_repair', 'garage',
-    'auto_center', 'shop', 'aftersales', 'restaurant', 'counter',
-    'admin_service', 'health', 'other',
-  ]),
+  // Tous les métiers de la grille, `event` compris (il était proposé par
+  // l'ancien menu mais refusé ici).
+  activity: z.enum(ACTIVITIES),
   locationName: z.string().trim().min(1).max(120),
   addressLine1: z.string().trim().max(160).nullish(),
   postalCode: z.string().trim().max(12).nullish(),
@@ -35,6 +39,12 @@ const schema = z.object({
     .startsWith('https://', 'Le lien doit commencer par https://')
     .max(500).nullish()
     .or(z.literal('').transform(() => null)),
+  /**
+   * Demander un avis Google en fin de visite ? Absent : oui, sauf pour les
+   * métiers où la demande est coupée par défaut (santé, service
+   * administratif). Le parcours d'un barbier n'envoie jamais ce champ.
+   */
+  requestReviews: z.boolean().optional(),
   staffNames: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
   openingHours: z
     .array(z.object({
@@ -54,6 +64,10 @@ export interface OnboardingResult {
   queueId: string;
   plateCode: string;
   plateUrl: string;
+  /** Activité choisie. */
+  activity: ActivityType;
+  /** Profil de la file créée : celui du métier s'il est ouvert, sinon walkin. */
+  profile: QueueProfile;
 }
 
 /**
@@ -61,6 +75,13 @@ export interface OnboardingResult {
  * organisation → propriétaire → établissement → file → plaque NFC/QR →
  * horaires → période d'essai. À la fin, le professionnel a une URL
  * qu'il peut coller sur un tag NFC et un QR à imprimer.
+ *
+ * Profil métier : l'activité choisie donne le profil (`ACTIVITY_PROFILE`).
+ * S'il est ouvert à tout nouveau compte (`OPEN_PROFILES`), la file naît
+ * directement dans ce profil (`create_location`, 0037). Sinon, le métier
+ * s'inscrit en walkin, exactement comme avant les profils, et son
+ * activité réelle est inscrite ensuite (voir `onboardingProfile`). La
+ * décision est prise ICI, jamais d'après le navigateur.
  */
 export async function completeOnboarding(
   input: z.input<typeof schema>,
@@ -74,11 +95,13 @@ export async function completeOnboarding(
     );
 
     const db = supabaseAdmin();
+    const choice = onboardingProfile(parsed.activity);
+    const requestReviews = parsed.requestReviews ?? !reviewOffByDefault(parsed.activity);
 
     const { data: provisioned, error } = await db.rpc('provision_organization', {
       p_user_id: user.id,
       p_org_name: parsed.organizationName,
-      p_activity: parsed.activity,
+      p_activity: choice.provisionActivity,
       p_location_name: parsed.locationName,
       p_queue_mode: parsed.queueMode,
       p_plan_code: 'pro',
@@ -88,12 +111,38 @@ export async function completeOnboarding(
     const result = provisioned as {
       organization: { id: string; slug: string; name: string };
       location: { id: string; name: string };
-      queue: { id: string };
+      queue: { id: string; profile?: QueueProfile };
       plate: { code: string };
     };
 
     const organizationId = result.organization.id;
     const locationId = result.location.id;
+    // Le profil que la base a réellement posé fait foi (une base d'avant
+    // 0037 n'en renvoie pas : c'est alors le walkin d'aujourd'hui).
+    const profile: QueueProfile = result.queue.profile ?? 'walkin';
+
+    // Profil pas encore ouvert : la file est née en walkin, sous l'activité
+    // neutre `other`. On inscrit maintenant la vraie activité du métier.
+    // L'organisation existe déjà : un échec ici ne doit pas faire recommencer
+    // l'inscription (elle serait créée deux fois). On le journalise ; la
+    // file fonctionne de toute façon, en walkin.
+    if (choice.restoreActivity) {
+      const { error: activityError } = await db.from('organizations')
+        .update({ activity: parsed.activity }).eq('id', organizationId);
+      if (activityError) console.error('[onboarding] activité non inscrite', activityError.message);
+    }
+
+    // Avis demandé explicitement dans un métier où il est coupé par défaut
+    // (guichet de santé ou d'administration déjà ouvert) : le choix du
+    // professionnel l'emporte sur le défaut du profil.
+    if (requestReviews && profile === 'desk' && reviewOffByDefault(parsed.activity)) {
+      const { data: queueRow } = await db.from('queues')
+        .select('profile_options').eq('id', result.queue.id).maybeSingle();
+      const stored = (queueRow?.profile_options ?? {}) as Record<string, unknown>;
+      const { reviewDelayMinutes: _never, ...rest } = stored;
+      const options = profileOptionsSchema('desk').parse({ ...rest, review: true });
+      await db.from('queues').update({ profile_options: options }).eq('id', result.queue.id);
+    }
 
     // Coordonnées et lien d'avis.
     await db.from('locations').update({
@@ -102,7 +151,7 @@ export async function completeOnboarding(
       city: parsed.city ?? null,
       phone: parsed.phone ?? null,
       timezone: parsed.timezone,
-      google_review_url: parsed.googleReviewUrl ?? null,
+      google_review_url: requestReviews ? (parsed.googleReviewUrl ?? null) : null,
     }).eq('id', locationId);
 
     // Équipe.
@@ -115,6 +164,10 @@ export async function completeOnboarding(
           display_name: name,
           accent: accents[index % accents.length],
           sort_order: index,
+          // Au guichet, une fiche = un guichet : son nom est ce que lit la
+          // personne appelée (« Guichet 3 »). Ailleurs, la colonne n'est
+          // pas envoyée : l'insertion reste celle d'avant les profils.
+          ...(profile === 'desk' ? { desk_label: name } : {}),
         })),
       );
     }
@@ -142,7 +195,7 @@ export async function completeOnboarding(
     await audit({
       organizationId, actorUserId: user.id, action: 'onboarding.completed',
       targetType: 'organization', targetId: organizationId,
-      metadata: { activity: parsed.activity, queueMode: parsed.queueMode },
+      metadata: { activity: parsed.activity, queueMode: parsed.queueMode, profile },
     });
 
     return {
@@ -154,6 +207,8 @@ export async function completeOnboarding(
         queueId: result.queue.id,
         plateCode: result.plate.code,
         plateUrl: `${env.siteUrl}/e/${result.plate.code}`,
+        activity: parsed.activity,
+        profile,
       },
     };
   } catch (error) {
