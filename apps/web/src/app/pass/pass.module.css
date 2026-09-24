@@ -344,3 +344,32 @@
   line-height: 1.5;
   color: var(--text-muted);
 }
+
+/* ---------------------------------------------------------------------
+   Wallet (lot W4) : une découpe de plus, sous le QR tournant. Le
+   composant hérite des jetons sombres du billet (.ticket).
+   --------------------------------------------------------------------- */
+.wallet { margin-top: 2px; }
+
+/* Encart ?wallet=indisponible : au-dessus du billet, sans le cacher. */
+.walletNotice {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--r-card);
+  border: 1px solid color-mix(in oklab, var(--copper-500) 55%, transparent);
+  background: color-mix(in oklab, var(--copper-500) 10%, var(--floor));
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #c9ced6;
+}
+.walletNoticeTitle {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--copper-500);
+}

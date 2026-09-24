@@ -9,6 +9,7 @@ import { Reveal } from '@/components/motion/Reveal';
 import {
   FlapDemo, FloorDemo, InViewDemo, PlaqueDemo, RangDemo, SegDemo, SeuilDemo, TimeDemo,
 } from './Demos';
+import { WalletPreview } from './WalletPreview';
 import styles from './design.module.css';
 
 /**
@@ -36,6 +37,7 @@ const SECTIONS = [
   ['seuil', 'Le Seuil'],
   ['etats', 'États'],
   ['revelation', 'Révélation'],
+  ['wallet', 'Passes Wallet'],
 ] as const;
 
 const SWATCHES = [
@@ -496,6 +498,11 @@ export default async function DesignPage() {
             ))}
           </ol>
           <InViewDemo />
+        </Sec>
+
+        {/* ------------------------------------------ 13 Passes Wallet */}
+        <Sec n={13} id="wallet" title="Le billet dans la poche" note="Aperçu. Billets d’événement seulement : le Wallet ne sert qu’aux drops, pour passer le contrôle. Mêmes mots aux mêmes moments sur Apple et Google. Aucun bouton d’ajout actif ici.">
+          <WalletPreview />
         </Sec>
       </main>
     </div>

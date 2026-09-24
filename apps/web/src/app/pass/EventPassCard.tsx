@@ -3,6 +3,8 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useState } from 'react';
 import { FlapText } from '@/components/FlapNumber';
+import { WalletOffer } from '@/components/wallet/WalletOffer';
+import type { WalletOffer as WalletOfferData } from '@/components/wallet/offer';
 import styles from './pass.module.css';
 
 /**
@@ -22,6 +24,11 @@ import styles from './pass.module.css';
  *
  * Tout ce qui dépend de l'heure (compte à rebours, heures affichées,
  * secondes) n'est calculé qu'après montage : aucun écart d'hydratation.
+ *
+ * Wallet (lot W4) : sous le QR tournant, une découpe de plus propose
+ * d'emporter le billet dans Apple Wallet ou Google Wallet, seulement si
+ * l'offre existe (Wallet configuré, badge déposé, bon appareil) et tant
+ * que l'accès est ouvert. Sinon, rien.
  */
 
 const hm = (value: string | number) =>
@@ -31,6 +38,7 @@ export function EventPassCard({
   status, eventName, eventStatus, locationName, city,
   logoUrl, coverUrl, accentHex, heroTitle, rulesText, qrLabel,
   clientName, validUntil, graceUntil, redeemedAt, wave = null,
+  walletOffer = null, appleSaved = false, walletNotice = null,
 }: {
   passId: string;
   status: string;
@@ -50,11 +58,29 @@ export function EventPassCard({
   redeemedAt: string | null;
   /** Numéro de vague (1, 2…), s'il est connu. */
   wave?: number | null;
+  /** Offre Wallet calculée par la page ; null = rien à montrer. */
+  walletOffer?: WalletOfferData | null;
+  appleSaved?: boolean;
+  /** Encart ?wallet=indisponible, déjà rédigé. */
+  walletNotice?: string | null;
 }) {
   const [now, setNow] = useState<number | null>(null);
   const [liveStatus, setLiveStatus] = useState(status);
   const [liveEventStatus, setLiveEventStatus] = useState(eventStatus);
   const [liveRedeemedAt, setLiveRedeemedAt] = useState(redeemedAt);
+
+  // L'encart reste à l'écran, l'adresse est nettoyée : un rechargement ne le rejoue pas.
+  useEffect(() => {
+    if (!walletNotice) return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('wallet');
+      url.searchParams.delete('wp');
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    } catch {
+      /* adresse illisible : on la laisse */
+    }
+  }, [walletNotice]);
 
   useEffect(() => {
     setNow(Date.now());
@@ -112,6 +138,12 @@ export function EventPassCard({
   return (
     <main className={styles.screen} style={style}>
       <div className={styles.stage}>
+        {walletNotice && (
+          <p className={styles.walletNotice} role="status">
+            <span className={styles.walletNoticeTitle}>Wallet indisponible</span>
+            {walletNotice}
+          </p>
+        )}
         <div className={styles.tilt}>
           <article className={styles.ticket} data-tone={tone} aria-label={`Laisser-passer — ${eventName}`}>
             {/* ------------------------------------------------ Talon */}
@@ -205,6 +237,9 @@ export function EventPassCard({
                       : <>Valable jusqu’à <strong>{hm(validUntil)}</strong><br />puis grâce jusqu’à {hm(graceUntil)}</>}
                   </p>
                 </div>
+
+                {/* Sous le QR tournant : rien sans offre, jamais de bouton grisé. */}
+                <WalletOffer offer={walletOffer} context="pass" appleSaved={appleSaved} className={styles.wallet} />
               </section>
             ) : runtimeStatus === 'redeemed' ? (
               <section className={styles.final}>

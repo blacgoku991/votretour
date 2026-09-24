@@ -103,6 +103,14 @@ export const WALLET_STATUS = {
   closedTicket: 'Ticket clos',
   eventWaiting: 'En attente de votre vague',
   eventExpired: 'Accès expiré',
+  /**
+   * Fin d'un drop, version COURTE pour le recto (champ `etat` Apple,
+   * module `statut` Google). La phrase complète de notificationCopy
+   * (76 caractères) serait tronquée par Wallet ; elle reste celle des
+   * alertes et du dos du pass. Voir eventOverCopy().shortStatusText.
+   */
+  eventSoldOut: 'Stock épuisé',
+  eventEnded: 'Événement terminé',
 } as const;
 
 /** Statut d'un ticket encore en attente (loin du seuil). */
@@ -121,15 +129,22 @@ export function eventUsedStatusText(redeemedAt: string | null, timeZone: string)
   return redeemedAt ? `Billet utilisé à ${walletTime(redeemedAt, timeZone)}` : 'Billet utilisé';
 }
 
-/** Fin d'un drop : mêmes phrases que les notifications existantes. */
+/**
+ * Fin d'un drop : mêmes phrases que les notifications existantes.
+ *
+ * `statusText` est la phrase entière de notificationCopy (celle des
+ * alertes) ; `shortStatusText` tient sur le recto d'un pass sans être
+ * tronqué (« Stock épuisé », « Événement terminé »).
+ */
 export function eventOverCopy(
   reason: 'sold_out' | 'ended',
   locationName: string,
-): { headline: string; statusText: string } {
+): { headline: string; statusText: string; shortStatusText: string } {
   const copy = notificationCopy(reason === 'sold_out' ? 'event_sold_out' : 'event_ended', { locationName });
   return {
     headline: reason === 'sold_out' ? WALLET_HEADLINE.eventSoldOut : WALLET_HEADLINE.eventEnded,
     statusText: copy.body,
+    shortStatusText: reason === 'sold_out' ? WALLET_STATUS.eventSoldOut : WALLET_STATUS.eventEnded,
   };
 }
 
@@ -312,6 +327,16 @@ export function eventQrAltText(ticketNumber: string | null, wave: number | null)
    Interface de la page client (lot W4)
    ==================================================================== */
 
+/*
+ * Décision du propriétaire : le Wallet ne sert QU'AUX ÉVÉNEMENTS ET AUX
+ * DROPS, pour passer le contrôle à l'entrée. Les textes ci-dessous ne
+ * s'affichent donc que sur un billet d'événement : l'accueil de
+ * l'événement après l'inscription (EventWelcome) et le laisser-passer
+ * (/pass). Jamais sur une file classique ni sur une file à métier.
+ * Les clés `card`, `appleSaved`, `googleAfter` et `safariHint`, écrites
+ * pour un ticket de file, restent pour mémoire mais ne sont plus rendues.
+ */
+
 export const WALLET_OFFER_COPY = {
   card: 'Votre place sur l’écran verrouillé : mise à jour en direct, même page fermée.',
   safariHint: 'Ouvrez cette page dans Safari pour ajouter votre ticket à Apple Wallet.',
@@ -325,6 +350,23 @@ export const WALLET_OFFER_COPY = {
   unavailable: 'Wallet ne répond pas pour l’instant. Votre ticket reste suivi ici.',
   appleBadgeAlt: 'Ajouter à Apple Wallet',
   googleBadgeAlt: 'Ajouter à Google Wallet',
+
+  /* ---- Billet d'événement (EventWelcome, après l'inscription) ---- */
+  eventTitle: 'Votre billet dans Wallet',
+  eventCard: 'Il se met à jour tout seul et affiche le QR d’entrée dès l’ouverture de votre vague.',
+  /** Apple : seulement après l'inscription RÉELLE d'un appareil (service web), jamais au clic. */
+  eventAppleSavedTitle: 'Dans votre Apple Wallet',
+  eventAppleSaved: 'Une alerte s’affichera sur l’écran verrouillé dès l’ouverture de votre vague, avec le QR d’entrée.',
+  /** Google : sans rappel (lot W8), on ne sait pas si le billet a été enregistré. Texte honnête, sans coche. */
+  eventGoogleAfter: 'Une fois ajouté, votre billet se met à jour tout seul dans Google Wallet.',
+  eventSafariHint: 'Ouvrez cette page dans Safari pour ajouter votre billet à Apple Wallet.',
+
+  /* ---- Laisser-passer (/pass, sous le QR tournant) ---- */
+  passTitle: 'Ce laisser-passer dans Wallet',
+  passCard: 'Le même accès, avec son QR d’entrée, sans rouvrir cette page.',
+  passAppleSaved: 'Il est dans votre Apple Wallet : au contrôle, présentez l’un ou l’autre.',
+  passGoogleAfter: 'Une fois ajouté, il se met à jour tout seul dans Google Wallet.',
+  passSafariHint: 'Ouvrez cette page dans Safari pour ajouter ce laisser-passer à Apple Wallet.',
 } as const;
 
 /** Encart `?wallet=indisponible&wp=<fournisseur>` de la page d'origine. */
@@ -332,4 +374,20 @@ export function walletUnavailableText(provider: WalletProviderId | string | null
   if (provider === 'apple') return WALLET_OFFER_COPY.unavailableApple;
   if (provider === 'google') return WALLET_OFFER_COPY.unavailableGoogle;
   return WALLET_OFFER_COPY.unavailable;
+}
+
+/**
+ * Même encart, pour un billet d'événement : on dit ce qui reste valable
+ * (le billet suivi sur la page, ou le laisser-passer et son QR tournant),
+ * pas seulement ce qui a échoué.
+ */
+export function walletUnavailableEventText(
+  provider: WalletProviderId | string | null | undefined,
+  where: 'event' | 'pass',
+): string {
+  const who = provider === 'apple' ? 'Apple Wallet' : provider === 'google' ? 'Google Wallet' : 'Wallet';
+  const rest = where === 'pass'
+    ? 'Votre laisser-passer reste valable ici.'
+    : 'Votre billet reste suivi ici.';
+  return `${who} ne répond pas pour l’instant. ${rest}`;
 }

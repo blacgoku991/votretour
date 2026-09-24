@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { resolveEntryPoint, findActiveTicket } from '@/server/queue';
 import { supabaseAdmin } from '@/lib/supabase/admin';
@@ -11,6 +12,9 @@ import { UnassignedPlate } from './UnassignedPlate';
 import { ProfileExperience, type ProfileEntryPoint, type ProfileTicketState } from './profiles/ProfileExperience';
 import { findUnassignedStockPlate } from '@/server/plate-stock';
 import { getSessionUser } from '@/server/auth';
+import { appClipPublished } from '@/lib/seo/site';
+import { eventIdOfTicket, walletUnavailableNotice } from '@/components/wallet/offer';
+import { eventWalletForTicket } from '@/components/wallet/server';
 import styles from './client.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -82,7 +86,18 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
     qrLabel: string | null;
   } | null = null;
 
-  const requestedEventId = typeof query.event === 'string' ? query.event : null;
+  // Retour d'un ajout au Wallet qui a échoué (?wallet=indisponible) : la
+  // route de distribution renvoie vers /e/<slug>, sans l'événement. On le
+  // retrouve dans le billet repris sur cet appareil, pour que l'encart
+  // s'affiche là où le badge avait été touché, dans l'accueil de
+  // l'événement. Sans ce paramètre, rien ne change.
+  let resumed: { session: Awaited<ReturnType<typeof getClientSession>>; ticket: Awaited<ReturnType<typeof findActiveTicket>> } | null = null;
+  let requestedEventId = typeof query.event === 'string' ? query.event : null;
+  if (!requestedEventId && query.wallet === 'indisponible' && entryPoint.status === 'ok') {
+    const session = await getClientSession(entryPoint.organization.id);
+    resumed = { session, ticket: session ? await findActiveTicket(session.id) : null };
+    requestedEventId = eventIdOfTicket(resumed.ticket);
+  }
   if (
     requestedEventId
     && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedEventId)
@@ -162,8 +177,8 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
   // Reprise automatique : si cet appareil a déjà un ticket, on l'affiche
   // sans rien demander. Le client qui revient sur la page retrouve sa
   // place exactement là où il l'avait laissée.
-  const session = await getClientSession(effectiveEntryPoint.organization.id);
-  const initialTicket = session ? await findActiveTicket(session.id) : null;
+  const session = resumed ? resumed.session : await getClientSession(effectiveEntryPoint.organization.id);
+  const initialTicket = resumed ? resumed.ticket : session ? await findActiveTicket(session.id) : null;
 
   const staffGate = await readStaffGate(effectiveEntryPoint.queue);
 
@@ -207,6 +222,20 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
     );
   }
 
+  // Wallet (lot W4) : billets d'événement SEULEMENT. Hors événement, aucune
+  // lecture, aucune offre, aucun encart.
+  const eventWallet = eventId
+    ? await eventWalletForTicket({
+        ticket: initialTicket,
+        organizationId: effectiveEntryPoint.organization.id,
+        userAgent: (await headers()).get('user-agent'),
+      })
+    : { offer: null, wallet: null };
+  const clientTicket = initialTicket && eventWallet.wallet
+    ? { ...initialTicket, wallet: eventWallet.wallet }
+    : initialTicket;
+  const walletNotice = walletUnavailableNotice(query, { eventContext: Boolean(eventId), where: 'event' });
+
   return (
     <main className={styles.screen} data-theme="dark" data-accent={entryPoint.settings.brandAccent}>
       {/* À partir de 600 px, les côtés deviennent le sol (marquage discret). */}
@@ -214,13 +243,16 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
       <div className={`client-shell ${styles.inner}`}>
         <ClientExperience
           entryPoint={effectiveEntryPoint}
-          initialTicket={initialTicket}
+          initialTicket={clientTicket}
           eventId={eventId}
           eventTheme={eventTheme}
           source={source}
           staffGate={staffGate}
           vapidPublicKey={vapidPublicKey()}
           activityLabel={ACTIVITY_LABEL[entryPoint.organization.activity] ?? null}
+          walletOffer={eventWallet.offer}
+          walletNotice={walletNotice}
+          appClip={appClipPublished()}
         />
       </div>
     </main>

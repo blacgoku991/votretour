@@ -1,0 +1,131 @@
+/* =====================================================================
+   OFFRE WALLET — une découpe de plus sur le billet
+
+   Posée dans une surface sombre du billet (accueil de l'événement,
+   coupon du laisser-passer) : elle hérite de ses jetons (--text,
+   --text-muted, --line) et de son accent (--event-accent).
+
+   Une ligne pointillée, comme la découpe du laisser-passer, puis le
+   billet en miniature et le badge officiel. Seuls transform et opacity
+   s'animent, une fois, à l'entrée ; rien en mouvement réduit.
+   ===================================================================== */
+
+.offer,
+.note {
+  --wallet-accent: var(--event-accent, var(--accent));
+  --wallet-tear: color-mix(in oklab, var(--text, #FAF9F6) 16%, transparent);
+  width: 100%;
+  margin: 0;
+  padding-top: 16px;
+  border-top: 2px dashed var(--wallet-tear);
+  text-align: left;
+}
+
+.offer {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  column-gap: 14px;
+  row-gap: 14px;
+  align-items: start;
+}
+
+/* ----- Le billet en miniature ----- */
+.glyph {
+  display: block;
+  width: 40px;
+  height: 54px;
+  transform: rotate(-5deg);
+  transform-origin: 50% 90%;
+}
+.glyph svg { display: block; overflow: visible; }
+.glyphFace { fill: var(--wallet-accent); }
+.glyphEdge { fill: color-mix(in oklab, var(--wallet-accent) 52%, #05070A); }
+.glyphTear {
+  stroke: color-mix(in oklab, #05070A 30%, transparent);
+  stroke-width: 1.4;
+  stroke-dasharray: 2 2.4;
+  stroke-linecap: round;
+}
+.glyphSlat { fill: color-mix(in oklab, #FAF9F6 88%, var(--wallet-accent)); }
+.glyphPlate { fill: #FAF9F6; }
+.glyphModule { fill: #0B0E13; }
+.glyphCheck {
+  stroke: var(--jade-500);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .glyph { animation: wallet-slide var(--dur-4) var(--ease-slat) both; }
+}
+/* Le billet glisse dans la poche : une seule fois, sans rebond. */
+@keyframes wallet-slide {
+  from { transform: translateY(12px) rotate(-14deg); opacity: 0; }
+  to   { transform: rotate(-5deg); opacity: 1; }
+}
+
+/* ----- Les mots ----- */
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 2px;
+}
+.title {
+  margin: 0;
+  font-variation-settings: 'wdth' 104, 'wght' 720;
+  font-size: 0.9375rem;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+  color: var(--text, #FAF9F6);
+}
+.offer[data-wallet='ajoute'] .title { color: var(--jade-500); }
+.body {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-muted, #9AA3AF);
+  text-wrap: pretty;
+}
+
+/* ----- Le badge officiel : tel quel, avec sa marge de protection ----- */
+.badge {
+  grid-column: 2;
+  justify-self: start;
+  display: block;
+  /* Marge de protection : rien ne touche le badge à moins de 8 px. */
+  margin: -2px 0 0;
+  padding: 0;
+  line-height: 0;
+  border-radius: 8px;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.badge img {
+  display: block;
+  height: 44px;
+  width: auto;
+  max-width: 100%;
+}
+.badge:active { transform: scale(0.97); }
+.badge:focus-visible {
+  outline: 2px solid var(--wallet-accent);
+  outline-offset: 4px;
+}
+
+/* ----- Phrase seule : QR Wallet refusé au contrôle, ou Safari ----- */
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-muted, #9AA3AF);
+}
+.noteIcon {
+  flex: none;
+  margin-top: 0;
+  color: var(--wallet-accent);
+}

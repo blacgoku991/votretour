@@ -9,6 +9,8 @@ import { detectPushSupport, subscribeToPush, currentPermission } from '@/lib/pus
 import { peopleAheadUnit } from '@/lib/copy';
 import { directionsUrl, initials } from '@/lib/format';
 import type { EntryPoint, PublicQueueState, TicketState } from '@/lib/types';
+import { WalletOffer } from '@/components/wallet/WalletOffer';
+import type { WalletOffer as WalletOfferData } from '@/components/wallet/offer';
 import { TurnCurtain } from './TurnCurtain';
 import styles from './client.module.css';
 
@@ -67,6 +69,19 @@ interface Props {
     rulesText: string | null;
     qrLabel: string | null;
   } | null;
+  /**
+   * Offre Wallet du billet d'événement repris sur cet appareil (lot W4).
+   * Toujours null hors événement ; mise à jour par /api/client/ticket,
+   * notamment juste après l'inscription.
+   */
+  walletOffer?: WalletOfferData | null;
+  /** Encart ?wallet=indisponible, déjà rédigé ; null hors événement. */
+  walletNotice?: string | null;
+  /**
+   * App Clip publié sur l'App Store (appClipPublished(), lu au rendu
+   * serveur) : sinon, l'écran ne le cite jamais.
+   */
+  appClip?: boolean;
 }
 
 function phaseFor(ticket: TicketState | null): Phase {
@@ -88,8 +103,12 @@ export function ClientExperience({
   activityLabel,
   eventId = null,
   eventTheme = null,
+  walletOffer: initialWalletOffer = null,
+  walletNotice = null,
+  appClip = false,
 }: Props) {
   const [ticket, setTicket] = useState<TicketState | null>(initialTicket);
+  const [walletOffer, setWalletOffer] = useState<WalletOfferData | null>(initialWalletOffer);
   const [waitingCount, setWaitingCount] = useState(entryPoint.queue?.waitingCount ?? 0);
   const [servingCount, setServingCount] = useState(0);
   const [name, setName] = useState('');
@@ -114,10 +133,15 @@ export function ClientExperience({
       if (entryId) params.set('entryId', entryId);
       const response = await fetch(`/api/client/ticket?${params}`, { cache: 'no-store' });
       if (!response.ok) return;
-      const payload = (await response.json()) as { ok: boolean; data: { ticket: TicketState | null } };
+      const payload = (await response.json()) as {
+        ok: boolean;
+        data: { ticket: TicketState | null; walletOffer?: WalletOfferData | null };
+      };
       if (payload.ok) {
         setTicket(payload.data.ticket);
         if (payload.data.ticket) setWaitingCount(payload.data.ticket.queue.waiting);
+        // Billet d'événement seulement (la route renvoie null sinon).
+        if ('walletOffer' in payload.data) setWalletOffer(payload.data.walletOffer ?? null);
       }
     } catch {
       /* hors ligne : on garde le dernier état connu à l'écran */
@@ -256,6 +280,22 @@ export function ClientExperience({
   );
   const queueStatus = ticket?.queue.status ?? entryPoint.queue?.status ?? 'closed';
 
+  // L'encart « Wallet ne répond pas » reste affiché, mais l'adresse est
+  // nettoyée : un rechargement ne le rejoue pas, et le lien de l'événement
+  // (?event=) est rétabli pour que l'accueil de l'événement reste là.
+  useEffect(() => {
+    if (!walletNotice) return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('wallet');
+      url.searchParams.delete('wp');
+      if (eventId && !url.searchParams.has('event')) url.searchParams.set('event', eventId);
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    } catch {
+      /* adresse illisible : on la laisse telle quelle */
+    }
+  }, [walletNotice, eventId]);
+
   const locationName = ticket?.location.name ?? entryPoint.location.name;
   const subtitle = [
     activityLabel,
@@ -277,8 +317,24 @@ export function ClientExperience({
         inQueue={phase === 'queued' || phase === 'turn'}
       />
 
+      {walletNotice && eventTheme && (
+        <div className={styles.notice} role="status" data-wallet="indisponible">
+          <span className={styles.noticeIcon}><WalletIcon /></span>
+          <div className={styles.noticeText}>
+            <p className={styles.noticeTitle}>Wallet indisponible</p>
+            <p className={styles.noticeBody}>{walletNotice}</p>
+          </div>
+        </div>
+      )}
+
       {eventTheme && (phase === 'join' || phase === 'queued') && (
-        <EventWelcome theme={eventTheme} />
+        <EventWelcome
+          theme={eventTheme}
+          // Après l'inscription seulement, et pour un billet d'événement :
+          // l'offre arrive null pour tout autre ticket.
+          walletOffer={phase === 'queued' && ticket ? walletOffer : null}
+          appleSaved={ticket?.wallet?.appleSaved === true}
+        />
       )}
 
       {/* Rejoindre et Dans la file : l'erreur s'affiche près du bouton
@@ -318,6 +374,7 @@ export function ClientExperience({
           onAction={act}
           unfold={sawJoin}
           error={error}
+          appClip={appClip}
         />
       )}
 
@@ -677,8 +734,12 @@ function JoinPanel({
 
 function EventWelcome({
   theme,
+  walletOffer = null,
+  appleSaved = false,
 }: {
   theme: NonNullable<Props['eventTheme']>;
+  walletOffer?: WalletOfferData | null;
+  appleSaved?: boolean;
 }) {
   // Fonds en aplat : la couverture éventuelle est voilée par un calque
   // uni (::before), jamais par un dégradé.
@@ -711,6 +772,10 @@ function EventWelcome({
         <i aria-hidden="true" />
         <span>{theme.qrLabel || 'Vous êtes sur la file officielle de cet événement.'}</span>
       </div>
+
+      {/* Rien n'est rendu sans offre (Wallet non configuré, badge absent,
+          appareil sans Wallet) : ni bouton grisé, ni mention. */}
+      <WalletOffer offer={walletOffer} context="event" appleSaved={appleSaved} />
     </section>
   );
 }
@@ -720,7 +785,7 @@ function EventWelcome({
    ================================================================== */
 
 function QueuedPanel({
-  ticket, entryPoint, phase, busy, servingCount, vapidPublicKey, onAction, unfold, error,
+  ticket, entryPoint, phase, busy, servingCount, vapidPublicKey, onAction, unfold, error, appClip,
 }: {
   ticket: TicketState;
   entryPoint: EntryPoint;
@@ -731,6 +796,7 @@ function QueuedPanel({
   onAction: (action: 'leave' | 'returning' | 'present') => void;
   unfold: boolean;
   error: string | null;
+  appClip: boolean;
 }) {
   const ahead = ticket.entry.peopleAhead;
   const isTurn = phase === 'turn';
@@ -794,6 +860,7 @@ function QueuedPanel({
           organizationId={entryPoint.organization.id}
           entryId={ticket.entry.id}
           vapidPublicKey={vapidPublicKey}
+          appClip={appClip}
         />
 
         <div className={styles.actions}>
@@ -956,12 +1023,22 @@ function LeaveControl({
    Notifications — sans jamais promettre l'impossible
    ================================================================== */
 
+/**
+ * App Clip publié ? Même règle que appClipPublished() (lib/seo/site.ts),
+ * qu'un composant client ne peut pas importer (il lit lib/env). La
+ * variable NEXT_PUBLIC_ est figée au build, comme l'App Clip lui-même.
+ * Défaut des écrans qui ne transmettent pas `appClip` (profils métier).
+ */
+const APP_CLIP_PUBLISHED = process.env.NEXT_PUBLIC_APP_CLIP_PUBLIE?.trim() === '1';
+
 export function NotificationPanel({
-  organizationId, entryId, vapidPublicKey,
+  organizationId, entryId, vapidPublicKey, appClip = APP_CLIP_PUBLISHED,
 }: {
   organizationId: string;
   entryId: string;
   vapidPublicKey: string | null;
+  /** L'App Clip n'est cité que s'il est réellement publié. */
+  appClip?: boolean;
 }) {
   const [state, setState] = useState<'idle' | 'working' | 'on' | 'denied' | 'unavailable'>('idle');
   const [reason, setReason] = useState<string | null>(null);
@@ -1024,8 +1101,10 @@ export function NotificationPanel({
             {state === 'denied' ? 'Notifications refusées' : 'Notifications indisponibles ici'}
           </p>
           <p className={styles.noticeBody}>
-            {reason === 'ios_needs_pwa'
-              ? "Sur iPhone, approchez votre téléphone de la plaque : l’App Clip vous préviendra. Sinon, gardez cette page ouverte."
+            {reason === 'ios_needs_pwa' && appClip
+              ? 'Sur iPhone, approchez votre téléphone de la plaque : l’App Clip vous préviendra. Sinon, gardez cette page ouverte.'
+              : reason === 'ios_needs_pwa'
+                ? 'Gardez cette page ouverte : votre position se met à jour toute seule.'
               : state === 'denied'
                 ? 'Gardez cette page ouverte : votre position se met à jour toute seule.'
                 : 'Gardez un œil sur cette page : votre position se met à jour toute seule.'}
@@ -1147,6 +1226,17 @@ function BellIcon({ on }: { on: boolean }) {
         fill={on ? 'currentColor' : 'none'} fillOpacity={on ? 0.16 : 0}
       />
       <path d="M8.2 16.6a2 2 0 0 0 3.6 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Wallet : un billet qui dépasse de la poche. */
+function WalletIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M6 7.5V4.2a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v3.3" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <rect x="2.8" y="7.5" width="14.4" height="9.3" rx="2.2" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M13 12.1h1.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }

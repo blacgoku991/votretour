@@ -1,0 +1,316 @@
+/* =====================================================================
+   PLANCHE — Passes Wallet (aperçu)
+
+   Une frise des états d'un billet d'événement : à gauche, l'état sur un
+   rail numéroté ; à droite, le pass Apple et le pass Google côte à côte.
+   Les passes gardent LEURS couleurs (celles du rendu) : seules leurs
+   formes imitent chaque Wallet (encoche du billet Apple, carte arrondie
+   Google). Rien ne bouge.
+   ===================================================================== */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.disclaimer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  max-width: 72ch;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  border: 1px dashed var(--line-strong);
+  font-variation-settings: 'wdth' 88, 'wght' 760;
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+/* ----- La frise ----- */
+.states {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-left: var(--rail-w) solid var(--rail);
+}
+
+.state {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  padding: 26px 0 34px 22px;
+}
+.state + .state { border-top: 1px solid var(--line); }
+/* L'encoche sur le rail : un cran par état. */
+.state::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--rail-w) - 5px);
+  top: 32px;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--surface);
+  border: 2px solid var(--text-faint);
+}
+.state:first-child::before { border-color: var(--accent); }
+
+@media (min-width: 760px) {
+  .state {
+    grid-template-columns: repeat(2, minmax(0, 320px));
+    justify-content: start;
+    column-gap: 28px;
+  }
+  .stateText { grid-column: 1 / -1; }
+}
+@media (min-width: 1180px) {
+  .state {
+    /* Colonne du texte souple : la frise tient dans le corps de la planche (≈ 900 px). */
+    grid-template-columns: minmax(140px, 1fr) repeat(2, minmax(0, 300px));
+    column-gap: 24px;
+    align-items: start;
+  }
+  .stateText { grid-column: auto; padding-top: 2px; }
+}
+
+.stateText { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.stateNum {
+  font-variation-settings: 'wdth' 118, 'wght' 760;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+.stateTitle {
+  font-variation-settings: 'wdth' 108, 'wght' 740;
+  font-size: 1.125rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.stateNote {
+  max-width: 44ch;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.phase {
+  align-self: start;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+
+.fig { margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.caption {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* ----- Pièces communes ----- */
+.mark {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--pass-fg) 92%, transparent);
+  color: var(--pass-bg);
+  font-variation-settings: 'wdth' 125, 'wght' 820;
+  font-size: 0.9375rem;
+}
+.markRound { border-radius: 50%; width: 28px; height: 28px; }
+
+.field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.field[data-align='end'] { align-items: flex-end; text-align: right; }
+.fieldLabel {
+  font-variation-settings: 'wdth' 92, 'wght' 640;
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  color: var(--pass-label, var(--pass-fg));
+}
+.fieldValue {
+  font-size: 0.9375rem;
+  line-height: 1.3;
+  font-variation-settings: 'wght' 520;
+  overflow-wrap: anywhere;
+}
+.fieldBig {
+  font-variation-settings: 'wdth' 100, 'wght' 440;
+  font-size: 1.875rem;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.qrBlock {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 12px 12px 10px;
+  border-radius: 12px;
+  background: #FFFFFF;
+  color: #0B0E13;
+}
+.qr { display: block; width: 132px; height: 132px; }
+.qr svg { display: block; width: 100%; height: 100%; }
+.qrAlt { font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+
+.voided,
+.back {
+  margin: 4px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in oklab, var(--pass-fg) 22%, transparent);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: color-mix(in oklab, var(--pass-fg) 78%, var(--pass-bg));
+}
+.back span {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pass-label, var(--pass-fg));
+}
+
+/* ----- Apple : billet à encoche ----- */
+.apple {
+  --notch-r: 17px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 320px;
+  padding: 16px 16px 20px;
+  border-radius: 14px;
+  background: var(--pass-bg);
+  color: var(--pass-fg);
+  box-shadow: 0 3px 0 color-mix(in oklab, var(--pass-bg) 55%, #05070A), var(--shadow-2);
+  /* L'encoche en haut, au centre : la silhouette des billets Apple. */
+  -webkit-mask: radial-gradient(circle at 50% 0, #0000 var(--notch-r), #000 calc(var(--notch-r) + 0.5px));
+  mask: radial-gradient(circle at 50% 0, #0000 var(--notch-r), #000 calc(var(--notch-r) + 0.5px));
+}
+.apple[data-voided] { filter: saturate(0.55); }
+.appleHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+}
+.logoText {
+  flex: 1;
+  min-width: 0;
+  font-variation-settings: 'wdth' 100, 'wght' 680;
+  font-size: 0.9375rem;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Laisse la place de l'encoche au centre. */
+  max-width: calc(50% - var(--notch-r) - 20px);
+}
+.headFields { margin-left: auto; display: flex; gap: 14px; }
+.primary { padding-top: 6px; }
+/* Comme Wallet : les champs d'une rangée se partagent la largeur, sans passer à la ligne. */
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+.row .field:first-child { flex: 1 1 auto; }
+.row .field:not(:first-child) { flex: 0 1 auto; }
+
+/* ----- Google : carte arrondie ----- */
+.google {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 320px;
+  padding: 18px 18px 20px;
+  border-radius: 24px;
+  background: var(--pass-bg);
+  color: var(--pass-fg);
+  box-shadow: var(--shadow-2);
+}
+.google[data-ended] { filter: saturate(0.55); }
+.googleHead { display: flex; align-items: center; gap: 10px; }
+.issuer { font-size: 0.875rem; font-variation-settings: 'wght' 560; }
+.eventName {
+  font-variation-settings: 'wdth' 100, 'wght' 560;
+  font-size: 1.5rem;
+  line-height: 1.15;
+}
+.googleMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.875rem;
+  color: color-mix(in oklab, var(--pass-fg) 82%, var(--pass-bg));
+}
+.ticketNo { font-variant-numeric: tabular-nums; font-variation-settings: 'wght' 640; }
+.modules {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in oklab, var(--pass-fg) 22%, transparent);
+}
+.module { margin: 0; min-width: 0; }
+.module[data-wide] { grid-column: 1 / -1; }
+.module dt {
+  font-size: 0.6875rem;
+  color: color-mix(in oklab, var(--pass-fg) 74%, var(--pass-bg));
+}
+.module dd { margin: 2px 0 0; font-size: 0.9375rem; line-height: 1.35; overflow-wrap: anywhere; }
+
+/* ----- Sur la page ----- */
+.onPage {
+  display: grid;
+  gap: 20px;
+  padding-top: 26px;
+  border-top: 1px solid var(--line);
+}
+.onPageText { display: flex; flex-direction: column; gap: 8px; }
+.offers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+@media (min-width: 760px) {
+  .offers { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.offerFig { margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.offerFrame {
+  --event-accent: var(--cobalt-500);
+  padding: 18px;
+  border-radius: var(--r-card);
+  border: 1px solid color-mix(in srgb, var(--event-accent) 45%, var(--line));
+  background: var(--surface-raised);
+  color: var(--text);
+  height: 100%;
+}

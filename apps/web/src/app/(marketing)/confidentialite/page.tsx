@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
-import { legalInfo } from '@/lib/legal';
+import { integrationStatus } from '@/lib/env';
+import { legalInfo, walletPrivacyNotice, type WalletPrivacyNotice } from '@/lib/legal';
 import { LegalDoc, type LegalSection } from '../_legal/LegalDoc';
 
 export const metadata: Metadata = {
@@ -10,7 +11,10 @@ export const metadata: Metadata = {
 // Lu à chaque requête : le contact et l'éditeur viennent du .env du serveur.
 export const dynamic = 'force-dynamic';
 
-function sections(contact: { company: string | null; email: string | null }): LegalSection[] {
+function sections(
+  contact: { company: string | null; email: string | null },
+  wallet: WalletPrivacyNotice | null,
+): LegalSection[] {
   return [
   {
     id: 'client',
@@ -76,6 +80,16 @@ function sections(contact: { company: string | null; email: string | null }): Le
       </>
     ),
   },
+  // Billets d'événement dans Apple Wallet / Google Wallet : seulement si
+  // un fournisseur est configuré sur ce serveur (sinon, la fonction
+  // n'existe pas pour le client, et la politique n'en parle pas).
+  ...(wallet
+    ? [{
+        id: wallet.id,
+        title: wallet.title,
+        body: <>{wallet.paragraphs.map((text) => <p key={text.slice(0, 32)}>{text}</p>)}</>,
+      }]
+    : []),
   {
     id: 'professionnel',
     title: 'Pour un professionnel',
@@ -126,7 +140,13 @@ export default function PrivacyPage() {
           nous collectons.
         </>
       }
-      sections={sections({ company: info.company, email: info.email })}
+      sections={sections(
+        { company: info.company, email: info.email },
+        walletPrivacyNotice({
+          apple: integrationStatus().appleWalletConfigured,
+          google: integrationStatus().googleWalletConfigured,
+        }),
+      )}
       updatedAt={info.updatedAt}
     />
   );

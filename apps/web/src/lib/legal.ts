@@ -58,3 +58,59 @@ export function legalInfo(): LegalInfo {
 export function hasLegalNotice(info: LegalInfo = legalInfo()): boolean {
   return Boolean(info.company && info.address && info.siret && info.email && info.hostName && info.hostAddress);
 }
+
+/* ====================================================================
+   Politique de confidentialité : Apple Wallet et Google Wallet
+   ==================================================================== */
+
+export interface WalletPrivacyNotice {
+  /** Ancre du titre dans la politique de confidentialité. */
+  id: 'wallet';
+  title: string;
+  paragraphs: string[];
+}
+
+/**
+ * Paragraphe Wallet de la politique (§ 12 du plan Wallet), rédigé
+ * seulement pour les fournisseurs RÉELLEMENT configurés sur ce serveur
+ * (integrationStatus) : tant qu'aucun ne l'est, le Wallet est invisible
+ * dans le produit et la politique n'en parle pas. Un seul configuré :
+ * l'autre n'est pas cité (on ne nomme pas un destinataire qui ne reçoit
+ * rien).
+ *
+ * Décision du propriétaire : le Wallet ne sert qu'aux billets
+ * d'événement (drops), pour le contrôle d'entrée ; le texte le dit.
+ */
+export function walletPrivacyNotice(configured: { apple: boolean; google: boolean }): WalletPrivacyNotice | null {
+  const { apple, google } = configured;
+  if (!apple && !google) return null;
+
+  const names = apple && google ? 'Apple Wallet ou Google Wallet' : apple ? 'Apple Wallet' : 'Google Wallet';
+  const paragraphs: string[] = [
+    `Lors d’un événement ou d’un drop, vous pouvez ajouter votre billet à ${names} pour le présenter au contrôle d’entrée depuis votre téléphone. Cette possibilité ne concerne que les billets d’événement : une file d’attente classique ne la propose pas. Elle est facultative et vient de vous seul : vous touchez le badge d’ajout, puis vous confirmez dans la fenêtre de votre téléphone. Le billet se met ensuite à jour tout seul (attente, ouverture de votre vague, accès utilisé ou expiré).`,
+    'Le billet ne contient ni votre prénom, ni votre numéro de téléphone, ni votre adresse e-mail : seulement le nom et le logo du commerce, le nom de l’événement, votre numéro de billet et votre vague, votre position, les heures utiles et, pendant votre accès, le QR d’entrée. De notre côté, nous conservons le lien entre ce billet et votre place dans la file, et aucune adresse IP.',
+  ];
+  if (apple) {
+    paragraphs.push(
+      'Apple Wallet : pour mettre le billet à jour, nous conservons l’identifiant technique de l’appareil et le jeton de notification qu’Apple nous transmet. Ce sont des identifiants pseudonymes, qui ne disent pas qui vous êtes. Apple achemine les mises à jour jusqu’à votre téléphone.',
+    );
+  }
+  if (google) {
+    paragraphs.push(
+      'Google Wallet : Google Ireland Limited reçoit le contenu du billet et le traite selon sa propre politique de confidentialité. Le billet est rattaché à votre compte Google, chez Google : nous ne recevons jamais votre adresse e-mail.',
+    );
+  }
+  const duration =
+    'Durée : ces informations de mise à jour sont effacées au plus tard 24 heures après la fin de votre passage (billet utilisé, accès expiré ou événement terminé) ; les dernières traces techniques disparaissent 7 jours plus tard.';
+  paragraphs.push(
+    google
+      ? `${duration} Google ne permet pas de supprimer un billet à distance : nous en effaçons le contenu. Vous pouvez à tout moment supprimer le billet de votre téléphone, sans perdre votre place.`
+      : `${duration} Vous pouvez à tout moment supprimer le billet de votre téléphone, sans perdre votre place.`,
+  );
+
+  return {
+    id: 'wallet',
+    title: `Billets d’événement dans ${apple && google ? 'Apple Wallet et Google Wallet' : names}`,
+    paragraphs,
+  };
+}
