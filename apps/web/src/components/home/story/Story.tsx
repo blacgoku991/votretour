@@ -1,17 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { FlapNumber } from '@/components/FlapNumber';
 import { Plaque } from '@/components/objects/Plaque';
 import { useScrollDriver, type DriverViewport } from '@/components/motion/useScrollDriver';
 import { useLiteDevice, useReducedMotion } from '@/components/motion/useMotionPreference';
-import { notificationCopy } from '@/lib/copy';
 import { clamp } from '@/lib/motion';
 import {
   cameraAt, cameraTransform, decorAt, queueAt, SLOT_IDS, THRESHOLDS, T_MAX,
   type QueueState, type SlotId,
 } from './frame';
+import { HOME_STORY_COPY, storyCssVars, type StoryText } from './copy';
 import { POSTER_CSS } from './poster';
 import styles from './Story.module.css';
 
@@ -31,65 +31,6 @@ import styles from './Story.module.css';
  * Sans JavaScript ou en mouvement réduit : affiche statique en relief
  * (POSTER_CSS), et chaque étape montre sa vignette d'état.
  */
-
-const PLACE = 'Barber House';
-const NOTIF = notificationCopy('ahead_one', { locationName: PLACE });
-
-interface StepCopy {
-  kicker: string;
-  title: string;
-  body: string;
-  benefit: string;
-  state: string;
-  /** Vignette en contour (place gardée) plutôt que pleine. */
-  outline?: boolean;
-}
-
-const STEPS: StepCopy[] = [
-  {
-    kicker: 'Il arrive',
-    title: 'Un geste pour prendre sa place.',
-    body: "Il approche son téléphone de votre plaque NFC ou scanne le QR code. Sur iPhone, l’App Clip s’ouvre tout seul ; sur Android, le navigateur suffit. Rien à installer, aucun compte.",
-    benefit: 'Inscrit en trois secondes, sans vous déranger.',
-    state: '3 personnes devant vous',
-  },
-  {
-    kicker: 'Il sort',
-    title: 'Sa place reste. Lui, il part.',
-    body: "Café, course, coup de fil : il attend où il veut. Votre salon ne ressemble plus à une salle d’attente.",
-    benefit: 'Plus personne ne repart en voyant la queue.',
-    state: 'Place gardée · vous pouvez partir',
-    outline: true,
-  },
-  {
-    kicker: 'Il suit',
-    title: 'Un seul chiffre. Aucune question au comptoir.',
-    body: "Son écran n’affiche qu’une chose : combien de personnes sont devant lui. Pas de numéro de ticket, pas d’heure promise qu’on ne tiendra pas.",
-    benefit: "Fini les « c’est encore long ? ».",
-    state: '2 personnes devant vous',
-  },
-  {
-    kicker: 'Il revient',
-    title: 'Prévenu au bon moment.',
-    body: "« Plus qu’une personne devant vous. Commencez à revenir. » La notification arrive toute seule, sur iPhone comme sur Android. Sans SMS payant.",
-    benefit: 'Il revient pile quand il faut.',
-    state: "Plus qu’une personne devant vous",
-  },
-  {
-    kicker: 'Vous',
-    title: "Vous appuyez sur Terminer. C’est tout.",
-    body: 'Un seul geste entre deux clients : la file avance, chacun voit sa place bouger, le suivant est prévenu.',
-    benefit: 'Un bouton. Même avec les mains prises.',
-    state: "C’est votre tour",
-  },
-  {
-    kicker: 'Après',
-    title: "Et l’avis Google suit.",
-    body: 'À la fin du passage, votre client voit « Merci pour votre visite » et un bouton qui ouvre directement votre fiche Google.',
-    benefit: "Plus d’avis, sans y penser.",
-    state: 'Merci pour votre visite',
-  },
-];
 
 /** Positions de départ (t = 0), identiques au rendu serveur. */
 const Q0 = queueAt(0);
@@ -128,7 +69,28 @@ function voletLabel(ahead: number, joined: boolean): string {
   return ahead <= 1 ? 'personne devant vous' : 'personnes devant vous';
 }
 
-export function Story(): React.JSX.Element {
+export interface StoryProps {
+  /**
+   * Les mots de la séquence. Absent : l'accueil, strictement comme avant
+   * (aucune variable CSS posée, même DOM). Une page métier passe
+   * `metierStoryCopy(page)`.
+   */
+  copy?: StoryText;
+  /** Cible du lien « Passer l'animation » (id de la section suivante). */
+  skipTargetId?: string;
+  /** Au-dessus de l'étiquette du héros : le fil d'Ariane d'une page métier. */
+  eyebrow?: React.ReactNode;
+}
+
+/** Au-delà, le titre du héros descend d'un cran (voir .title[data-length]). */
+const LONG_TITLE = 40;
+
+export function Story({
+  copy = HOME_STORY_COPY,
+  skipTargetId = 'apres-histoire',
+  eyebrow,
+}: StoryProps): React.JSX.Element {
+  const custom = copy !== HOME_STORY_COPY;
   const reduced = useReducedMotion();
   const lite = useLiteDevice();
   const [ready, setReady] = useState(false);
@@ -357,39 +319,43 @@ export function Story(): React.JSX.Element {
       data-story=""
       aria-labelledby="histoire-titre"
     >
-      <a className={`skip-link ${styles.skip}`} href="#apres-histoire">
+      <a className={`skip-link ${styles.skip}`} href={`#${skipTargetId}`}>
         Passer l’animation
       </a>
 
       {/* ============================ HÉROS ============================ */}
       <div className={styles.hero}>
         <div className={styles.heroInner}>
-          <p className={`t-label ${styles.heroLabel}`}>
-            File d’attente virtuelle&nbsp;· barbiers, garages, ongleries, réparateurs
-          </p>
-          <h1 className={`t-hero ${styles.title}`}>Vos clients n’attendent plus debout.</h1>
-          <p className={`t-lead ${styles.lead}`}>
-            Ils approchent leur téléphone de la plaque, prennent leur place dans la file et
-            s’en vont. On les prévient quand c’est leur tour.
-          </p>
+          {eyebrow}
+          <p className={`t-label ${styles.heroLabel}`}>{copy.hero.label}</p>
+          <h1
+            className={`t-hero ${styles.title}`}
+            data-length={custom && copy.hero.title.length > LONG_TITLE ? 'long' : undefined}
+          >
+            {copy.hero.title}
+          </h1>
+          <p className={`t-lead ${styles.lead}`}>{copy.hero.lead}</p>
           <div className={styles.actions}>
-            <Link href="/inscription" className="btn btn--signal btn--lg">
-              Ouvrir ma file
+            <Link href={copy.hero.primary.href} className="btn btn--signal btn--lg">
+              {copy.hero.primary.label}
             </Link>
-            <a href="#comment" className="btn btn--ghost btn--lg">
-              Voir la file avancer
+            <a href={copy.hero.secondary.href} className="btn btn--ghost btn--lg">
+              {copy.hero.secondary.label}
             </a>
           </div>
           <p className={`t-micro t-muted ${styles.micro}`}>
             {/* Le « · » reste collé au mot qui le précède : jamais en tête de ligne. */}
-            <span>Sans compte client&nbsp;·</span>{' '}
-            <span>Sans application à installer&nbsp;·</span>{' '}
-            <span>Sans SMS payant</span>
+            {copy.hero.micro.map((part, i) => (
+              <Fragment key={part}>
+                {i > 0 && ' '}
+                <span>{part}</span>
+              </Fragment>
+            ))}
           </p>
         </div>
         <p className={styles.scrollHint} data-story-hint="">
           <span className={styles.scrollRail} aria-hidden="true" />
-          Faites défiler : la file avance avec vous.
+          {copy.hero.scrollHint}
         </p>
       </div>
 
@@ -407,6 +373,7 @@ export function Story(): React.JSX.Element {
         data-phone="on"
         data-dot="in"
         data-lite={lite ? '1' : undefined}
+        style={custom ? (storyCssVars(copy) as React.CSSProperties) : undefined}
         aria-hidden="true"
       >
         <div className={`scene3d ${styles.frame}`}>
@@ -422,7 +389,7 @@ export function Story(): React.JSX.Element {
             <div ref={railRef} className={`rail3d ${styles.rail}`} data-story-rail="" />
             <span className={styles.pulse} />
             <div ref={seuilRef} className={`seuil3d ${styles.seuil}`} data-story-seuil="">
-              <span className="seuil3d__label">Comptoir</span>
+              <span className="seuil3d__label">{copy.seuil}</span>
             </div>
 
             {SLOT_IDS.map((id) => (
@@ -444,7 +411,7 @@ export function Story(): React.JSX.Element {
                   <div className={`slot3d__face ${styles.face} ${id === 'vous' || id === 'next' ? '' : styles.anon}`}>
                     {id === 'vous' && (
                       <span className={styles.text}>
-                        <span className={styles.name}>Camille</span>
+                        <span className={styles.name}>{copy.clientName}</span>
                         <span className={styles.hint} />
                       </span>
                     )}
@@ -476,17 +443,19 @@ export function Story(): React.JSX.Element {
           </div>
 
           <div className={styles.turn}>
-            <span className={styles.turnKicker}>C’est</span>
-            <span className={styles.turnTitle}>votre tour</span>
-            <span className="t-label">Présentez-vous au comptoir</span>
+            {copy.turn.lead && <span className={styles.turnKicker}>{copy.turn.lead}</span>}
+            <span className={styles.turnTitle}>{copy.turn.main}</span>
+            <span className="t-label">{copy.turn.line}</span>
           </div>
 
           <div className={styles.merci}>
-            <span className={`t-title ${styles.merciTitle}`}>Merci pour votre visite</span>
-            <span className={styles.merciPlace}>{PLACE}</span>
-            <button type="button" className={`btn btn--signal btn--sm ${styles.merciBtn}`} tabIndex={-1}>
-              Laisser un avis Google
-            </button>
+            <span className={`t-title ${styles.merciTitle}`}>{copy.merci.title}</span>
+            <span className={styles.merciPlace}>{copy.place}</span>
+            {copy.merci.button && (
+              <button type="button" className={`btn btn--signal btn--sm ${styles.merciBtn}`} tabIndex={-1}>
+                {copy.merci.button}
+              </button>
+            )}
           </div>
 
           <div className={styles.notifWrap}>
@@ -494,8 +463,8 @@ export function Story(): React.JSX.Element {
               <span className={styles.notifIcon} />
               <span className={styles.notifText}>
                 <span className={`t-micro ${styles.notifApp}`}>Rangvia · maintenant</span>
-                <span className={styles.notifTitle}>{NOTIF.title}</span>
-                <span className={styles.notifBody}>{NOTIF.body}</span>
+                <span className={styles.notifTitle}>{copy.notif.title}</span>
+                <span className={styles.notifBody}>{copy.notif.body}</span>
               </span>
             </div>
           </div>
@@ -506,10 +475,10 @@ export function Story(): React.JSX.Element {
             <div className={styles.proInfo}>
               <span className={`t-label ${styles.swap} ${styles.proLabel}`} />
               <span className={`${styles.swap} ${styles.proName}`} />
-              <span className={`t-num ${styles.proTime}`}>18 min</span>
+              {copy.proTime && <span className={`t-num ${styles.proTime}`}>{copy.proTime}</span>}
             </div>
             <button type="button" className={`btn btn--signal btn--key btn--block ${styles.proKey}`} tabIndex={-1}>
-              Terminer
+              {copy.proKey}
             </button>
           </div>
 
@@ -532,7 +501,7 @@ export function Story(): React.JSX.Element {
         Comment ça marche, en six temps
       </h2>
       <ol className={styles.steps} data-story-steps="">
-        {STEPS.map((step, i) => (
+        {copy.steps.map((step, i) => (
           <li
             key={step.kicker}
             ref={(el) => {

@@ -1,0 +1,741 @@
+/* =====================================================================
+   PAGES MÉTIER — /pour et /pour/[metier] (« Le Rang en relief »)
+   ---------------------------------------------------------------------
+   Même peau que l'accueil : des lignes, des rails, des sols, jamais de
+   carte. Chaque section a son filet haut et un en-tête (étiquette, H2,
+   chapô). Le vermillon reste réservé au « maintenant » : la première
+   touche du comptoir, le seuil du métier, la latte « Vous ».
+
+   Règles : on n'anime que transform et opacity, et seulement en
+   mouvement permis ; le rendu par défaut est le rendu statique.
+   ===================================================================== */
+
+@property --plaque-rx {
+  syntax: '<angle>';
+  inherits: true;
+  initial-value: 12deg;
+}
+@property --plaque-rz {
+  syntax: '<angle>';
+  inherits: true;
+  initial-value: -3deg;
+}
+
+.main {
+  flex: 1 0 auto;
+  background: var(--surface);
+  scroll-margin-top: var(--site-header-h);
+}
+
+/* ------------------------------------------------------------ Section */
+.section {
+  padding-block: clamp(72px, 9vw, 136px);
+  border-top: 1px solid var(--line);
+  scroll-margin-top: var(--site-header-h);
+}
+.section:focus { outline: none; }
+.head { max-width: 52rem; }
+.h2 { margin-top: 14px; }
+.headLead { margin-top: var(--gap-title); }
+
+/* ------------------------------------------------------ Fil d'Ariane */
+.crumbs ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 0;
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+.crumbs li { display: inline-flex; align-items: center; }
+/* Séparateur : une petite latte au rail, pas une barre oblique. */
+.crumbs li + li::before {
+  content: '';
+  width: 12px;
+  height: 2px;
+  margin-inline: 10px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.crumbs a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 4px;
+}
+.crumbs a:hover { color: var(--text); text-decoration-color: var(--line-strong); }
+.crumbs [aria-current='page'] { color: var(--text); font-variation-settings: 'wdth' 100, 'wght' 620; }
+.heroCrumbs { margin-bottom: 18px; }
+@media (pointer: coarse) {
+  .crumbs a { min-height: 44px; }
+}
+
+/* ----------------------------------------------- Numéros en volets */
+.flapIndex {
+  --flap-size: 1.875rem;
+  --flap-tile: var(--ink-700);
+  color: var(--bone-100);
+  flex: none;
+}
+
+/* ------------------------------------------------ 2. Le problème */
+.problem { margin-top: 48px; }
+.problem > li:last-child,
+.counter > li:last-child,
+.settings > li:last-child,
+.plans > li:last-child { border-bottom: 1px solid var(--line); }
+.problem > li {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 20px;
+}
+.problem .problemText { grid-column: 1 / -1; color: var(--text); }
+.boardKey { color: var(--text); }
+@media (min-width: 720px) {
+  .problem > li { grid-template-columns: auto minmax(0, 17rem) minmax(0, 1fr); column-gap: 32px; }
+  .problem .problemText { grid-column: auto; }
+}
+@media (min-width: 1024px) {
+  .problem > li { grid-template-columns: auto minmax(0, 22rem) minmax(0, 1fr); }
+  .problem .problemText { font-size: 1.0625rem; }
+}
+
+/* -------------------------------------- 4. Côté comptoir : les touches */
+.counter { margin-top: 48px; }
+.counter > li { align-items: center; }
+@media (min-width: 720px) {
+  .counter > li { grid-template-columns: minmax(0, 19rem) minmax(0, 1fr); }
+}
+@media (min-width: 1024px) {
+  .counter > li { grid-template-columns: minmax(0, 24rem) minmax(0, 1fr); }
+}
+/* La touche : un objet, avec sa tranche. Encre pour les secondaires,
+   vermillon pour le geste principal (comme TERMINER sur le poste). */
+.keycap {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 46px;
+  max-width: 100%;
+  margin-bottom: 4px;
+  padding: 0 18px;
+  border-radius: 12px;
+  background: var(--ink-700);
+  color: var(--text);
+  box-shadow: var(--edge-light), 0 4px 0 var(--ink-1000);
+  font-variation-settings: 'wdth' 108, 'wght' 740;
+  font-size: 1.0625rem;
+  line-height: 1.15;
+  letter-spacing: -0.005em;
+}
+.keycap[data-tone='signal'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 4px 0 var(--signal-600);
+}
+@media (min-width: 1024px) {
+  .keycap { min-height: 52px; font-size: 1.1875rem; padding: 0 22px; }
+}
+
+/* ------------------------------------------- 6. Réglages conseillés */
+.settings { margin-top: 48px; }
+.settings > li { grid-template-columns: 1fr; gap: 10px; }
+.settingLabel {
+  font-variation-settings: 'wdth' 92, 'wght' 700;
+  font-size: 0.8125rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+/* La valeur conseillée : le choix actif d'un sélecteur de Réglages. */
+.settingValue {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: var(--edge-light), 0 1px 0 var(--slat-edge);
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: 0.9375rem;
+  line-height: 1.2;
+  color: var(--text);
+}
+.settingDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+@media (min-width: 720px) {
+  .settings > li {
+    grid-template-columns: minmax(0, 13rem) minmax(0, 15rem) minmax(0, 1fr);
+    align-items: center;
+    gap: 12px 28px;
+  }
+}
+@media (min-width: 1024px) {
+  .settings > li { grid-template-columns: minmax(0, 16rem) minmax(0, 18rem) minmax(0, 1fr); }
+}
+
+/* ---------------------------------------------- 7. Pourquoi Rangvia */
+.args {
+  list-style: none;
+  margin: 48px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  column-gap: 56px;
+  border-bottom: 1px solid var(--line);
+}
+@media (min-width: 720px) {
+  .args { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.arg {
+  position: relative;
+  padding: 28px 0 32px 40px;
+  border-top: 1px solid var(--line);
+}
+/* Une encoche au rail par argument ; la première en vermillon. */
+.arg::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 40px;
+  width: 24px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.arg[data-first='1']::before { height: 4px; top: 39px; background: var(--accent); }
+.argKey {
+  font-variation-settings: 'wdth' 112, 'wght' 760;
+  font-size: clamp(1.25rem, 1.1rem + 0.6vw, 1.625rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.argText { margin-top: 12px; max-width: 46ch; }
+
+/* ------------------------------------------------------ 8. Offres */
+.plans { margin-top: 48px; }
+.plans > li { align-items: center; }
+.planHead { min-width: 0; }
+.planPrice {
+  margin-top: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.planAmount {
+  font-variation-settings: 'wdth' 112, 'wght' 800;
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.planVolumes { color: var(--text-muted); }
+.planBtn { min-width: 150px; }
+@media (max-width: 719px) {
+  .planBtn { width: 100%; margin-top: 8px; }
+}
+.plansFoot {
+  margin-top: 28px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 32px;
+}
+.more {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  color: var(--text);
+}
+.moreSlat {
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform-origin: 0 50%;
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .moreSlat { transition: transform var(--dur-2) var(--ease-slat); }
+  .more:hover .moreSlat { transform: scaleX(1.6); }
+}
+
+/* --------------------------------------------------------- 9. FAQ */
+.faq {
+  position: relative;
+  margin-top: 48px;
+  padding-left: 40px;
+  border-bottom: 1px solid var(--line);
+}
+.faq::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.faqItem {
+  position: relative;
+  border-top: 1px solid var(--line);
+}
+.faqItem::before,
+.faqItem::after {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 30px;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+  pointer-events: none;
+}
+.faqItem::after {
+  top: 29px;
+  height: 4px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+.faqItem[open]::after { transform: none; }
+.faqQ {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  min-height: 62px;
+  padding: 16px 0;
+  cursor: pointer;
+  list-style: none;
+  font-variation-settings: 'wdth' 102, 'wght' 650;
+  font-size: 1.0625rem;
+  line-height: 1.35;
+  border-radius: 6px;
+}
+.faqQ > span:first-child { text-wrap: balance; }
+.faqQ::-webkit-details-marker { display: none; }
+.faqQ::marker { content: ''; }
+@media (hover: hover) {
+  .faqQ:hover .faqIcon { color: var(--text); }
+}
+.faqIcon {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  color: var(--text-muted);
+}
+.faqIcon::before,
+.faqIcon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+.faqIcon::after { transform: rotate(90deg); }
+.faqItem[open] .faqIcon { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 50%, transparent); }
+.faqItem[open] .faqIcon::after { transform: rotate(0deg); }
+.faqA {
+  padding: 0 44px 22px 0;
+  max-width: 64ch;
+  color: var(--text-muted);
+  line-height: 1.65;
+}
+@media (max-width: 479px) {
+  .faqA { padding-right: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .faqItem::after { transition: transform var(--dur-2) var(--ease-out); }
+  .faqIcon::after { transition: transform var(--dur-2) var(--ease-out); }
+  .faqItem[open] .faqA { animation: faq-in var(--dur-2) var(--ease-out) both; }
+}
+@keyframes faq-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* -------------------------------------------------- 10. Appel final */
+.cta {
+  position: relative;
+  overflow: clip;
+  background: var(--floor);
+  border-top: 1px solid var(--line);
+  padding-block: 0 clamp(72px, 9vw, 120px);
+  scroll-margin-top: var(--site-header-h);
+}
+.cta:focus { outline: none; }
+.ctaInner { display: grid; gap: 8px; }
+.ctaText { display: flex; flex-direction: column; align-items: flex-start; }
+.ctaTitle { max-width: 14ch; }
+.ctaLead { margin-top: var(--gap-title); }
+.ctaBtn { margin-top: 32px; }
+.ctaVisual {
+  position: relative;
+  order: -1;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  padding-block: 56px 64px;
+}
+.ctaFloor { inset: 0 calc(-1 * var(--sp-5)); }
+.ctaPlaque {
+  position: relative;
+  --plaque-rx: 12deg;
+  --plaque-ry: -14deg;
+  --plaque-rz: -3deg;
+}
+.ctaPlaqueObj { --plaque-w: 220px !important; }
+.ctaScan { display: none; }
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .ctaPlaque {
+      animation: plaque-redress linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 45%;
+    }
+  }
+}
+@keyframes plaque-redress {
+  from { --plaque-rx: 35deg; --plaque-rz: -6deg; }
+  to { --plaque-rx: 12deg; --plaque-rz: -3deg; }
+}
+@media (min-width: 1024px) {
+  .cta { padding-block: 0; }
+  .ctaInner {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    align-items: center;
+    gap: 48px;
+    min-height: 640px;
+  }
+  .ctaText { padding-block: 120px; }
+  .ctaVisual { order: 0; align-self: stretch; padding-block: 80px; }
+  .ctaFloor { inset: 0 -100vw 96px 0; }
+  .ctaPlaqueObj { --plaque-w: 260px !important; }
+  .ctaScan {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 40px;
+    display: block;
+    text-align: center;
+    font-variation-settings: 'wdth' 88, 'wght' 700;
+    font-size: 0.6875rem;
+    line-height: 1;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+}
+
+/* ------------------------------------------------ 3. La signature */
+.signature { overflow: clip; }
+.sigGrid { display: grid; gap: 40px; }
+.sigText { max-width: 40rem; }
+.sigSeuil {
+  display: inline-block;
+  margin-left: 12px;
+  padding: 5px 8px 4px;
+  border: 2px solid var(--accent);
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  letter-spacing: 0.22em;
+  color: var(--accent);
+  vertical-align: middle;
+}
+.sigStage { min-width: 0; }
+@media (min-width: 1024px) {
+  .sigGrid:not([data-wide='1']) {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    align-items: center;
+    gap: 56px;
+  }
+}
+
+/* ------------------------------------------------------ 5. Vidéo */
+.video { margin-top: 48px; }
+
+/* ------------------------------------------- 11. Autres métiers */
+.related .rows { margin-top: 40px; }
+
+/* ---------------------------------------- Héros statique (sans séquence) */
+.hero {
+  position: relative;
+  overflow: clip;
+}
+.heroInner {
+  display: grid;
+  gap: 8px;
+  padding-block: 28px 0;
+}
+.heroText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  container-type: inline-size;
+}
+.heroLabel { line-height: 1.5; }
+.heroTitle {
+  margin-top: 14px;
+  font-size: min(clamp(2.5rem, 1.15rem + 5.6vw, 5.25rem), 13.5cqi);
+  max-width: 14ch;
+}
+.heroLead { margin-top: var(--gap-title); }
+.heroActions {
+  margin-top: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+.heroMicro { margin-top: 14px; }
+.heroMicro > span { white-space: nowrap; }
+@media (max-width: 719px) {
+  .heroActions > :global(.btn) {
+    flex: 1 1 auto;
+    min-height: 54px;
+    padding-inline: 16px;
+    font-size: 0.9375rem;
+  }
+}
+.heroVisual {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 340px;
+  margin-inline: calc(-1 * var(--sp-5));
+  margin-top: 32px;
+  background: var(--floor);
+  border-block: 1px solid var(--line);
+  overflow: clip;
+}
+.heroFloor { inset: 0; }
+.heroPass { position: relative; padding-block: 48px; }
+/* Le seuil en toutes lettres, posé au sol, très en retrait. */
+.heroSeuil {
+  position: absolute;
+  left: 20px;
+  bottom: 16px;
+  font-variation-settings: 'wdth' 125, 'wght' 820;
+  font-size: clamp(2.5rem, 1.6rem + 4vw, 5rem);
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--bone-100) 7%, transparent);
+  pointer-events: none;
+  user-select: none;
+}
+@media (min-width: 1024px) {
+  .heroInner {
+    grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+    align-items: stretch;
+    gap: 48px;
+    padding-block: 0;
+    min-height: calc(100svh - var(--site-header-h) - 40px);
+    max-height: 900px;
+  }
+  .heroText { justify-content: center; padding-block: 64px 80px; }
+  .heroTitle { margin-top: 20px; }
+  .heroActions { margin-top: 32px; gap: 12px; }
+  .heroMicro { margin-top: 18px; }
+  .heroVisual {
+    margin: 0 calc(-1 * max(20px, (100vw - var(--maxw-app)) / 2 + 20px)) 0 0;
+    min-height: 0;
+    border-block: 0;
+    border-left: 1px solid var(--line);
+  }
+}
+
+/* --------------------------------------------------------- Index */
+.indexHero { position: relative; }
+.indexHeroInner {
+  display: grid;
+  gap: 8px;
+  padding-block: 28px 0;
+}
+.indexVisual { min-height: 470px; }
+.indexVisual > * { position: absolute; inset: 0; }
+/* Huit lattes : sur téléphone, la file recule d'un pas et remonte, pour
+   que la place fantôme (« Votre métier ») reste dans le cadre. */
+@media (max-width: 1023px) {
+  .indexVisual > :global(.scene3d) { --world-top: 175px; }
+  .indexVisual :global(.world3d) { scale: 0.84; }
+}
+@media (min-width: 1024px) {
+  .indexHeroInner {
+    grid-template-columns: minmax(0, 6fr) minmax(0, 6fr);
+    align-items: stretch;
+    gap: 48px;
+    padding-block: 0;
+    min-height: min(calc(100svh - var(--site-header-h) - 40px), 820px);
+  }
+  .indexHeroInner .heroText { justify-content: center; padding-block: 64px 80px; }
+  .indexVisual {
+    margin: 0 calc(-1 * max(20px, (100vw - var(--maxw-app)) / 2 + 20px)) 0 0;
+    border-block: 0;
+    border-left: 1px solid var(--line);
+    min-height: 0;
+  }
+}
+.indexBoard {
+  padding-block: clamp(72px, 9vw, 136px);
+  border-top: 1px solid var(--line);
+  scroll-margin-top: var(--site-header-h);
+}
+.indexBoard:focus { outline: none; }
+.indexBoard .rows { margin-top: 48px; }
+.indexFoot { margin-top: 32px; max-width: 60ch; }
+.inlineLink {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+/* -------------------------------------------- Tableau des métiers */
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    'num label'
+    'promise promise'
+    'seuil seuil';
+  align-items: center;
+  gap: 14px 16px;
+  padding: 18px 18px 20px;
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  box-shadow: var(--edge-light), 0 3px 0 var(--ink-1000);
+  color: var(--text);
+}
+.rowNum { grid-area: num; }
+.rowLabel { grid-area: label; color: var(--text); }
+.rowPromise {
+  grid-area: promise;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+/* Le seuil du métier : deux poteaux et un linteau vermillon. Éteint
+   (opacité réduite) au repos, allumé au survol et au focus. */
+.rowSeuil {
+  grid-area: seuil;
+  justify-self: start;
+  display: inline-flex;
+  padding: 7px 12px 5px;
+  border: 3px solid var(--accent);
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  opacity: 0.6;
+}
+.rowSeuilLabel {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 0.6875rem;
+  line-height: 1;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.row:hover .rowSeuil,
+.row:focus-visible .rowSeuil { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .rowSeuil { transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-slat); }
+  .rowLabel { transition: transform var(--dur-2) var(--ease-slat); }
+  .row:hover .rowSeuil,
+  .row:focus-visible .rowSeuil { transform: translateX(2px); }
+  .row:hover .rowLabel,
+  .row:focus-visible .rowLabel { transform: translateX(2px); }
+}
+.row:focus-visible { outline-offset: 4px; }
+
+/* À partir de 720 px : une vraie ligne de tableau, sur le rail. */
+@media (min-width: 720px) {
+  .rows {
+    position: relative;
+    gap: 0;
+    padding-left: 40px;
+    border-bottom: 1px solid var(--line);
+  }
+  .rows::before {
+    content: '';
+    position: absolute;
+    left: 18px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--rail);
+  }
+  .rowItem { position: relative; border-top: 1px solid var(--line); }
+  .rowItem::before {
+    content: '';
+    position: absolute;
+    left: -22px;
+    top: 50%;
+    width: 18px;
+    height: 2px;
+    margin-top: -1px;
+    border-radius: 2px;
+    background: var(--rail);
+  }
+  .row {
+    grid-template-columns: auto minmax(0, 15rem) minmax(0, 1fr) auto;
+    grid-template-areas: 'num label promise seuil';
+    gap: 24px;
+    padding: 24px 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+  .rowSeuil { justify-self: end; }
+  .rows[data-size='lg'] .row { padding-block: 30px; }
+  .rows[data-size='lg'] .rowLabel { font-size: clamp(1.125rem, 0.9rem + 0.8vw, 1.625rem); }
+  .rows[data-size='lg'] .rowPromise { font-size: 1.0625rem; color: var(--text); opacity: 0.86; }
+}
+@media (min-width: 1024px) {
+  .row { grid-template-columns: auto minmax(0, 20rem) minmax(0, 1fr) minmax(9rem, auto); gap: 32px; }
+  .rows[data-size='lg'] .row { grid-template-columns: auto minmax(0, 24rem) minmax(0, 1fr) minmax(10rem, auto); }
+}
+/* L'encoche de la ligne survolée passe au vermillon. */
+@media (min-width: 720px) {
+  .rowItem:has(.row:hover)::before,
+  .rowItem:has(.row:focus-visible)::before { background: var(--accent); height: 4px; margin-top: -2px; }
+}

@@ -1,0 +1,155 @@
+/* =====================================================================
+   LA DÉMO EN VRAI — affiche, bouton, vidéo (« Le Rang en relief »)
+   ---------------------------------------------------------------------
+   Un écran posé au sol : cadre encre, tranche dure de 4 px, et au centre
+   la touche vermillon « Voir la démo ». Hauteur réservée par
+   aspect-ratio (aucun décalage de mise en page quand la vidéo remplace
+   l'affiche). On n'anime que transform et opacity.
+   ===================================================================== */
+
+.figure {
+  display: grid;
+  gap: 28px;
+  margin: 0;
+}
+@media (min-width: 1024px) {
+  .figure {
+    grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);
+    align-items: start;
+    gap: 48px;
+  }
+}
+
+.frame {
+  position: relative;
+  width: 100%;
+  overflow: clip;
+  border-radius: var(--r-card);
+  background: var(--floor);
+  box-shadow: var(--edge-light), 0 4px 0 var(--ink-1000);
+  isolation: isolate;
+}
+
+.poster,
+.video {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.video { object-fit: contain; background: var(--ink-1000); }
+.frame[data-mode='preview'] .video { object-fit: cover; }
+
+/* La touche : un disque vermillon et son libellé, sur une latte encre. */
+.play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 64px;
+  padding: 8px 22px 8px 8px;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--ink-1000) 82%, transparent);
+  color: var(--bone-100);
+  box-shadow: var(--edge-light), 0 3px 0 var(--ink-1000);
+  font-variation-settings: 'wdth' 104, 'wght' 720;
+  font-size: 1rem;
+  white-space: nowrap;
+}
+.playKey {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 3px 0 var(--signal-600);
+}
+.playKey svg { width: 22px; height: 22px; fill: currentColor; margin-left: 3px; }
+@media (prefers-reduced-motion: no-preference) {
+  .play { transition: transform var(--dur-2) var(--ease-slat); }
+  .playKey { transition: transform var(--dur-1) var(--ease-out); }
+  .play:hover { transform: translateY(-2px); }
+  .play:active .playKey { transform: translateY(2px); }
+}
+/* En aperçu, la touche descend dans le coin : l'image respire. */
+.frame[data-mode='preview'] .play {
+  left: auto;
+  top: auto;
+  right: 16px;
+  bottom: 16px;
+  translate: none;
+}
+
+.pause {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--ink-1000) 82%, transparent);
+  color: var(--bone-100);
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: 0.8125rem;
+}
+.pauseGlyph {
+  width: 10px;
+  height: 12px;
+  border-inline: 3px solid currentColor;
+}
+.pauseGlyph[data-paused='1'] {
+  width: 0;
+  height: 0;
+  border-inline: 0;
+  border-block: 6px solid transparent;
+  border-left: 10px solid currentColor;
+}
+
+/* Légende : ce que montre la vidéo, sur un rail. */
+.caption { display: flex; flex-direction: column; gap: 16px; }
+.chapters {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 28px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.chapters::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+.chapters > li {
+  display: flex;
+  gap: 12px;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+.chapterNum {
+  flex: none;
+  font-variation-settings: 'wdth' 125, 'wght' 820;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.honest { margin-top: 4px; }

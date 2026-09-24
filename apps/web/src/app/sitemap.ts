@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { hasLegalNotice } from '@/lib/legal';
-import { buildSitemap, type SitemapMetier } from '@/lib/seo/crawl';
+import { publishedMetiers } from '@/lib/metiers/registry';
+import { buildSitemap } from '@/lib/seo/crawl';
 import { seoIndexable, siteUrl } from '@/lib/seo/site';
 
 /**
@@ -12,20 +13,16 @@ import { seoIndexable, siteUrl } from '@/lib/seo/site';
  */
 export const dynamic = 'force-dynamic';
 
-/**
- * Pages métier publiées (/pour/[slug]). Le registre des métiers
- * (lib/metiers/registry.ts) n'existe pas encore : tant qu'il n'est pas là,
- * le sitemap ne liste que les pages publiques actuelles. Le lot qui publie
- * les pages /pour branche ici `publishedMetiers()`, et rien d'autre ne
- * change (le constructeur ajoute alors /pour et chaque /pour/[slug]).
- */
-const PUBLISHED_METIERS: readonly SitemapMetier[] = [];
-
 export default function sitemap(): MetadataRoute.Sitemap {
   return buildSitemap({
     siteUrl: siteUrl(),
     indexable: seoIndexable(),
     legalNotice: hasLegalNotice(),
-    metiers: PUBLISHED_METIERS,
+    // Pages métier publiées : le constructeur ajoute /pour (daté du texte
+    // le plus récent) et chaque /pour/<slug>, daté de la révision de SON
+    // texte (`updatedAt` du registre), jamais de la date du jour. Même
+    // source que `generateStaticParams` : une URL du sitemap a toujours sa
+    // page, et une page publiée son URL.
+    metiers: publishedMetiers(),
   });
 }

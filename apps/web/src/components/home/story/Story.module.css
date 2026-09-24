@@ -45,6 +45,13 @@
   /* Le mot le plus long (« n'attendent ») tient toujours dans la colonne. */
   font-size: min(clamp(2.625rem, 1.2rem + 6.2vw, 5.75rem), 14.5cqi);
 }
+/* Titre de page métier plus long que celui de l'accueil (plus de
+   40 signes) : un cran plus petit et une colonne un peu plus large, pour
+   tenir en quatre lignes au lieu de six. */
+.title[data-length='long'] {
+  font-size: min(clamp(2.375rem, 1.1rem + 5.2vw, 4.75rem), 12.5cqi);
+  max-width: 15ch;
+}
 .lead { margin-top: var(--gap-title); }
 .actions {
   margin-top: 24px;
@@ -212,11 +219,14 @@
   text-transform: uppercase;
   opacity: 0.78;
 }
-/* L'indice suit l'état de la latte (textes décoratifs, en CSS). */
-.slot[data-state='self'] .hint::after { content: 'Votre place'; }
-.slot[data-state='kept'] .hint::after { content: 'Place gardée'; }
-.slot[data-state='back'] .hint::after { content: 'De retour'; }
-.slot:is([data-state='turn'], [data-state='passed']) .hint::after { content: 'À vous'; }
+/* L'indice suit l'état de la latte (textes décoratifs, en CSS). Les
+   textes d'une page métier arrivent par variables (copy.ts,
+   storyCssVars) ; la valeur de repli est celle de l'accueil, qui n'en
+   pose aucune. */
+.slot[data-state='self'] .hint::after { content: var(--story-hint-self, 'Votre place'); }
+.slot[data-state='kept'] .hint::after { content: var(--story-hint-kept, 'Place gardée'); }
+.slot[data-state='back'] .hint::after { content: var(--story-hint-back, 'De retour'); }
+.slot:is([data-state='turn'], [data-state='passed']) .hint::after { content: var(--story-hint-turn, 'À vous'); }
 .slot[data-state='ghost'] .text { display: none; }
 /* Fantômes : « Votre place » (vous), « Prochain client » (la boucle). */
 .slot[data-state='ghost'] .face::after,
@@ -225,8 +235,8 @@
   font-size: 13px;
   line-height: 1;
 }
-.slot[data-slot='vous'][data-state='ghost'] .face::after { content: 'Votre place'; }
-.slot[data-slot='next'] .face::after { content: 'Prochain client'; }
+.slot[data-slot='vous'][data-state='ghost'] .face::after { content: var(--story-ghost, 'Votre place'); }
+.slot[data-slot='next'] .face::after { content: var(--story-next, 'Prochain client'); }
 /* Lattes anonymes : une simple coche, comme sur l'écran client. */
 .anon::before {
   content: '';
@@ -496,10 +506,10 @@
 .swap::before,
 .swap::after { grid-area: 1 / 1; white-space: nowrap; }
 .swap::after { opacity: 0; }
-.proLabel::before { content: 'En cours · avec Karim'; }
-.proLabel::after { content: 'Suivant'; }
-.proName::before { content: 'Léa'; }
-.proName::after { content: 'Camille'; }
+.proLabel::before { content: var(--story-pro-current, 'En cours · avec Karim'); }
+.proLabel::after { content: var(--story-pro-next, 'Suivant'); }
+.proName::before { content: var(--story-pro-current-name, 'Léa'); }
+.proName::after { content: var(--story-pro-next-name, 'Camille'); }
 .stage:is([data-pro='pressed'], [data-turn='1']) .swap::before { opacity: 0; }
 .stage:is([data-pro='pressed'], [data-turn='1']) .swap::after { opacity: 1; }
 .proKey { margin-bottom: 4px; }

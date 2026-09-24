@@ -1,0 +1,113 @@
+/* =====================================================================
+   SIGNATURES — le visuel propre à chaque métier
+   ---------------------------------------------------------------------
+   Un « panneau de sol » : le sol encre des scènes (--floor), bordé d'un
+   filet, sur lequel on pose les objets du produit (la file en relief, la
+   plaque d'immatriculation, le rail d'étapes, les chevalets, les
+   tickets). Aucune ombre floue, aucun dégradé, sauf la flaque vermillon
+   du seuil que portent déjà les scènes.
+   ===================================================================== */
+
+.panel {
+  position: relative;
+  overflow: clip;
+  border-radius: var(--r-card);
+  background: var(--floor);
+  border: 1px solid var(--line);
+}
+.panelTall { height: clamp(380px, 46vw, 540px); }
+.panelTall > :global(.scene3d) { position: absolute; inset: 0; height: 100%; }
+
+/* -------------------------------------------------------- Fauteuils */
+.chairs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  height: clamp(340px, 40vw, 440px);
+}
+.chair { height: 100% !important; }
+/* Les trois sols se touchent : une seule scène, trois files. */
+.chair + .chair { border-left: 1px dashed color-mix(in oklab, var(--bone-100) 6%, transparent); }
+@media (max-width: 719px) {
+  /* Trois files dans 358 px : lattes plus étroites, libellés plus courts. */
+  .chairs :global(.seuil3d__label) { font-size: 0.625rem; letter-spacing: 0.16em; }
+}
+
+/* ---------------------------------------------------------- Atelier */
+.workshop {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+}
+.sheet,
+.phoneView {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 24px 20px 28px;
+  background: var(--floor);
+  min-width: 0;
+}
+.sheetLabel { color: var(--text-muted); }
+.sheetId { display: flex; align-items: center; min-height: 64px; }
+.dossier { display: inline-flex; align-items: center; gap: 16px; color: var(--text-muted); }
+@media (min-width: 720px) {
+  .workshop { grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); }
+  .sheet, .phoneView { padding: 32px 28px 36px; }
+}
+
+/* ----------------------------------------------------------- Tables */
+.tables {
+  display: grid;
+  align-content: end;
+  min-height: clamp(320px, 36vw, 420px);
+  padding: 72px 20px 40px;
+}
+.tablesFloor { inset: 0; }
+.tablesSeuil {
+  position: absolute;
+  left: 20px;
+  top: 20px;
+  padding: 7px 12px 5px;
+  border: 3px solid var(--accent);
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  color: var(--accent);
+  letter-spacing: 0.22em;
+}
+.tents {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 28px 24px;
+}
+
+/* ---------------------------------------------------- Tableau d'appel */
+.callBoard {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 28px 22px 32px;
+  background: var(--ink-1000);
+}
+.callHead { color: var(--text-muted); }
+.calls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.calls > li {
+  padding-block: 18px;
+  border-top: 1px solid var(--line);
+  opacity: 0.55;
+}
+.calls > li[data-now='1'] { opacity: 1; }
+
+/* ----------------------------------------------------------- Vagues */
+.waves { padding-top: 24px; }
