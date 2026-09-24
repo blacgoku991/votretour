@@ -316,6 +316,11 @@ services:
           curl -sS -m 30 -o /dev/null \
             -H "Authorization: Bearer $$CRON_SECRET" \
             http://app:3000/api/cron/notifications || true
+          # Avis Google différés des profils métier (restaurant : 75 min
+          # après « Installer ») : toutes les minutes, route distincte.
+          curl -sS -m 30 -o /dev/null \
+            -H "Authorization: Bearer $$CRON_SECRET" \
+            http://app:3000/api/cron/reviews || true
           # Purge RGPD et expiration des tickets : toutes les heures.
           if [ "$$(date +%M)" = "07" ]; then
             curl -sS -m 120 -o /dev/null \

@@ -106,6 +106,24 @@ describe('isolation', () => {
     expect(notifications).not.toMatch(/dispatchDueReviews|claim_due_review_notifications|cron\/reviews/);
   });
 
+  it('le service cron de production appelle la route chaque minute, avec le même secret', () => {
+    // Sans cette ligne, rien n'appelle jamais la route : les avis différés
+    // (restaurant, 75 min après « Installer ») ne partiraient pas.
+    const compose = read('../../../deploy/docker-compose.yml');
+    const cron = compose.slice(compose.indexOf('\n  cron:'), compose.indexOf('\nvolumes:'));
+    expect(cron).toContain('while true; do');
+    const loop = cron.slice(cron.indexOf('while true; do'), cron.indexOf('done'));
+    // Appel HORS du bloc horaire (`if … date +%M`) : chaque tour de boucle.
+    const hourly = loop.indexOf('if [');
+    const call = loop.indexOf('http://app:3000/api/cron/reviews || true');
+    expect(call).toBeGreaterThan(-1);
+    expect(hourly === -1 || call < hourly).toBe(true);
+    // Même forme que l'appel des notifications : secret du cron, échec toléré.
+    const block = loop.slice(loop.lastIndexOf('curl', call), call);
+    expect(block).toContain('-H "Authorization: Bearer $$CRON_SECRET"');
+    expect(block).toMatch(/-m \d+/);
+  });
+
   it('la route lit le même secret que les autres crons', () => {
     const route = read('../src/app/api/cron/reviews/route.ts');
     expect(route).toContain('env.cronSecret');

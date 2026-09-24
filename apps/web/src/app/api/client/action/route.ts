@@ -12,20 +12,18 @@ export const dynamic = 'force-dynamic';
 const LEGACY_ACTIONS = ['leave', 'returning', 'present'] as const;
 const PROFILE_ACTIONS = ['quote_accept', 'quote_decline', 'unfollow'] as const;
 
-const bodySchema = z
-  .object({
-    organizationId: uuidSchema,
-    entryId: publicIdSchema,
-    action: z.enum([...LEGACY_ACTIONS, ...PROFILE_ACTIONS]),
-    /** Numéro du devis que le client a lu (`details.quote.n`), pour les décisions. */
-    quoteN: z.number().int().min(1).max(100_000).optional(),
-  })
-  .superRefine((body, ctx) => {
-    const decision = body.action === 'quote_accept' || body.action === 'quote_decline';
-    if (decision && body.quoteN === undefined) {
-      ctx.addIssue({ code: 'custom', path: ['quoteN'], message: 'Devis inconnu : rechargez la page.' });
-    }
-  });
+const bodySchema = z.object({
+  organizationId: uuidSchema,
+  entryId: publicIdSchema,
+  action: z.enum([...LEGACY_ACTIONS, ...PROFILE_ACTIONS]),
+  /**
+   * Numéro du devis que le client a lu (`details.quote.n`), exigé pour les
+   * décisions. Son absence est refusée par `profileClientAction` (422,
+   * « Devis inconnu : rechargez la page. ») : un seul message, sans le
+   * préfixe de champ que `parseBody` ajoute aux refus de schéma.
+   */
+  quoteN: z.number().int().min(1).max(100_000).optional(),
+});
 
 function isLegacyAction(action: string): action is (typeof LEGACY_ACTIONS)[number] {
   return (LEGACY_ACTIONS as readonly string[]).includes(action);
@@ -73,7 +71,15 @@ export async function POST(request: Request) {
       action: body.action,
       quoteN: body.quoteN ?? null,
     });
-    // Après « Ne plus suivre », l'appareil n'a plus accès au ticket : null.
+    // « Ne plus suivre » détache la fiche de cette session : `ticket_state`
+    // la refuserait désormais (VT009, « n'appartient pas à cette
+    // session »), et le client lirait une erreur alors que sa demande a
+    // abouti. Rien à relire : l'appareil ne suit plus rien, et ne reçoit
+    // donc plus rien de la fiche (immatriculation, devis) : son seul
+    // identifiant, pour que l'écran sache laquelle il vient de lâcher.
+    if (body.action === 'unfollow') {
+      return jsonOk({ entry: { id: result.entry.id, status: result.entry.status }, ticket: null });
+    }
     const ticket = await getProfileTicketState(body.entryId, session.id);
     return jsonOk({ entry: result.entry, ticket });
   } catch (error) {

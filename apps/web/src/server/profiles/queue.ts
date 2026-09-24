@@ -73,7 +73,7 @@ async function rpc<T>(fn: string, params: Record<string, unknown>): Promise<T> {
  * qui a le sien (`quote_changed`) : l'écran du client relit alors le
  * devis au lieu d'afficher une simple erreur.
  */
-const PRECISE_SQL_MESSAGES: Readonly<Record<string, { message: string; code?: string }>> = {
+const PRECISE_SQL_MESSAGES: Readonly<Record<string, { message: string; code?: string; status?: number }>> = {
   'Le devis a changé : relisez-le avant de répondre': {
     message: 'Le devis a changé : relisez-le avant de répondre.',
     code: 'quote_changed',
@@ -91,6 +91,17 @@ const PRECISE_SQL_MESSAGES: Readonly<Record<string, { message: string; code?: st
   'Trois rappels au maximum': { message: 'Trois rappels au maximum.' },
   'Action indisponible pour ce profil': { message: 'Cette action n’existe pas pour ce métier.' },
   "Ce guichet a déjà appelé quelqu'un": { message: 'Ce guichet a déjà appelé quelqu’un : terminez d’abord.' },
+  // VT009 est le code des tickets d'un AUTRE appareil : son texte générique
+  // (« Ce ticket n'appartient pas à cet appareil ») serait faux au poste
+  // du pro, qui a seulement choisi un guichet disparu entre-temps.
+  'Guichet inconnu pour cet établissement': {
+    message: 'Ce guichet n’existe plus pour cet établissement : rechargez la page.',
+    code: 'invalid_desk',
+    status: 422,
+  },
+  // `unfollow` n'existe qu'en atelier : ailleurs la base répond par son
+  // refus générique d'action inconnue, qui ne dirait rien au client.
+  'Action client inconnue: unfollow': { message: 'Cette action n’existe pas pour ce métier.' },
   'Trop de messages : attendez 30 secondes entre deux envois': {
     message: 'Trop de messages : attendez 30 secondes entre deux envois.',
   },
@@ -98,6 +109,15 @@ const PRECISE_SQL_MESSAGES: Readonly<Record<string, { message: string; code?: st
   'Informations invalides : immatriculation requise': { message: 'Saisissez l’immatriculation.' },
   'Informations invalides : immatriculation': { message: 'Immatriculation invalide.' },
   'Informations invalides : nombre de couverts (1 à 20)': { message: 'Nombre de couverts invalide (1 à 20).' },
+  'Informations invalides : trop de couverts pour une inscription en ligne': {
+    message: 'Pour un groupe de cette taille, appelez directement l’établissement.',
+  },
+  'Informations invalides : devis': { message: 'Devis invalide : un libellé de 80 caractères au plus, et un montant.' },
+  'Informations invalides : montant du devis': { message: 'Montant du devis invalide.' },
+  "Informations invalides : pas d'adresse web dans le libellé du devis": {
+    message: 'Le libellé du devis ne peut pas contenir d’adresse web.',
+  },
+  "Informations invalides : pays de l'immatriculation": { message: 'Pays de l’immatriculation invalide.' },
   // 60 jours : la borne de `set_eta` en SQL, et READY_ETA_MAX_DAYS ici.
   'Informations invalides : promesse de délai': { message: 'Choisissez une date à venir, dans les 60 jours.' },
 };
@@ -109,7 +129,7 @@ export function profileError(error: unknown): AppError {
     : null;
   const precise = typeof raw === 'string' ? PRECISE_SQL_MESSAGES[raw.trim()] : undefined;
   if (!precise || base.code === 'internal') return base;
-  return new AppError(precise.code ?? base.code, precise.message, base.status);
+  return new AppError(precise.code ?? base.code, precise.message, precise.status ?? base.status);
 }
 
 /**
@@ -168,6 +188,17 @@ async function internalIdFor(entryPublicId: string): Promise<string | null> {
     .eq('public_id', entryPublicId)
     .maybeSingle();
   return data?.id ?? null;
+}
+
+/** Pays de l'immatriculation déjà enregistré sur une fiche (ou null). */
+async function storedRegistrationCountry(entryPublicId: string): Promise<'FR' | 'other' | null> {
+  const { data } = await supabaseAdmin()
+    .from('queue_entries')
+    .select('details')
+    .eq('public_id', entryPublicId)
+    .maybeSingle();
+  const country = (data?.details as Record<string, unknown> | null | undefined)?.country;
+  return country === 'FR' || country === 'other' ? country : null;
 }
 
 /** Ce qu'il faut savoir d'une file pour valider des informations métier. */
@@ -430,19 +461,28 @@ export const LEGACY_OPTION_SCHEMAS: Record<StaffAction, z.ZodType> = {
  * Correctif de fiche par le pro (`update_details`) : chaque clé non nulle
  * passe par le schéma du profil (côté pro : clés reçues, accessoires) ;
  * une clé à `null` retire l'information, et doit être une clé connue.
+ *
+ * `storedCountry` : le pays DÉJÀ enregistré sur la fiche. Une plaque
+ * corrigée sans préciser le pays se lit dans ce pays-là : sans lui, le
+ * schéma retomberait sur le format français, refuserait une plaque
+ * étrangère juste et réécrirait `country: 'FR'` par-dessus 'other'.
  */
 export function parseDetailsPatch(
   profile: QueueProfile,
   options: ProfileOptions,
   patch: Record<string, unknown>,
+  storedCountry: 'FR' | 'other' | null = null,
 ): Record<string, unknown> {
   const removals = Object.entries(patch).filter(([, v]) => v === null).map(([k]) => k);
   // Une clé retirée passe AUSSI par le schéma strict, avec la valeur
   // « absente » : une clé inconnue (ou `quote`, qui n'est jamais posé par
   // ce chemin) est refusée comme si elle portait une valeur.
-  const values = Object.fromEntries(
+  const values: Record<string, unknown> = Object.fromEntries(
     Object.entries(patch).map(([k, v]) => [k, v === null ? undefined : v]),
   );
+  if (profile === 'vehicle' && typeof values.registration === 'string' && !('country' in patch) && storedCountry) {
+    values.country = storedCountry;
+  }
   // Le pro corrige une fiche : l'immatriculation n'est pas exigée ici.
   const parsed = detailsSchemaFor(profile, { actor: 'staff', options: { ...options, registrationRequired: false } })
     .safeParse(values, { error: frenchIssues });
@@ -587,7 +627,10 @@ export async function profileStaffAction(params: {
   } else if (action === 'send_quote') {
     options = { ...parsed, notify: (parsed.notify as boolean | undefined) ?? true };
   } else if (action === 'update_details') {
-    options = { details: parseDetailsPatch(queue.profile, queue.options, parsed.details as Record<string, unknown>) };
+    const patch = parsed.details as Record<string, unknown>;
+    const needsCountry = queue.profile === 'vehicle' && typeof patch.registration === 'string' && !('country' in patch);
+    const storedCountry = needsCountry ? await storedRegistrationCountry(params.entryPublicId) : null;
+    options = { details: parseDetailsPatch(queue.profile, queue.options, patch, storedCountry) };
   } else if (action === 'message') {
     const body = params.messageBody?.trim();
     if (!body) throw new AppError('validation', 'Le message est vide.', 422);

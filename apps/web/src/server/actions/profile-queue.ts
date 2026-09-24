@@ -63,7 +63,7 @@ export type ActionResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string; code: string };
 
-/** Ce que le poste affiche après un envoi (« Prévenu 14:32 » / « Non joignable »). */
+/** Ce que le poste affiche après un envoi (« Prévenu 14:32 », « Non joignable », « Envoi indisponible »). */
 export interface SentNotice {
   kind: string;
   reach: NotificationReach;

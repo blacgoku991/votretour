@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * GARDES D'INSCRIPTION — `POST /api/client/join`.
+ * GARDES DES ROUTES CLIENT — `POST /api/client/join`, puis les actions à
+ * profil de `POST /api/client/action` (en fin de fichier).
  *
  *  - walkin et event : AUCUNE garde, aucune lecture en plus, et le même
  *    appel `joinQueue` qu'avant les profils, argument pour argument ;
@@ -24,6 +25,34 @@ const state = vi.hoisted(() => ({
   queueOptions: {} as Record<string, unknown>,
 }));
 
+/**
+ * Base simulée pour `client_queue_action` et `ticket_state`, avec LEURS
+ * règles (0034, 0035) : une session qui ne détient plus la fiche est
+ * refusée par VT009, jamais servie par null.
+ */
+const sql = vi.hoisted(() => ({
+  entrySession: 'session-1' as string | null,
+  quoteN: 2,
+  clientSession: { id: 'session-1' } as { id: string } | null,
+  calls: [] as { fn: string; params: Record<string, unknown> }[],
+}));
+const NOT_YOURS = { code: 'VT009', message: "Ce ticket n'appartient pas à cette session" };
+
+function sqlRpc(fn: string, params: Record<string, unknown>): { data: unknown; error: unknown } {
+  sql.calls.push({ fn, params });
+  if (sql.entrySession !== params.p_client_session_id) return { data: null, error: NOT_YOURS };
+  if (fn === 'ticket_state') {
+    return { data: { ticket: { id: params.p_entry_public_id, profile: 'vehicle', stage: 'quote_pending' } }, error: null };
+  }
+  if (fn !== 'client_queue_action') return { data: null, error: null };
+  const options = params.p_options as { quoteN?: number };
+  if (params.p_action === 'unfollow') sql.entrySession = null;
+  if (String(params.p_action).startsWith('quote_') && options.quoteN !== sql.quoteN) {
+    return { data: null, error: { code: 'VT006', message: 'Le devis a changé : relisez-le avant de répondre' } };
+  }
+  return { data: { entry: { id: params.p_entry_public_id, status: 'serving' }, queueId: 'q' }, error: null };
+}
+
 vi.mock('@/server/queue', () => ({
   resolveEntryPoint: async () => state.entryPoint,
   joinQueue: async (input: Record<string, unknown>) => {
@@ -31,6 +60,8 @@ vi.mock('@/server/queue', () => ({
     return { entry: { id: 'Tk7pQ2xWm9Ra' }, rejoined: false, queueId: input.queueId };
   },
   propagate: async () => ({ state: null, notifications: { claimed: 0, sent: 0, failed: 0, skipped: 0, reasons: [] } }),
+  clientAction: async () => { throw new Error('chemin historique inattendu'); },
+  getTicketState: async () => null,
 }));
 
 vi.mock('@/server/profiles/queue', async (importOriginal) => {
@@ -56,6 +87,7 @@ vi.mock('@/server/profiles/queue', async (importOriginal) => {
 vi.mock('@/server/client-session', () => ({
   requestFingerprint: async () => ({ ip: null, ipHash: 'ip', uaHash: null }),
   detectPlatform: async () => 'web',
+  getClientSession: async () => sql.clientSession,
   getOrCreateClientSession: async (organizationId: string, options: unknown) => {
     state.sessions.push({ organizationId, options });
     return { id: 'session-1', issuedToken: 'jeton' };
@@ -64,18 +96,22 @@ vi.mock('@/server/client-session', () => ({
   sessionCookieOptions: () => ({ httpOnly: true, path: '/' }),
 }));
 vi.mock('@/server/ratelimit', () => ({
-  LIMITS: { join: { max: 8, window: 300 } },
+  LIMITS: { join: { max: 8, window: 300 }, clientAction: { max: 40, window: 300 } },
   enforceRateLimit: async () => undefined,
 }));
 vi.mock('@/server/realtime', () => ({ broadcastTicketEvent: async () => true }));
 vi.mock('next/headers', () => ({ cookies: async () => ({ set: () => undefined }) }));
 vi.mock('@/lib/supabase/admin', () => ({
-  supabaseAdmin: () => ({ from: () => ({ insert: () => ({ then: () => undefined }) }) }),
+  supabaseAdmin: () => ({
+    from: () => ({ insert: () => ({ then: () => undefined }) }),
+    rpc: async (fn: string, params: Record<string, unknown>) => sqlRpc(fn, params),
+  }),
 }));
 
 const { AppError } = await import('@/lib/errors');
 const { PROFILES_HEADER, resolveJoinPath } = await import('@/server/profiles/queue');
 const { POST } = await import('@/app/api/client/join/route');
+const { POST: ACTION } = await import('@/app/api/client/action/route');
 
 const ORG = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const QUEUE = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -267,5 +303,68 @@ describe('POST /api/client/join', () => {
     expect(response.status).toBe(200);
     expect(state.joinProfileQueue).toEqual([]);
     expect(state.joinQueue).toHaveLength(1);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Actions à profil : POST /api/client/action                            */
+/* ------------------------------------------------------------------ */
+
+describe('POST /api/client/action (profils)', () => {
+  const ENTRY = 'Tk7pQ2xWm9Ra';
+
+  function act(body: Record<string, unknown>) {
+    return ACTION(new Request('https://rangvia.test/api/client/action', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ organizationId: ORG, entryId: ENTRY, ...body }),
+    }));
+  }
+
+  beforeEach(() => {
+    sql.entrySession = 'session-1';
+    sql.quoteN = 2;
+    sql.clientSession = { id: 'session-1' };
+    sql.calls.length = 0;
+  });
+
+  it('« Ne plus suivre » répond 200, ticket null, sans relire une fiche détachée', async () => {
+    const response = await act({ action: 'unfollow' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, data: { entry: { id: ENTRY, status: 'serving' }, ticket: null } });
+    expect(sql.entrySession).toBeNull();
+    // Relire la fiche aurait levé VT009 : la route ne le tente même pas.
+    expect(sql.calls.map((c) => c.fn)).toEqual(['client_queue_action']);
+  });
+
+  it('accord du devis lu : 200, puis la fiche relue par l’appareil', async () => {
+    const response = await act({ action: 'quote_accept', quoteN: 2 });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, data: { ticket: { ticket: { id: ENTRY } } } });
+    expect(sql.calls.map((c) => [c.fn, c.params.p_options ?? null])).toEqual([
+      ['client_queue_action', { quoteN: 2 }],
+      ['ticket_state', null],
+    ]);
+  });
+
+  it('décision sans numéro de devis : 422, sans appeler la base', async () => {
+    for (const action of ['quote_accept', 'quote_decline']) {
+      const response = await act({ action });
+      expect(response.status, action).toBe(422);
+      expect(await response.json()).toMatchObject({ ok: false, code: 'validation', error: 'Devis inconnu : rechargez la page.' });
+    }
+    expect(sql.calls).toEqual([]);
+  });
+
+  it('devis renvoyé entre-temps : 409 quote_changed, pour que l’écran le relise', async () => {
+    const response = await act({ action: 'quote_decline', quoteN: 1 });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: 'quote_changed', error: 'Le devis a changé : relisez-le avant de répondre.' });
+  });
+
+  it('sans session sur cet appareil : 403, rien n’est tenté', async () => {
+    sql.clientSession = null;
+    expect((await act({ action: 'unfollow' })).status).toBe(403);
+    expect(sql.calls).toEqual([]);
   });
 });

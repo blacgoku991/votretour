@@ -63,6 +63,12 @@ export interface DispatchSummary {
   sent: number;
   failed: number;
   skipped: number;
+  /**
+   * Parmi `skipped` : les envois écartés parce que le CANAL n'est pas
+   * configuré sur ce serveur (APNs ou Web Push sans identifiants), alors
+   * que l'appareil a bien un abonnement actif. Absent = 0.
+   */
+  unconfigured?: number;
   reasons: string[];
 }
 
@@ -107,18 +113,45 @@ function ticketUrl(slug: string, kind: ProfileNotificationKind): string {
  * accepté le message, jamais qu'il a été lu.
  *   sent        : au moins une livraison acceptée → « Prévenu 14:32 » ;
  *   failed      : le fournisseur a refusé toutes les tentatives ;
- *   unreachable : réclamé, mais aucun canal utilisable (pas d'abonnement,
- *                 fiche sans appareil) → « Non joignable » : le pro sait
- *                 qu'il doit appeler lui-même ;
+ *   unavailable : l'appareil EST abonné, mais le canal n'est pas configuré
+ *                 sur ce serveur (identifiants APNs ou Web Push absents) →
+ *                 « Envoi indisponible ». Ce n'est pas le client qui est
+ *                 injoignable : le dire « non joignable » pousserait le pro
+ *                 à appeler des clients qui ont tout bien fait ;
+ *   unreachable : réclamé, mais aucun abonnement utilisable (pas
+ *                 d'abonnement, fiche sans appareil) → « Non joignable » :
+ *                 le pro sait qu'il doit appeler lui-même ;
  *   none        : rien à envoyer (déjà envoyé, ou étape passée sans prévenir).
  */
-export type NotificationReach = 'sent' | 'failed' | 'unreachable' | 'none';
+export type NotificationReach = 'sent' | 'failed' | 'unavailable' | 'unreachable' | 'none';
 
-export function reachOf(summary: Pick<DispatchSummary, 'claimed' | 'sent' | 'failed' | 'skipped'>): NotificationReach {
+export function reachOf(
+  summary: Pick<DispatchSummary, 'claimed' | 'sent' | 'failed' | 'skipped' | 'unconfigured'>,
+): NotificationReach {
   if (summary.sent > 0) return 'sent';
   if (summary.failed > 0) return 'failed';
+  if ((summary.unconfigured ?? 0) > 0) return 'unavailable';
   if (summary.claimed > 0) return 'unreachable';
   return 'none';
+}
+
+/** Motifs journalisés quand un canal n'a pas d'identifiants sur ce serveur. */
+const APNS_UNCONFIGURED = 'APNs non configuré';
+const WEB_PUSH_UNCONFIGURED = 'Web Push non configuré';
+const UNCONFIGURED_ERRORS: ReadonlySet<string> = new Set([APNS_UNCONFIGURED, WEB_PUSH_UNCONFIGURED]);
+
+/**
+ * Lit un horodatage du journal d'un ticket (`notification_status`).
+ *
+ * La base l'écrit avec `to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SSOF')`, soit
+ * « 2026-09-24T05:28:21+00 » ou « …+02 » : un décalage en heures seules,
+ * que `Date.parse` ne sait PAS lire (NaN). On le complète en « +00:00 »
+ * avant de lire ; un décalage déjà complet (« +05:30 ») ou un « Z » passe
+ * tel quel. NaN pour tout le reste (« silenced », texte libre).
+ */
+export function parseJournalTimestamp(value: string): number {
+  const iso = value.trim().replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00');
+  return Date.parse(iso);
 }
 
 /**
@@ -333,6 +366,11 @@ export async function dispatchDueReviews(limit = 200): Promise<DispatchSummary> 
  * relit donc le journal du ticket, puis les livraisons écrites depuis
  * `since`. Une réclamation sans aucune livraison journalisée veut dire
  * « aucun appareil rattaché » : non joignable.
+ *
+ * Un drapeau réclamé AVANT l'action (« Prêt · prévenir » pressé de
+ * nouveau sur un véhicule déjà prêt et déjà prévenu) ne dit rien de
+ * celle-ci : la base n'a rien réclamé, rien n'est parti, et le poste ne
+ * doit afficher ni « Prévenu » ni « Non joignable » : 'none'.
  */
 export async function turnReachSince(entryId: string, since: Date): Promise<NotificationReach> {
   const db = supabaseAdmin();
@@ -341,18 +379,22 @@ export async function turnReachSince(entryId: string, since: Date): Promise<Noti
   const flag = (entry?.notification_status as Record<string, unknown> | null | undefined)?.your_turn;
   // Absent, ou « Prêt » passé sans prévenir ('silenced') : rien n'est parti.
   if (typeof flag !== 'string' || flag === 'silenced') return 'none';
-  const claimedAt = Date.parse(flag);
-  if (Number.isFinite(claimedAt) && claimedAt < since.getTime() - 5_000) return 'none';
+  // 5 s de marge : la base tronque à la seconde, et `now()` y est l'heure
+  // du DÉBUT de transaction.
+  const floor = since.getTime() - 5_000;
+  const claimedAt = parseJournalTimestamp(flag);
+  if (Number.isFinite(claimedAt) && claimedAt < floor) return 'none';
 
   const { data: rows } = await db
     .from('notification_deliveries')
-    .select('status')
+    .select('status, error')
     .eq('queue_entry_id', entryId)
     .eq('kind', 'your_turn')
-    .gte('created_at', new Date(since.getTime() - 5_000).toISOString());
-  const statuses = ((rows ?? []) as { status: string }[]).map((r) => r.status);
-  if (statuses.includes('sent')) return 'sent';
-  if (statuses.includes('failed')) return 'failed';
+    .gte('created_at', new Date(floor).toISOString());
+  const list = (rows ?? []) as { status: string; error?: string | null }[];
+  if (list.some((r) => r.status === 'sent')) return 'sent';
+  if (list.some((r) => r.status === 'failed')) return 'failed';
+  if (list.some((r) => r.status === 'skipped' && UNCONFIGURED_ERRORS.has(r.error ?? ''))) return 'unavailable';
   return 'unreachable';
 }
 
@@ -717,7 +759,12 @@ async function deliverAll(pending: PendingNotification[]): Promise<DispatchSumma
       const result = await sendOne(sub, item, location, copy, profile);
       if (result.status === 'sent') summary.sent += 1;
       else if (result.status === 'failed') summary.failed += 1;
-      else summary.skipped += 1;
+      else {
+        summary.skipped += 1;
+        if (result.error && UNCONFIGURED_ERRORS.has(result.error)) {
+          summary.unconfigured = (summary.unconfigured ?? 0) + 1;
+        }
+      }
       if (result.deactivate) deactivate.push(sub.id);
       if (result.error) summary.reasons.push(`${sub.channel}: ${result.error}`);
       deliveries.push(result.record);
@@ -773,8 +820,8 @@ async function sendOne(
   if (sub.channel === 'apns_appclip' || sub.channel === 'apns_app') {
     if (!apnsConfigured()) {
       return {
-        status: 'skipped', deactivate: false, error: 'APNs non configuré',
-        record: { ...base, status: 'skipped', error: 'APNs non configuré' },
+        status: 'skipped', deactivate: false, error: APNS_UNCONFIGURED,
+        record: { ...base, status: 'skipped', error: APNS_UNCONFIGURED },
       };
     }
     if (!sub.device_token || !sub.bundle_id) {
@@ -836,8 +883,8 @@ async function sendOne(
   if (sub.channel === 'web_push') {
     if (!webPushConfigured()) {
       return {
-        status: 'skipped', deactivate: false, error: 'Web Push non configuré',
-        record: { ...base, status: 'skipped', error: 'Web Push non configuré' },
+        status: 'skipped', deactivate: false, error: WEB_PUSH_UNCONFIGURED,
+        record: { ...base, status: 'skipped', error: WEB_PUSH_UNCONFIGURED },
       };
     }
     if (!sub.endpoint || !sub.p256dh || !sub.auth_secret) {

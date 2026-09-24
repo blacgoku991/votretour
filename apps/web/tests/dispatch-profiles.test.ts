@@ -111,7 +111,8 @@ vi.mock('@/server/realtime', () => ({
 }));
 
 const {
-  dispatchDueReviews, dispatchEntryNotification, dispatchKeyedNotification, openingStateAt, reachOf, ttlSecondsFor,
+  dispatchDueReviews, dispatchEntryNotification, dispatchKeyedNotification, openingStateAt, parseJournalTimestamp,
+  reachOf, ttlSecondsFor, turnReachSince,
 } = await import('@/server/notifications/dispatch');
 const { keyedSendFor, profileStaffAction } = await import('@/server/profiles/queue');
 
@@ -135,6 +136,10 @@ interface Scenario {
   claimKey: boolean;
   notified: Record<string, unknown>;
   status: string;
+  /** Journal `notification_status` de la fiche, tel que la base l'écrit. */
+  notificationStatus: Record<string, unknown>;
+  /** Livraisons `your_turn` déjà journalisées (lues par `turnReachSince`). */
+  turnDeliveries: { status: string; error: string | null }[];
 }
 
 let scenario: Scenario;
@@ -196,6 +201,9 @@ function install() {
     switch (call.table) {
       case 'queue_entries':
         if (call.columns === 'id') return { data: [{ id: ENTRY_ID }], error: null };
+        if (call.columns === 'notification_status') {
+          return { data: [{ notification_status: scenario.notificationStatus }], error: null };
+        }
         return {
           data: [{
             id: ENTRY_ID,
@@ -231,6 +239,8 @@ function install() {
         };
       case 'notification_subscriptions':
         return { data: call.op === 'select' && has('client_session_id') ? scenario.subscriptions : [], error: null };
+      case 'notification_deliveries':
+        return { data: call.op === 'select' ? scenario.turnDeliveries : [], error: null };
       case 'locations':
         return {
           data: [{ id: LOCATION_ID, name: 'Garage des Tilleuls', slug: 'garage-des-tilleuls', google_review_url: 'https://g.page/r/avis', timezone: 'Europe/Paris' }],
@@ -267,6 +277,8 @@ beforeEach(() => {
     claimKey: true,
     notified: {},
     status: 'serving',
+    notificationStatus: {},
+    turnDeliveries: [],
   };
   install();
 });
@@ -303,6 +315,73 @@ describe('reachOf', () => {
     expect(reachOf({ claimed: 1, sent: 0, failed: 2, skipped: 0 })).toBe('failed');
     expect(reachOf({ claimed: 1, sent: 0, failed: 0, skipped: 1 })).toBe('unreachable');
     expect(reachOf({ claimed: 0, sent: 0, failed: 0, skipped: 0 })).toBe('none');
+  });
+
+  it('distingue un canal non configuré d’un client injoignable', () => {
+    // Abonné, mais identifiants APNs absents sur ce serveur : le pro ne
+    // doit pas croire que le client a mal fait.
+    expect(reachOf({ claimed: 1, sent: 0, failed: 0, skipped: 1, unconfigured: 1 })).toBe('unavailable');
+    expect(reachOf({ claimed: 1, sent: 1, failed: 0, skipped: 1, unconfigured: 1 })).toBe('sent');
+    expect(reachOf({ claimed: 1, sent: 0, failed: 1, skipped: 1, unconfigured: 1 })).toBe('failed');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* « Prêt · prévenir » : ce que le poste en dit                          */
+/* ------------------------------------------------------------------ */
+
+describe('parseJournalTimestamp', () => {
+  it('lit le format EXACT du journal SQL (décalage en heures seules)', () => {
+    // `to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SSOF')` : « …+00 », « …+02 ».
+    // `Date.parse` seul rend NaN sur ces deux formes.
+    expect(Number.isNaN(Date.parse('2026-09-24T05:28:21+00'))).toBe(true);
+    expect(parseJournalTimestamp('2026-09-24T05:28:21+00')).toBe(Date.UTC(2026, 8, 24, 5, 28, 21));
+    expect(parseJournalTimestamp('2026-09-24T07:28:21+02')).toBe(Date.UTC(2026, 8, 24, 5, 28, 21));
+    expect(parseJournalTimestamp('2026-09-24T10:58:21+05:30')).toBe(Date.UTC(2026, 8, 24, 5, 28, 21));
+    expect(parseJournalTimestamp('2026-09-24T05:28:21Z')).toBe(Date.UTC(2026, 8, 24, 5, 28, 21));
+    expect(Number.isNaN(parseJournalTimestamp('silenced'))).toBe(true);
+  });
+});
+
+describe('turnReachSince', () => {
+  const since = new Date('2026-09-24T05:30:00Z');
+
+  it('se tait quand « prêt » a été réclamé AVANT l’action (drapeau au format SQL réel)', async () => {
+    // Véhicule déjà prêt et déjà prévenu : « Prêt · prévenir » pressé de
+    // nouveau ne réclame rien et n'écrit aucune livraison.
+    scenario.notificationStatus = { your_turn: '2026-09-24T05:28:21+00' };
+    expect(await turnReachSince(ENTRY_ID, since)).toBe('none');
+    scenario.notificationStatus = { your_turn: '2026-09-24T07:28:21+02' };
+    expect(await turnReachSince(ENTRY_ID, since)).toBe('none');
+    // Aucune lecture des livraisons : la réponse vient du seul journal.
+    expect(db.tableCalls.some((c) => c.table === 'notification_deliveries')).toBe(false);
+  });
+
+  it('dit « Non joignable » quand la réclamation est récente et que rien n’est parti', async () => {
+    scenario.notificationStatus = { your_turn: '2026-09-24T05:30:01+00' };
+    expect(await turnReachSince(ENTRY_ID, since)).toBe('unreachable');
+    const read = db.tableCalls.find((c) => c.table === 'notification_deliveries');
+    expect(read?.filters).toContainEqual(['eq', 'kind', 'your_turn']);
+    expect(read?.filters).toContainEqual(['gte', 'created_at', '2026-09-24T05:29:55.000Z']);
+  });
+
+  it('suit les livraisons récentes : prévenu, refusé, ou canal non configuré', async () => {
+    scenario.notificationStatus = { your_turn: '2026-09-24T07:30:02+02' };
+    scenario.turnDeliveries = [{ status: 'skipped', error: 'APNs non configuré' }, { status: 'sent', error: null }];
+    expect(await turnReachSince(ENTRY_ID, since)).toBe('sent');
+    scenario.turnDeliveries = [{ status: 'failed', error: 'HTTP 410' }];
+    expect(await turnReachSince(ENTRY_ID, since)).toBe('failed');
+    scenario.turnDeliveries = [{ status: 'skipped', error: 'APNs non configuré' }];
+    expect(await turnReachSince(ENTRY_ID, since)).toBe('unavailable');
+    scenario.turnDeliveries = [{ status: 'skipped', error: 'aucun abonnement push actif' }];
+    expect(await turnReachSince(ENTRY_ID, since)).toBe('unreachable');
+  });
+
+  it('se tait sans réclamation, ou quand « prêt » est passé sans prévenir', async () => {
+    scenario.notificationStatus = {};
+    expect(await turnReachSince(ENTRY_ID, since)).toBe('none');
+    scenario.notificationStatus = { your_turn: 'silenced' };
+    expect(await turnReachSince(ENTRY_ID, since)).toBe('none');
   });
 });
 
@@ -350,6 +429,26 @@ describe('changement d’étape avec « Prévenir »', () => {
       expect.objectContaining({ kind: 'stage_update', status: 'skipped', error: 'aucun abonnement push actif' }),
     ]);
     expect(result.notification?.reach).toBe('unreachable');
+  });
+
+  it('remonte « Envoi indisponible » quand l’appareil est abonné mais qu’APNs n’est pas configuré', async () => {
+    // Tant que les identifiants Apple ne sont pas fournis : le client a
+    // tout bien fait, le pro ne doit pas lire « Non joignable ».
+    scenario.subscriptions = [{
+      ...WEB_PUSH_SUB, channel: 'apns_appclip', endpoint: null, p256dh: null, auth_secret: null,
+      device_token: 'a'.repeat(64), bundle_id: 'app.rangvia.Clip', apns_environment: 'production',
+    }];
+    const result = await profileStaffAction({
+      entryPublicId: PUBLIC_ID,
+      action: 'set_stage',
+      options: { stage: 'waiting_parts', notify: true },
+      queue: vehicleQueue,
+    });
+    expect(deliveries()).toEqual([
+      expect.objectContaining({ kind: 'stage_update', status: 'skipped', error: 'APNs non configuré' }),
+    ]);
+    expect(result.notification?.summary).toMatchObject({ skipped: 1, unconfigured: 1 });
+    expect(result.notification?.reach).toBe('unavailable');
   });
 
   it('remonte « Non joignable » pour une fiche créée au comptoir, sans appareil', async () => {
@@ -451,6 +550,16 @@ describe('clés d’envoi', () => {
     ].map((k) => k?.key);
     expect(keys).toEqual(['stage:waiting_parts', 'quote:3', 'recall:2', 'custom:7']);
     for (const key of keys) expect(key).toMatch(SQL_KEY);
+  });
+
+  it('lit le journal tel que staff_queue_action le rend (relevé sur la base réelle)', () => {
+    // `entry_json_staff(...) -> 'notified'` après un deuxième puis un
+    // troisième devis, relevé par psql sur le banc : compteurs en nombres
+    // JSON, horodatages au format `to_char(... 'OF')`.
+    const afterQuote = { quote_count: 3, 'stage:received': 'at_join' };
+    const afterMessage = { quote_count: 3, custom_count: 1, 'custom:1': '2026-09-24T05:38:58+00' };
+    expect(keyedSendFor('send_quote', 'vehicle', { notify: true }, entry(afterQuote))?.key).toBe('quote:3');
+    expect(keyedSendFor('message', 'vehicle', {}, entry(afterMessage))?.key).toBe('custom:1');
   });
 
   it('laisse « prêt » au balayage de la file (your_turn), et rien sans compteur', () => {

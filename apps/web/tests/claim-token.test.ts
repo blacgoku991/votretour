@@ -155,10 +155,10 @@ function jsonRequest(body: unknown): Request {
   });
 }
 
-function formRequest(token: string): Request {
+function formRequest(token: string, headers: Record<string, string> = {}): Request {
   return new Request('https://rangvia.test/api/client/claim', {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers },
     body: new URLSearchParams({ token }).toString(),
   });
 }
@@ -241,6 +241,35 @@ describe('POST /api/client/claim', () => {
   });
 });
 
+describe('POST /api/client/claim venu d’un autre site', () => {
+  it('ne consomme pas le jeton et ne touche pas au cookie de l’appareil', async () => {
+    const { token } = generateTrackingToken();
+    // Formulaire forgé ailleurs : retour à la page du lien, sur notre origine.
+    let response = await POST(formRequest(token, { 'sec-fetch-site': 'cross-site' }));
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe(`/s/${token}`);
+    expect(response.headers.get('set-cookie')).toBeNull();
+    expectPrivate(response);
+    // Appel JSON d'un autre site : 403.
+    response = await POST(new Request('https://rangvia.test/api/client/claim', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' },
+      body: JSON.stringify({ token }),
+    }));
+    expect(response.status).toBe(403);
+    expect(calls.peek).toEqual([]);
+    expect(calls.claim).toEqual([]);
+    expect(calls.sessions).toEqual([]);
+  });
+
+  it('laisse passer la page elle-même (même origine) et les navigateurs sans l’en-tête', async () => {
+    const { token } = generateTrackingToken();
+    expect((await POST(formRequest(token, { 'sec-fetch-site': 'same-origin' }))).status).toBe(303);
+    expect((await POST(formRequest(token))).headers.get('location')).toBe('/e/garage-des-tilleuls-lyon-7?src=link');
+    expect(calls.claim).toHaveLength(2);
+  });
+});
+
 /* ------------------------------------------------------------------ */
 /* La page /s/[jeton]                                                    */
 /* ------------------------------------------------------------------ */
@@ -267,5 +296,17 @@ describe('page /s/[jeton]', () => {
     expect(page).toContain('asMaskedRegistration(preview.registrationMasked)');
     // Le rattachement n'est jamais fait par la page : seulement par le bouton.
     expect(page).not.toContain('claimEntry');
+  });
+
+  it('ne promet « arrêter le suivi » qu’en atelier, où « Ne plus suivre » existe', () => {
+    const fn = page.slice(page.indexOf('function exitNote'), page.indexOf('/** Sous le bouton'));
+    expect(fn).toContain("profile === 'vehicle' || profile === 'device'");
+    expect(fn).toContain('Vous pouvez quitter la file à tout moment.');
+    expect(page).toContain('{exitNote(profile)}');
+  });
+
+  it('dit l’heure d’expiration dans le fuseau de l’établissement', () => {
+    expect(page).toContain("from('locations').select('timezone').eq('slug', slug)");
+    expect(page).toContain('expiryLabel(preview.expiresAt, new Date(), timeZone)');
   });
 });

@@ -38,13 +38,29 @@ export const dynamic = 'force-dynamic';
  * Deux formes de requête : JSON (le bouton de la page, qui garde la main
  * sur l'animation) et formulaire classique (sans JavaScript), qui reçoit
  * une redirection 303.
+ *
+ * Un POST venu d'un AUTRE site est refusé avant tout (`Sec-Fetch-Site:
+ * cross-site`) : avec des cookies SameSite=Lax, il arriverait sans le
+ * cookie de l'appareil, créerait une session neuve et écraserait ce
+ * cookie ; l'appareil perdrait le suivi de son vrai ticket. Le jeton
+ * n'est alors pas consommé : un formulaire est renvoyé vers la page du
+ * lien, où le client confirme lui-même, sur notre origine.
  */
 
 const bodySchema = z.object({ token: z.string().regex(TRACKING_TOKEN_RE) }).strict();
 
 const INVALID = 'Ce lien de suivi a déjà servi ou a expiré. Demandez-en un nouveau à l’accueil.';
 
-/** Aucune page de suivi ne doit transmettre son adresse, ni être mise en cache. */
+/**
+ * Aucune page de suivi ne doit transmettre son adresse, ni être mise en cache.
+ *
+ * Attention : l'en-tête global de `next.config.ts` (source `/:path*`)
+ * l'emporte aujourd'hui sur le `Referrer-Policy` posé ici (relevé au
+ * banc : `strict-origin-when-cross-origin`). Sans conséquence pratique,
+ * la redirection restant sur notre origine ; une règle dédiée à
+ * `/api/client/claim` et `/s/:path*` est demandée au propriétaire du
+ * fichier. `Cache-Control` et `X-Robots-Tag` passent bien.
+ */
 const PRIVATE_HEADERS = {
   'Referrer-Policy': 'no-referrer',
   'Cache-Control': 'no-store',
@@ -81,6 +97,9 @@ export async function POST(request: Request) {
   let token: string | null = null;
   try {
     ({ token, form } = await readToken(request));
+    if (request.headers.get('sec-fetch-site') === 'cross-site') {
+      throw new AppError('forbidden', 'Confirmez le suivi depuis la page du lien.', 403);
+    }
     const fingerprint = await requestFingerprint();
     await enforceRateLimit(
       `claim:ip:${fingerprint.ipHash ?? 'inconnue'}`,

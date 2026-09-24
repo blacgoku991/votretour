@@ -144,6 +144,20 @@ describe('parseDetailsPatch', () => {
     expect(() => parseDetailsPatch('vehicle', { quotes: true }, { quote: null })).toThrow();
   });
 
+  it('lit une plaque corrigée dans le pays DÉJÀ enregistré sur la fiche', () => {
+    // Plaque allemande : refusée au format français, juste en « autre pays ».
+    expect(() => parseDetailsPatch('vehicle', {}, { registration: 'M-AB 1234' })).toThrow();
+    const patched = parseDetailsPatch('vehicle', {}, { registration: 'M-AB 1234' }, 'other');
+    expect(patched.country).toBe('other');
+    expect(patched.registration).toBeTruthy();
+    // Le pays transmis explicitement l'emporte sur celui de la fiche.
+    expect(parseDetailsPatch('vehicle', {}, { registration: 'ab123cd', country: 'FR' }, 'other'))
+      .toEqual({ registration: 'AB-123-CD', country: 'FR' });
+    // Sans pays enregistré : format français, comme avant.
+    expect(parseDetailsPatch('vehicle', {}, { registration: 'ab123cd' }, null))
+      .toEqual({ registration: 'AB-123-CD', country: 'FR' });
+  });
+
   it('respecte une file de santé : aucun texte libre', () => {
     expect(() => parseDetailsPatch('device', { sensitive: true }, { model: 'iPhone' })).toThrow();
   });
@@ -187,6 +201,31 @@ describe('profileError', () => {
     expect(profileError({ code: 'VT016', message: 'Trop de messages : attendez 30 secondes entre deux envois' }))
       .toMatchObject({ code: 'too_many_messages', status: 429 });
     expect(profileError({ code: 'VT006', message: "Ce ticket n'est plus en cours" }).message).toBe('Ce ticket n’est plus en cours.');
+  });
+
+  it('ne montre jamais au pro un message destiné au client', () => {
+    // VT009 veut dire « ticket d'un autre appareil » ; un guichet disparu
+    // a son propre code et son propre texte, pour le poste.
+    expect(profileError({ code: 'VT009', message: 'Guichet inconnu pour cet établissement' }))
+      .toMatchObject({ code: 'invalid_desk', status: 422, message: 'Ce guichet n’existe plus pour cet établissement : rechargez la page.' });
+    expect(profileError({ code: 'VT015', message: 'Informations invalides : montant du devis' }))
+      .toMatchObject({ code: 'invalid_details', status: 422, message: 'Montant du devis invalide.' });
+    expect(profileError({ code: 'VT015', message: 'Informations invalides : devis' }).message)
+      .toBe('Devis invalide : un libellé de 80 caractères au plus, et un montant.');
+    expect(profileError({ code: 'VT015', message: 'Informations invalides : trop de couverts pour une inscription en ligne' }).message)
+      .toBe('Pour un groupe de cette taille, appelez directement l’établissement.');
+    expect(profileError({ code: 'VT006', message: 'Action client inconnue: unfollow' }).message)
+      .toBe('Cette action n’existe pas pour ce métier.');
+  });
+
+  it('écrit chaque texte repris avec l’apostrophe typographique', () => {
+    // Un texte entre guillemets doubles pourrait cacher une apostrophe
+    // droite : tous doivent être entre apostrophes simples, donc sans.
+    const source = readFileSync(fileURLToPath(new URL('../src/server/profiles/queue.ts', import.meta.url)), 'utf8');
+    const table = source.slice(source.indexOf('const PRECISE_SQL_MESSAGES'), source.indexOf('export function profileError'));
+    const messages = [...table.matchAll(/message: (['"`])/g)].map((m) => m[1]);
+    expect(messages.length).toBeGreaterThan(15);
+    expect(new Set(messages)).toEqual(new Set(["'"]));
   });
 
   it('garde le message générique pour tout texte SQL inconnu', () => {

@@ -9,6 +9,7 @@ import { initials } from '@/lib/format';
 import { getProfile, hasStages } from '@/lib/profiles';
 import { asMaskedRegistration } from '@/lib/profiles/registration';
 import type { QueueProfile } from '@/lib/profiles/types';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 import { requestFingerprint } from '@/server/client-session';
 import { consumeRateLimit } from '@/server/ratelimit';
 import { PROFILE_LIMITS } from '@/server/profiles/limits';
@@ -37,7 +38,7 @@ interface PageProps {
 }
 
 type View =
-  | { kind: 'preview'; preview: ClaimPreview; token: string }
+  | { kind: 'preview'; preview: ClaimPreview; token: string; timeZone: string }
   | { kind: 'invalid' }
   | { kind: 'limited' };
 
@@ -65,7 +66,9 @@ export default async function ClaimPage({ params }: PageProps) {
     <main className={clientStyles.screen} data-theme="dark">
       <span className={`floor-marks ${clientStyles.sideMarks}`} aria-hidden="true" />
       <div className={`client-shell ${clientStyles.inner}`}>
-        {view.kind === 'preview' ? <Preview preview={view.preview} token={view.token} /> : <Unavailable kind={view.kind} />}
+        {view.kind === 'preview'
+          ? <Preview preview={view.preview} token={view.token} timeZone={view.timeZone} />
+          : <Unavailable kind={view.kind} />}
       </div>
     </main>
   );
@@ -87,7 +90,28 @@ async function resolveView(token: string): Promise<View> {
     console.error('[suivi] aperçu indisponible', error instanceof Error ? error.message : 'inconnu');
     return null;
   });
-  return preview ? { kind: 'preview', preview, token } : { kind: 'invalid' };
+  if (!preview) return { kind: 'invalid' };
+  return { kind: 'preview', preview, token, timeZone: await locationTimeZone(preview.location.slug) };
+}
+
+/**
+ * Fuseau de l'établissement, pour dire l'heure d'expiration du lien à
+ * l'heure du COMPTOIR (un garage de Pointe-à-Pitre n'est pas à l'heure de
+ * Paris). `peek_claim` ne le rend pas ; on le relit par le slug, unique,
+ * que l'aperçu vient de donner. Europe/Paris si la lecture échoue, ou si
+ * le fuseau enregistré est inconnu du moteur.
+ */
+async function locationTimeZone(slug: string): Promise<string> {
+  const fallback = 'Europe/Paris';
+  try {
+    const { data } = await supabaseAdmin().from('locations').select('timezone').eq('slug', slug).maybeSingle();
+    const zone = typeof data?.timezone === 'string' ? data.timezone : null;
+    if (!zone) return fallback;
+    Intl.DateTimeFormat('fr-FR', { timeZone: zone }).resolvedOptions(); // lève si le fuseau est inconnu
+    return zone;
+  } catch {
+    return fallback;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -116,6 +140,17 @@ function promise(profile: QueueProfile, place: string): string {
   return hasStages(profile)
     ? `${place} vous prévient à chaque étape, même demain : devis, pièce commandée, «\u00a0prêt\u00a0». Sans compte, sans application.`
     : `${place} vous prévient quand c’est votre tour. Sans compte, sans application.`;
+}
+
+/**
+ * La promesse de sortie, exacte pour chaque métier : « Ne plus suivre »
+ * n'existe qu'en atelier (le dépôt reste, seul le téléphone se détache) ;
+ * ailleurs, le client quitte la file.
+ */
+function exitNote(profile: QueueProfile): string {
+  return profile === 'vehicle' || profile === 'device'
+    ? 'Vous arrêtez le suivi quand vous voulez.'
+    : 'Vous pouvez quitter la file à tout moment.';
 }
 
 /** Sous le bouton : ce que le téléphone suivra, dans le mot du métier. */
@@ -155,13 +190,13 @@ function expiryLabel(iso: string, now = new Date(), timeZone = 'Europe/Paris'): 
   return `${date} à ${time}`;
 }
 
-function Preview({ preview, token }: { preview: ClaimPreview; token: string }) {
+function Preview({ preview, token, timeZone }: { preview: ClaimPreview; token: string; timeZone: string }) {
   const { profile } = preview;
   const place = preview.location.name;
   const masked = profile === 'vehicle' ? asMaskedRegistration(preview.registrationMasked) : null;
   const staged = hasStages(profile) && preview.stage !== null;
   const deviceKind = profile === 'device' ? preview.deviceKind ?? 'other' : null;
-  const expires = expiryLabel(preview.expiresAt);
+  const expires = expiryLabel(preview.expiresAt, new Date(), timeZone);
   const subject = getProfile(profile).vocab.subject;
 
   return (
@@ -260,7 +295,7 @@ function Preview({ preview, token }: { preview: ClaimPreview; token: string }) {
         </li>
         <li>
           <FactIcon kind="free" />
-          <span>Aucun compte, aucune information demandée. Vous arrêtez le suivi quand vous voulez.</span>
+          <span>Aucun compte, aucune information demandée. {exitNote(profile)}</span>
         </li>
       </ul>
 
