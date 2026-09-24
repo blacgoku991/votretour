@@ -90,7 +90,14 @@ export const config = {
      * Tout sauf : ressources statiques, images, et les points d'entrée
      * publics qui doivent rester rapides (/e/… est le parcours client :
      * aucune raison d'y faire tourner l'authentification).
+     *
+     * Le site public servi en cache en fait partie : pages métier (/pour),
+     * sitemap.xml, robots.txt, image de partage du site (celles des pages
+     * métier sont sous /pour) et vidéos de démonstration. Une page
+     * statique n'a pas à attendre GoTrue, et un robot n'a pas de session.
+     * /s/… (rattachement d'une fiche par jeton) est exclu pour que le jeton
+     * brut ne traverse jamais le middleware ni ses journaux.
      */
-    '/((?!_next/static|_next/image|favicon.ico|icon|sw.js|manifest.webmanifest|\\.well-known|e/|tv(?:/|$)|media/|api/client/|api/cron/|api/stripe/|api/tv/|api/event/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|icon|sw.js|manifest.webmanifest|\\.well-known|e/|tv(?:/|$)|media/|api/client/|api/cron/|api/stripe/|api/tv/|api/event/|pour(?:/|$)|sitemap\\.xml$|robots\\.txt$|opengraph-image(?:/|$)|videos/|s/).*)',
   ],
 };

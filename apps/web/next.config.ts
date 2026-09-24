@@ -48,6 +48,16 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   poweredByHeader: false,
   serverExternalPackages: ['web-push'],
+  /* Polices des images de partage (lib/seo/og.tsx) : lues par readFile,
+     donc invisibles pour le traçage automatique de la sortie standalone.
+     Les images sont générées au build, mais une revalidation ou une route
+     d'image dynamique les relirait en production : on les embarque.
+     La clé est un motif picomatch : un « [metier] » littéral y serait lu
+     comme une classe de caractères, d'où le joker qui couvre la racine
+     et chaque segment (/pour/[metier]/opengraph-image…). */
+  outputFileTracingIncludes: {
+    '/**/opengraph-image*': ['./assets/fonts/**'],
+  },
   experimental: {
     // Les actions serveur portent des mutations de file : on plafonne la
     // taille du corps pour limiter la surface d'abus.
@@ -76,6 +86,13 @@ const nextConfig: NextConfig = {
         // Apple exige un JSON servi sans redirection ni extension.
         source: '/.well-known/apple-app-site-association',
         headers: [{ key: 'Content-Type', value: 'application/json' }],
+      },
+      {
+        /* Vidéos de démonstration : noms de fichiers hachés au montage,
+           donc un fichier ne change jamais de contenu. Un an, immuable :
+           le navigateur ne revalide même pas. */
+        source: '/videos/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
       },
       {
         source: '/sw.js',
