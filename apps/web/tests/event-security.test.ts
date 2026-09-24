@@ -205,7 +205,10 @@ interface DbCall { table: string; ops: [string, ...unknown[]][] }
 const db = {
   calls: [] as DbCall[],
   rpcs: [] as { fn: string; args: Record<string, unknown> }[],
+  /** Ligne rendue par maybeSingle/single ; une fonction choisit selon la requête. */
   single: {} as Record<string, unknown>,
+  /** Réponse d'une fonction SQL nommée ; à défaut, rpcResult. */
+  rpcData: {} as Record<string, unknown>,
   lists: {} as Record<string, { data: unknown; error: { message: string } | null }>,
   rpcResult: { status: 'redeemed', queueId: 'q-1', clientName: 'Zoé', redeemedAt: '2026-09-24T18:30:05Z', passPublicId: 'AccesPublic0001' } as Record<string, unknown>,
 };
@@ -220,8 +223,12 @@ function builder(table: string) {
       return chain;
     };
   }
-  chain.maybeSingle = async () => ({ data: db.single[table] ?? null, error: null });
-  chain.single = async () => ({ data: db.single[table] ?? null, error: null });
+  const row = () => {
+    const value = db.single[table];
+    return (typeof value === 'function' ? (value as (c: DbCall) => unknown)(call) : value) ?? null;
+  };
+  chain.maybeSingle = async () => ({ data: row(), error: null });
+  chain.single = async () => ({ data: row(), error: null });
   chain.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
     Promise.resolve(db.lists[table] ?? { data: [], error: null }).then(resolve, reject);
   return chain;
@@ -229,11 +236,13 @@ function builder(table: string) {
 
 const spies = {
   assertQueueAccess: vi.fn(),
+  assertOrgMembership: vi.fn(),
+  sessionUser: vi.fn(),
+  notFound: vi.fn(),
   audit: vi.fn(),
   rateLimit: vi.fn(),
   propagate: vi.fn(),
   statuses: vi.fn(),
-  orgs: vi.fn(),
 };
 
 vi.mock('@/lib/supabase/admin', () => ({
@@ -241,14 +250,14 @@ vi.mock('@/lib/supabase/admin', () => ({
     from: (table: string) => builder(table),
     rpc: async (fn: string, args: Record<string, unknown>) => {
       db.rpcs.push({ fn, args });
-      return { data: db.rpcResult, error: null };
+      return { data: fn in db.rpcData ? db.rpcData[fn] : db.rpcResult, error: null };
     },
   }),
 }));
 vi.mock('@/server/auth', () => ({
   assertQueueAccess: (...args: unknown[]) => spies.assertQueueAccess(...args),
-  getSessionUser: async () => ({ id: 'user-1' }),
-  getMyOrganizations: async () => spies.orgs(),
+  assertOrgMembership: (...args: unknown[]) => spies.assertOrgMembership(...args),
+  getSessionUser: async () => spies.sessionUser(),
 }));
 vi.mock('@/server/audit', () => ({ audit: (...args: unknown[]) => spies.audit(...args) }));
 vi.mock('@/server/ratelimit', () => ({
@@ -262,6 +271,15 @@ vi.mock('@/server/queue', () => ({
 vi.mock('@/server/notifications/dispatch', () => ({ dispatchEventEntryNotification: vi.fn() }));
 vi.mock('@/server/wallet/providers', () => ({ walletStatuses: async () => spies.statuses() }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+// notFound() de Next interrompt le rendu en levant une erreur : même geste ici.
+vi.mock('next/navigation', () => ({
+  notFound: () => {
+    spies.notFound();
+    throw new Error('NEXT_NOT_FOUND');
+  },
+}));
+// La carte est un composant client : la page est jugée sur ce qu'elle lui passe.
+vi.mock('@/app/scan/[token]/ScanPassCard', () => ({ ScanPassCard: () => null }));
 
 const { redeemEventPass, setEventWalletQr, readEventWalletSettings } = await import('@/server/actions/events');
 
@@ -284,7 +302,10 @@ beforeEach(() => {
   db.single = { event_access_passes: accessRow() };
   db.lists = { wallet_passes: { data: [APPLE, GOOGLE], error: null } };
   db.rpcResult = { status: 'redeemed', queueId: 'q-1', clientName: 'Zoé', redeemedAt: '2026-09-24T18:30:05Z', passPublicId: PASS_ID };
+  db.rpcData = {};
   for (const spy of Object.values(spies)) spy.mockReset();
+  spies.sessionUser.mockResolvedValue({ id: 'user-1' });
+  spies.assertOrgMembership.mockResolvedValue({ user: { id: 'user-1' }, role: 'member' });
   spies.assertQueueAccess.mockResolvedValue({ user: { id: 'user-1' }, role: 'member', organizationId: 'org-1', locationId: 'loc-1' });
   spies.statuses.mockResolvedValue({ apple: { ready: false, reason: 'non construit' }, google: { ready: false, reason: 'non construit' } });
 });
@@ -377,12 +398,29 @@ describe('redeemEventPass : billet Wallet', () => {
     expect(db.rpcs).toEqual([]);
   });
 
-  it('forme inconnue ou mêlée : rejetée par le schéma', async () => {
+  it('forme inconnue ou incomplète : rejetée par le schéma', async () => {
     const res = await redeemEventPass({ kind: 'nfc', passId: PASS_ID } as never);
     expect(res.ok).toBe(false);
-    const mixed = await redeemEventPass({ kind: 'wallet', passId: PASS_ID, slot: 1 } as never);
-    expect(mixed.ok).toBe(false);
+    // `w` manquant : la forme wallet est incomplète.
+    const partial = await redeemEventPass({ kind: 'wallet', passId: PASS_ID, slot: 1 } as never);
+    expect(partial.ok).toBe(false);
     expect(db.calls).toEqual([]);
+  });
+
+  it('forme mêlée, chaque moitié valide : rejetée, jamais nettoyée en silence', async () => {
+    const slot = currentEventPassSlot();
+    const w = signWalletQrCode(TOKEN, APPLE.id);
+    const t = Math.floor(Date.now() / 1000);
+    const mixed = [
+      { kind: 'wallet', passId: PASS_ID, w, slot, sig: signEventPassSlot(TOKEN, slot) },
+      { kind: 'slot', passId: PASS_ID, slot, sig: signEventPassSlot(TOKEN, slot), w },
+      { kind: 'totp', passId: PASS_ID, t, otp: otpFor(GOOGLE, t), w },
+    ];
+    for (const input of mixed) {
+      expect(await redeemEventPass(input as never)).toMatchObject({ ok: false });
+    }
+    expect(db.calls).toEqual([]);
+    expect(db.rpcs).toEqual([]);
   });
 });
 
@@ -391,6 +429,7 @@ describe('réglage « Accepter le billet Wallet au contrôle »', () => {
 
   it('enregistré avec la permission de configuration, et audité', async () => {
     db.single.event_campaigns = liveEvent;
+    db.lists.event_campaigns = { data: [{ id: EVENT_ID }], error: null };
     const res = await setEventWalletQr({ eventId: EVENT_ID, enabled: false });
     expect(res).toEqual({ ok: true, data: { enabled: false } });
     expect(spies.assertQueueAccess).toHaveBeenCalledWith('q-1', 'queue.configure');
@@ -399,6 +438,7 @@ describe('réglage « Accepter le billet Wallet au contrôle »', () => {
       ['update', { wallet_qr_enabled: false }],
       ['eq', 'id', EVENT_ID],
       ['eq', 'organization_id', 'org-1'],
+      ['select', 'id'],
     ]));
     expect(spies.audit).toHaveBeenCalledWith(expect.objectContaining({
       action: 'event.wallet_qr_changed', targetId: EVENT_ID, metadata: { enabled: false },
@@ -417,27 +457,212 @@ describe('réglage « Accepter le billet Wallet au contrôle »', () => {
     expect(spies.audit).not.toHaveBeenCalled();
   });
 
-  it('lecture : masqué tant qu’aucun fournisseur n’est prêt, filtré par organisation', async () => {
-    spies.orgs.mockResolvedValue([{ organization_id: 'org-1', slug: 'barber-house' }]);
+  it('événement effacé entre la lecture et l’écriture : aucune ligne, refus sans audit', async () => {
+    db.single.event_campaigns = liveEvent;
+    db.lists.event_campaigns = { data: [], error: null };
+    expect(await setEventWalletQr({ eventId: EVENT_ID, enabled: false }))
+      .toMatchObject({ ok: false, code: 'not_found' });
+    expect(spies.audit).not.toHaveBeenCalled();
+  });
+
+  const eventsRead = () => db.calls.find((call) => call.table === 'event_campaigns');
+
+  it('lecture : masqué tant qu’aucun fournisseur n’est prêt, filtré par organisation et par statut', async () => {
+    db.single.organizations = { id: 'org-1' };
     db.lists.event_campaigns = { data: [{ id: EVENT_ID, wallet_qr_enabled: false }], error: null };
-    const hidden = await readEventWalletSettings({ orgSlug: 'barber-house', eventIds: [EVENT_ID] });
+    const hidden = await readEventWalletSettings({ orgSlug: 'barber-house' });
     expect(hidden).toEqual({ ok: true, data: { available: false, enabled: { [EVENT_ID]: false } } });
-    const read = db.calls.find((call) => call.table === 'event_campaigns');
-    expect(read?.ops).toEqual(expect.arrayContaining([['eq', 'organization_id', 'org-1'], ['in', 'id', [EVENT_ID]]]));
+    expect(spies.assertOrgMembership).toHaveBeenCalledWith('org-1');
+    expect(db.calls.find((call) => call.table === 'organizations')?.ops)
+      .toEqual(expect.arrayContaining([['eq', 'slug', 'barber-house']]));
+    // Le serveur choisit les événements : ceux de l'organisation, encore
+    // ouverts. Aucun identifiant ne vient du navigateur.
+    expect(eventsRead()?.ops).toEqual([
+      ['select', 'id, wallet_qr_enabled'],
+      ['eq', 'organization_id', 'org-1'],
+      ['in', 'status', ['draft', 'live', 'paused']],
+    ]);
 
     spies.statuses.mockResolvedValue({ apple: { ready: true, reason: null }, google: { ready: false, reason: 'x' } });
-    expect(await readEventWalletSettings({ orgSlug: 'barber-house', eventIds: [] }))
+    db.lists.event_campaigns = { data: [], error: null };
+    expect(await readEventWalletSettings({ orgSlug: 'barber-house' }))
       .toEqual({ ok: true, data: { available: true, enabled: {} } });
 
     // Wallet coupé pour l'organisation : rien à régler.
     db.single.organization_settings = { features: { wallet: false } };
-    expect(await readEventWalletSettings({ orgSlug: 'barber-house', eventIds: [] }))
+    expect(await readEventWalletSettings({ orgSlug: 'barber-house' }))
       .toMatchObject({ ok: true, data: { available: false } });
+  });
 
-    // Organisation dont on n'est pas membre : refus, aucune lecture.
-    db.calls.length = 0;
-    expect(await readEventWalletSettings({ orgSlug: 'autre-commerce', eventIds: [EVENT_ID] }))
-      .toMatchObject({ ok: false, code: 'forbidden' });
+  it('long historique (plus de 200 événements) : le réglage reste disponible', async () => {
+    // Régression : la liste d'identifiants envoyée par la fiche était bornée
+    // à 200 ; au-delà, la lecture échouait et l'interrupteur disparaissait
+    // sans un mot, même avec un fournisseur prêt.
+    db.single.organizations = { id: 'org-1' };
+    spies.statuses.mockResolvedValue({ apple: { ready: true, reason: null }, google: { ready: true, reason: null } });
+    const uuid = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+    const rows = Array.from({ length: 260 }, (_, i) => ({ id: uuid(i), wallet_qr_enabled: i % 2 === 0 }));
+    db.lists.event_campaigns = { data: rows, error: null };
+
+    const res = await readEventWalletSettings({ orgSlug: 'barber-house' });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.available).toBe(true);
+    expect(Object.keys(res.data.enabled)).toHaveLength(260);
+    expect(res.data.enabled[uuid(1)]).toBe(false);
+    expect(res.data.enabled[uuid(258)]).toBe(true);
+    // Aucune liste d'identifiants dans la requête : pas d'URL démesurée.
+    expect(eventsRead()?.ops.some(([op, column]) => op === 'in' && column === 'id')).toBe(false);
+
+    // L'ancien appel, avec une liste, ne casse rien : la clé est ignorée.
+    const legacy = await readEventWalletSettings({
+      orgSlug: 'barber-house',
+      eventIds: rows.map((row) => row.id),
+    } as never);
+    expect(legacy).toMatchObject({ ok: true, data: { available: true } });
+  });
+
+  it('lecture refusée : anonyme, slug inconnu ou organisation étrangère, sans lire les événements', async () => {
+    spies.sessionUser.mockResolvedValue(null);
+    expect(await readEventWalletSettings({ orgSlug: 'barber-house' }))
+      .toMatchObject({ ok: false, code: 'unauthorized' });
     expect(db.calls).toEqual([]);
+
+    spies.sessionUser.mockResolvedValue({ id: 'user-1' });
+    expect(await readEventWalletSettings({ orgSlug: 'inconnu' }))
+      .toMatchObject({ ok: false, code: 'forbidden' });
+    expect(spies.assertOrgMembership).not.toHaveBeenCalled();
+
+    db.single.organizations = { id: 'org-2' };
+    spies.assertOrgMembership.mockRejectedValue(new AppError('forbidden', "Vous n'avez pas accès à cet établissement.", 403));
+    expect(await readEventWalletSettings({ orgSlug: 'autre-commerce' }))
+      .toMatchObject({ ok: false, code: 'forbidden' });
+    expect(eventsRead()).toBeUndefined();
+    expect(db.calls.some((call) => call.table === 'organization_settings')).toBe(false);
+  });
+});
+
+/* ---------------------------------------------------------------------
+   Page /scan/[token] : ce que voit le personnel, avant toute validation.
+   --------------------------------------------------------------------- */
+
+const { default: ScanPage } = await import('@/app/scan/[token]/page');
+
+describe('page de contrôle /scan/[token]', () => {
+  const FULL_PASS = {
+    public_id: PASS_ID,
+    status: 'issued',
+    valid_until: '2099-01-01T00:10:00Z',
+    grace_until: '2099-01-01T00:15:00Z',
+    redeemed_at: null,
+    queue_entries: { client_name: 'Zoé', ticket_number: '42' },
+    event_campaigns: { name: 'Drop Air Max' },
+    locations: { name: 'Comptoir Paris 11' },
+  };
+
+  function passRows(walletQrEnabled = true) {
+    // Première lecture : les seules colonnes du contrôle d'accès ; seconde
+    // lecture, après autorisation : ce que la carte affiche.
+    db.single.event_access_passes = (call: DbCall) => {
+      const select = String(call.ops.find(([op]) => op === 'select')?.[1] ?? '');
+      return select.includes('token_hash')
+        ? {
+          public_id: PASS_ID, token_hash: TOKEN, queue_entry_id: ENTRY_ID,
+          event_id: EVENT_ID, issued_at: '2026-09-24T18:20:00Z',
+          event_campaigns: { queue_id: 'q-1', wallet_qr_enabled: walletQrEnabled },
+        }
+        : FULL_PASS;
+    };
+  }
+
+  const render = async (query: Record<string, string>, passId = PASS_ID) => {
+    const element = await ScanPage({
+      params: Promise.resolve({ token: passId }),
+      searchParams: Promise.resolve(query),
+    });
+    return (element as { props: Record<string, unknown> }).props;
+  };
+
+  const selects = (table: string) => db.calls
+    .filter((call) => call.table === table)
+    .map((call) => String(call.ops.find(([op]) => op === 'select')?.[1] ?? '').replace(/\s+/g, ' ').trim());
+
+  beforeEach(() => {
+    passRows();
+    db.rpcData = { event_pass_wave: 3 };
+  });
+
+  it('preuve mal formée ou identifiant invalide : 404 avant toute lecture', async () => {
+    for (const [query, passId] of [
+      [{}, PASS_ID],
+      [{ w: 'x'.repeat(65) }, PASS_ID],
+      [{ w: 'pas un code' }, PASS_ID],
+      [{ slot: '12' }, PASS_ID],
+      [{ t: '1727200000' }, PASS_ID],
+      [{ w: signWalletQrCode(TOKEN, APPLE.id) }, 'x!'],
+    ] as const) {
+      await expect(render(query, passId)).rejects.toThrow('NEXT_NOT_FOUND');
+    }
+    expect(db.calls).toEqual([]);
+    expect(db.rpcs).toEqual([]);
+    expect(spies.assertQueueAccess).not.toHaveBeenCalled();
+  });
+
+  it('compte d’une autre organisation : arrêt après la lecture minimale, avant la preuve', async () => {
+    spies.assertQueueAccess.mockRejectedValue(new AppError('forbidden', "Vous n'avez pas accès à cet établissement.", 403));
+    await expect(render({ w: signWalletQrCode(TOKEN, APPLE.id) })).rejects.toMatchObject({ code: 'forbidden' });
+    expect(spies.assertQueueAccess).toHaveBeenCalledWith('q-1', 'queue.operate');
+    // Une seule lecture, sans prénom ni billet ; aucune preuve examinée.
+    expect(selects('event_access_passes')).toHaveLength(1);
+    expect(selects('event_access_passes')[0]).not.toMatch(/client_name|queue_entries/);
+    expect(walletQuery()).toBeUndefined();
+    expect(db.rpcs).toEqual([]);
+  });
+
+  it('billet Apple valide : fournisseur nommé, numéro et vague, sans lire tout `metadata`', async () => {
+    const props = await render({ w: signWalletQrCode(TOKEN, APPLE.id) });
+    expect(props).toMatchObject({
+      passId: PASS_ID,
+      check: { state: 'valid', source: 'apple' },
+      passStatus: 'issued',
+      clientName: 'Zoé',
+      ticketNumber: 'A-042',
+      wave: 3,
+      eventName: 'Drop Air Max',
+      locationName: 'Comptoir Paris 11',
+    });
+    expect(db.rpcs).toEqual([{ fn: 'event_pass_wave', args: { p_event_id: EVENT_ID, p_issued_at: '2026-09-24T18:20:00Z' } }]);
+    const full = selects('event_access_passes')[1] ?? '';
+    // Syntaxe PostgREST : un seul champ JSON extrait en texte, dans la
+    // ressource embarquée du ticket ; jamais l'objet `metadata` entier.
+    expect(full).toContain('queue_entries(client_name, ticket_number:metadata->>eventTicketNumber)');
+    expect(full.replace('metadata->>eventTicketNumber', '')).not.toContain('metadata');
+  });
+
+  it('interrupteur coupé : verdict « Wallet non accepté », sans lire les passes', async () => {
+    passRows(false);
+    const props = await render({ w: signWalletQrCode(TOKEN, APPLE.id) });
+    expect(props.check).toEqual({ state: 'wallet_disabled', source: 'wallet' });
+    expect(walletQuery()).toBeUndefined();
+  });
+
+  it('preuve Wallet refusée : « Billet Wallet », jamais le nom d’un fournisseur non prouvé', async () => {
+    const t = Math.floor(Date.now() / 1000);
+    const good = otpFor(GOOGLE, t);
+    const forged = good.replace(/.$/, (d) => String((Number(d) + 1) % 10));
+    expect((await render({ t: String(t), otp: forged })).check).toEqual({ state: 'invalid', source: 'wallet' });
+    // Rejoué hors fenêtre.
+    const old = t - 600;
+    expect((await render({ t: String(old), otp: otpFor(GOOGLE, old) })).check)
+      .toEqual({ state: 'invalid', source: 'wallet' });
+    // Et le vrai TOTP, lui, nomme Google.
+    expect((await render({ t: String(t), otp: good })).check).toEqual({ state: 'valid', source: 'google' });
+  });
+
+  it('QR web valide : source « Page web », sans lecture Wallet', async () => {
+    const slot = currentEventPassSlot();
+    const props = await render({ slot: String(slot), sig: signEventPassSlot(TOKEN, slot) });
+    expect(props.check).toEqual({ state: 'valid', source: 'web' });
+    expect(walletQuery()).toBeUndefined();
   });
 });

@@ -21,8 +21,9 @@ function hhmm(iso: string | null | undefined, mounted: boolean): string {
 
 /**
  * Résultat de la vérification faite côté serveur, avant l'affichage.
- * `source` : d'où vient le QR. Pour un code Wallet statique refusé, on ne
- * sait pas de quel fournisseur il se réclame : « wallet ».
+ * `source` : d'où vient le QR. Une preuve Wallet refusée (code statique
+ * ou TOTP) n'a prouvé aucun fournisseur : « wallet », jamais « apple » ni
+ * « google ». Seul un billet vérifié nomme le sien.
  */
 export type ScanCheck = {
   state: 'valid' | 'invalid' | 'wallet_disabled';

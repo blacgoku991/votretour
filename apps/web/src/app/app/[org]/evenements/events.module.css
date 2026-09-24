@@ -713,6 +713,26 @@
   .walletGlyph::before { transition: opacity var(--dur-2) var(--ease-out); }
 }
 
+/* Enregistrement en cours : l'interrupteur est désactivé (pas de second
+   clic), mais garde la position et la couleur choisies. L'allure
+   « interdit » (tirets, latte éteinte) est réservée à un rôle qui ne peut
+   pas régler ; ici, la latte respire, en opacité seulement. */
+.walletStrip[data-saving='1'] [role='switch']:disabled {
+  cursor: progress;
+  border-style: solid;
+}
+.walletStrip[data-saving='1'] [role='switch']:disabled > span { background: var(--text-muted); }
+.walletStrip[data-saving='1'] [role='switch'][aria-checked='true']:disabled > span::after { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .walletStrip[data-saving='1'] [role='switch']:disabled > span {
+    animation: wallet-saving 900ms var(--ease-out) infinite alternate;
+  }
+}
+@keyframes wallet-saving {
+  from { opacity: 1; }
+  to { opacity: 0.45; }
+}
+
 .walletText {
   display: flex;
   flex-direction: column;

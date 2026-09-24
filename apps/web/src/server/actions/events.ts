@@ -6,7 +6,7 @@ import { AppError, toAppError } from '@/lib/errors';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { env } from '@/lib/env';
 import { audit } from '@/server/audit';
-import { assertQueueAccess, getMyOrganizations, getSessionUser } from '@/server/auth';
+import { assertOrgMembership, assertQueueAccess, getSessionUser } from '@/server/auth';
 import { propagate, setQueueStatus } from '@/server/queue';
 import { dispatchEventEntryNotification } from '@/server/notifications/dispatch';
 import { enforceRateLimit, LIMITS } from '@/server/ratelimit';
@@ -277,8 +277,14 @@ export async function callEventWave(
 
 const walletSettingsSchema = z.object({
   orgSlug: z.string().trim().min(1).max(80),
-  eventIds: z.array(z.string().uuid()).max(200),
 });
+
+/**
+ * Événements dont le réglage se montre : ceux qui peuvent encore faire
+ * entrer quelqu'un. Un événement terminé ou en stock épuisé a déjà révoqué
+ * ses accès (close_event_campaign) ; sa fiche ne montre plus la bande.
+ */
+const OPEN_EVENT_STATUSES = ['draft', 'live', 'paused'] as const;
 
 /**
  * État du réglage « Accepter le billet Wallet au contrôle » pour la fiche
@@ -287,34 +293,45 @@ const walletSettingsSchema = z.object({
  * a coupé le Wallet. Sans billet Wallet possible, la case n'aurait pas de
  * sens : la fiche ne la montre pas (masquage propre, § 11 du plan).
  *
- * Lecture seule, réservée aux membres de l'organisation désignée : les
- * événements sont filtrés par organisation, un identifiant d'une autre
- * organisation ne renvoie rien.
+ * Le serveur choisit lui-même les événements à lire (ceux de
+ * l'organisation, encore ouverts) au lieu de recevoir une liste du
+ * navigateur : aucune borne à dépasser quand l'historique s'allonge (une
+ * boutique à un drop par semaine passait les 200 événements en quatre ans,
+ * et la case disparaissait sans un mot), ni d'URL PostgREST démesurée.
+ *
+ * Lecture seule, réservée aux membres de l'organisation désignée, avec le
+ * contrôle commun des actions serveur (assertOrgMembership). Un slug
+ * inconnu répond comme une organisation dont on n'est pas membre.
  */
 export async function readEventWalletSettings(
   input: z.input<typeof walletSettingsSchema>,
 ): Promise<Result<{ available: boolean; enabled: Record<string, boolean> }>> {
   try {
     const parsed = walletSettingsSchema.parse(input);
+    // Session d'abord : un visiteur anonyme ne déclenche aucune lecture.
     const user = await getSessionUser();
     if (!user) throw new AppError('unauthorized', 'Connectez-vous pour continuer.', 401);
-    const organization = (await getMyOrganizations()).find((o) => o.slug === parsed.orgSlug);
+
+    const db = supabaseAdmin();
+    const { data: organization } = await db
+      .from('organizations')
+      .select('id')
+      .eq('slug', parsed.orgSlug)
+      .maybeSingle();
     if (!organization) {
       throw new AppError('forbidden', "Vous n'avez pas accès à cet établissement.", 403);
     }
+    await assertOrgMembership(organization.id);
 
-    const db = supabaseAdmin();
     const [settings, events, statuses] = await Promise.all([
       db.from('organization_settings')
         .select('features')
-        .eq('organization_id', organization.organization_id)
+        .eq('organization_id', organization.id)
         .maybeSingle(),
-      parsed.eventIds.length
-        ? db.from('event_campaigns')
-          .select('id, wallet_qr_enabled')
-          .eq('organization_id', organization.organization_id)
-          .in('id', parsed.eventIds)
-        : Promise.resolve({ data: [], error: null }),
+      db.from('event_campaigns')
+        .select('id, wallet_qr_enabled')
+        .eq('organization_id', organization.id)
+        .in('status', [...OPEN_EVENT_STATUSES]),
       walletStatuses(),
     ]);
     if (events.error) throw events.error;
@@ -364,12 +381,17 @@ export async function setEventWalletQr(
       throw new AppError('event_closed', 'Un événement terminé ne peut plus être reconfiguré.', 409);
     }
 
-    const { error } = await supabaseAdmin()
+    // `.select('id')` : un événement effacé entre la lecture et l'écriture
+    // ne met à jour aucune ligne. Sans ce contrôle, l'action répondrait
+    // « enregistré » et le journal d'audit mentirait.
+    const { data: updated, error } = await supabaseAdmin()
       .from('event_campaigns')
       .update({ wallet_qr_enabled: parsed.enabled })
       .eq('id', event.id)
-      .eq('organization_id', access.organizationId);
+      .eq('organization_id', access.organizationId)
+      .select('id');
     if (error) throw error;
+    if (!updated?.length) throw new AppError('not_found', 'Événement introuvable.', 404);
 
     await audit({
       organizationId: access.organizationId,
@@ -396,20 +418,25 @@ const passIdSchema = z.string().regex(/^[0-9A-Za-z]{12,32}$/);
  * Une preuve par forme de QR (lib/event-pass.ts, parseScanProof) : les
  * bornes sont les mêmes que celles de la page de contrôle, si bien qu'une
  * preuve affichée comme « valide » passe toujours ce schéma.
+ *
+ * Objets stricts : une clé d'une autre forme (un `slot` à côté d'un `w`)
+ * fait échouer la lecture au lieu d'être retirée en silence. La page de
+ * contrôle renvoie exactement la preuve que parseScanProof a retenue ; une
+ * clé en trop ne peut venir que d'un appel fabriqué à la main.
  */
 const redeemSchema = z.discriminatedUnion('kind', [
-  z.object({
+  z.strictObject({
     kind: z.literal('slot'),
     passId: passIdSchema,
     slot: z.number().int().positive(),
     sig: z.string().regex(SCAN_SIG_RE),
   }),
-  z.object({
+  z.strictObject({
     kind: z.literal('wallet'),
     passId: passIdSchema,
     w: z.string().regex(SCAN_WALLET_CODE_RE),
   }),
-  z.object({
+  z.strictObject({
     kind: z.literal('totp'),
     passId: passIdSchema,
     t: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),

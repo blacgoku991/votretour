@@ -111,8 +111,13 @@ export default async function ScanPage({
   );
 }
 
-/** Preuve refusée : on sait seulement de quelle famille de QR elle vient. */
+/**
+ * Preuve refusée : on sait seulement de quelle famille de QR elle vient.
+ * Une preuve Wallet refusée (code falsifié, rejoué, TOTP hors fenêtre,
+ * interrupteur coupé) n'a prouvé aucun fournisseur : afficher « Google
+ * Wallet » pour un TOTP inventé donnerait du crédit à un faux. Seul un
+ * billet vérifié nomme son fournisseur.
+ */
 function proofSource(proof: ScanProof): ScanCheck['source'] {
-  if (proof.kind === 'slot') return 'web';
-  return proof.kind === 'totp' ? 'google' : 'wallet';
+  return proof.kind === 'slot' ? 'web' : 'wallet';
 }

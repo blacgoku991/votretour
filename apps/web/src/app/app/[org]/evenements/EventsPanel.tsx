@@ -26,7 +26,7 @@ type EventRow = {
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
-  /** Facultatif : lu par readEventWalletSettings quand la page ne le fournit pas. */
+  /** Facultatif : lu par readEventWalletSettings tant que la page ne le fournit pas. */
   wallet_qr_enabled?: boolean | null;
   stats: { waiting: number; issued: number; redeemed: number; expired: number; revoked: number };
 };
@@ -39,6 +39,9 @@ type EventRow = {
 type WalletSettings = { available: boolean; enabled: Record<string, boolean> };
 
 const WALLET_LABEL = 'Accepter le billet Wallet au contrôle';
+/** Nom accessible d'un interrupteur de la liste : sans le nom de
+ *  l'événement, un lecteur d'écran entendrait dix fois la même phrase. */
+const walletLabelFor = (eventName: string) => `${WALLET_LABEL} : ${eventName}`;
 const walletHint = (on: boolean) => (on
   ? 'Le QR du billet Apple Wallet ou Google Wallet ouvre l’entrée, une seule fois, pendant l’accès.'
   : 'Seul le QR tournant de la page web ouvre l’entrée. Utile pour un drop très convoité.');
@@ -52,6 +55,9 @@ const STATUS: Record<string, { label: string; tone: 'live' | 'paused' | 'soldout
 };
 
 const plural = (n: number, one: string, many: string) => (n > 1 ? many : one);
+
+/** Terminé ou stock épuisé : la file n'alimente plus cet événement. */
+const isClosed = (status: string) => status === 'ended' || status === 'sold_out';
 
 /** Ordre d'affichage : les événements actionnables d'abord. */
 const ORDER: Record<string, number> = { live: 0, paused: 1, draft: 2, sold_out: 3, ended: 4 };
@@ -83,7 +89,8 @@ export function EventsPanel({
   // Même défaut que la base (event_campaigns.wallet_qr_enabled).
   const [walletQr, setWalletQr] = useState(true);
   const [wallet, setWallet] = useState<WalletSettings | null>(null);
-  const [walletBusy, setWalletBusy] = useState<string | null>(null);
+  // Un verrou par événement : enregistrer l'un ne fige pas les autres.
+  const [walletSaving, setWalletSaving] = useState<Record<string, true>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,31 +99,46 @@ export function EventsPanel({
   // Réglage Wallet : lu après l'affichage, pour ne jamais retarder la
   // liste. Tant qu'il n'est pas connu, rien n'est montré (ni case grisée,
   // ni place réservée) : sans fournisseur prêt, il ne le sera jamais.
-  const eventKey = events.map((event) => event.id).join(',');
+  // Le serveur choisit lui-même les événements ouverts de l'organisation :
+  // rien n'est envoyé, aucune borne ne peut être dépassée. La clé ne sert
+  // qu'à relire quand un événement ouvert apparaît ou se ferme.
+  const openKey = events
+    .filter((event) => !isClosed(event.status))
+    .map((event) => event.id)
+    .join(',');
   useEffect(() => {
     let alive = true;
-    const eventIds = eventKey ? eventKey.split(',') : [];
-    readEventWalletSettings({ orgSlug, eventIds })
+    readEventWalletSettings({ orgSlug })
       .then((result) => { if (alive && result.ok) setWallet(result.data); })
       .catch(() => { /* réglage facultatif : la page reste utilisable sans lui */ });
     return () => { alive = false; };
-  }, [orgSlug, eventKey]);
+  }, [orgSlug, openKey]);
 
   const walletQrOf = (event: EventRow) =>
     wallet?.enabled[event.id] ?? (event.wallet_qr_enabled !== false);
 
-  const toggleWalletQr = (eventId: string, enabled: boolean) => {
-    if (walletBusy) return;
-    const previous = wallet;
-    setWalletBusy(eventId);
-    setError(null);
-    // Optimiste : l'interrupteur suit le doigt, et revient si le serveur refuse.
+  const setWalletFor = (eventId: string, enabled: boolean) =>
     setWallet((w) => (w ? { ...w, enabled: { ...w.enabled, [eventId]: enabled } } : w));
+
+  const toggleWalletQr = (eventId: string, enabled: boolean) => {
+    // L'interrupteur est désactivé pendant l'enregistrement ; ce garde-fou
+    // couvre seulement un double clic plus rapide que le rendu.
+    if (walletSaving[eventId]) return;
+    setWalletSaving((s) => ({ ...s, [eventId]: true }));
+    setError(null);
+    // Optimiste : l'interrupteur suit le doigt, et revient si le serveur
+    // refuse. Seul CET événement revient : un autre enregistré entre-temps
+    // garde sa nouvelle valeur.
+    setWalletFor(eventId, enabled);
     startTransition(async () => {
       const result = await setEventWalletQr({ eventId, enabled });
-      setWalletBusy(null);
+      setWalletSaving((saving) => {
+        const next = { ...saving };
+        delete next[eventId];
+        return next;
+      });
       if (!result.ok) {
-        setWallet(previous);
+        setWalletFor(eventId, !enabled);
         setError(result.error);
       }
     });
@@ -405,7 +427,7 @@ export function EventsPanel({
                   ? {
                     enabled: walletQrOf(event),
                     canChange: canConfigure,
-                    saving: walletBusy === event.id,
+                    saving: walletSaving[event.id] === true,
                     onChange: (enabled) => toggleWalletQr(event.id, enabled),
                   }
                   : null}
@@ -441,8 +463,7 @@ function EventLine({
   // Vagues ouvertes : déduites des accès émis (une vague = wave_size accès).
   const waves = Math.ceil(emitted / size);
   const waitingWaves = Math.ceil(waiting / size);
-  // Terminé ou stock épuisé : la file n'alimente plus cet événement.
-  const closed = event.status === 'ended' || event.status === 'sold_out';
+  const closed = isClosed(event.status);
   const ratio = (n: number) => (emitted > 0 ? Math.min(1, n / emitted) : 0);
 
   return (
@@ -535,7 +556,12 @@ function EventLine({
       )}
 
       {wallet && !closed && (
-        <div className={styles.walletStrip} data-on={wallet.enabled ? '1' : '0'}>
+        <div
+          className={styles.walletStrip}
+          data-on={wallet.enabled ? '1' : '0'}
+          data-saving={wallet.saving ? '1' : undefined}
+          aria-busy={wallet.saving || undefined}
+        >
           <span className={styles.walletGlyph} aria-hidden="true">
             <svg viewBox="0 0 20 20">
               <rect x="2.5" y="4.5" width="15" height="11" rx="2.5" />
@@ -553,9 +579,9 @@ function EventLine({
               {wallet.saving ? 'Enregistrement…' : wallet.enabled ? 'Accepté' : 'Refusé'}
             </span>
             <Toggle
-              label={WALLET_LABEL}
+              label={walletLabelFor(event.name)}
               checked={wallet.enabled}
-              disabled={!wallet.canChange}
+              disabled={!wallet.canChange || wallet.saving}
               onChange={wallet.onChange}
             />
           </div>
