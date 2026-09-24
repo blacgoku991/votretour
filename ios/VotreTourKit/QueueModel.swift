@@ -351,7 +351,9 @@ public final class QueueModel: ObservableObject {
                     returningAt: current.entry.returningAt,
                     serviceStartedAt: current.entry.serviceStartedAt,
                     completedAt: current.entry.completedAt,
-                    staffName: current.entry.staffName
+                    staffName: current.entry.staffName,
+                    eventId: current.entry.eventId,
+                    eventTicketNumber: current.entry.eventTicketNumber
                 ),
                 queue: QueueInfo(
                     id: current.queue.id, status: state.status,
