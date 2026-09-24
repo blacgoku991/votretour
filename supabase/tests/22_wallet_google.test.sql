@@ -195,6 +195,11 @@ begin
     (select live and synced_hash = 'hash-objet-1' and last_synced_at = now()
      from public.wallet_passes where id = v_pass),
     'tenu à jour, empreinte du rendu livré enregistrée');
+  -- 0022 : un changement survenu pendant l'insertion n'est pas perdu.
+  perform internal.wallet_test_ok(
+    (select priority = 1 and 'live' = any (reasons) and run_after <= now()
+       from public.wallet_outbox where wallet_pass_id = v_pass and status = 'pending'),
+    'au marquage, le pass est mis en file tout de suite (rattrapage de l''insertion)');
   perform internal.wallet_test_ok(not public.wallet_google_mark_live(extensions.gen_random_uuid(), 'x'),
     'objet inconnu : rien');
 

@@ -105,6 +105,7 @@ const AUDIT_ACTION_LABEL: Record<string, string> = {
   'event.created_by_platform': 'Événement créé par la plateforme',
   'event.updated': 'Événement modifié',
   'event.updated_by_platform': 'Événement modifié par la plateforme',
+  'event.wallet_qr_changed': 'Billet Wallet au contrôle modifié',
   'event.paused': 'Événement mis en pause',
   'event.paused_by_platform': 'Événement mis en pause par la plateforme',
   'event.resumed': 'Événement relancé',

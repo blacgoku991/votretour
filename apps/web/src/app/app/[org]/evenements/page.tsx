@@ -18,7 +18,7 @@ export default async function EventsPage({ params }: { params: Promise<{ org: st
       .eq('organization_id', organizationId)
       .order('created_at'),
     db.from('event_campaigns')
-      .select('id, name, status, queue_id, location_id, wave_size, pass_valid_minutes, grace_minutes, public_note, started_at, ended_at, created_at')
+      .select('id, name, status, queue_id, location_id, wave_size, pass_valid_minutes, grace_minutes, public_note, wallet_qr_enabled, started_at, ended_at, created_at')
       .eq('organization_id', organizationId)
       .order('created_at', { ascending: false }),
   ]);
