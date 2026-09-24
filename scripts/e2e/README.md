@@ -136,3 +136,16 @@ l’état actuel les reproduit à 0 px. Elles dépendent du rendu des polices
 de la machine : elles ont été produites sur le banc de développement
 (Linux, Chromium 1194). Sur une autre machine, régénérez-les d’abord sur
 `main`, puis comparez votre branche.
+
+## Recettes par métier
+
+Deux jeux de parcours Playwright, joués sur un banc local dédié (jamais
+`votretour_verify`, jamais une base distante : les deux bancs le refusent).
+
+- `pro/` : le poste du pro (atelier véhicule et appareil avec l’étiquette de
+  clé imprimée, salle, guichet, boutique), données `pro/profiles-seed.sql`.
+  Paramètres et lancement en tête de `pro/profiles-lib.mjs`.
+- `client/` : l’écran client `/e/<plaque>` pour les mêmes métiers, devis,
+  rideau reçu en direct et fin de passage. Paramètres en tête de
+  `client/bench.mjs`, par exemple :
+  `E2E_DB=postgresql://…@127.0.0.1:…/votretour_e2e E2E_SUPABASE_URL=http://127.0.0.1:… node scripts/e2e/client/profiles-vehicle.mjs`

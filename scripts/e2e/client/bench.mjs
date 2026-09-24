@@ -7,8 +7,6 @@
 // fin. Rien ne dépend d'une organisation pilote : le banc crée et active
 // ce qu'il lui faut (organisation « E2E Profils », `features.profiles`).
 //
-// Destination prévue : `scripts/e2e/` (le lot ne possède que ce dossier-ci).
-//
 // Paramètres (variables d'environnement) :
 //   E2E_BASE              URL de l'application          (défaut http://127.0.0.1:3000)
 //   E2E_DB                URI PostgreSQL de SA base     (OBLIGATOIRE : jamais de défaut
@@ -21,7 +19,7 @@
 //   E2E_WIDTH / E2E_HEIGHT viewport (défaut 390 × 844)
 //   E2E_REDUCED=1         mouvement réduit
 //
-// Lancement (depuis apps/web) : E2E_DB=… E2E_SUPABASE_URL=… node src/app/e/[slug]/profiles/e2e/profiles-vehicle.mjs
+// Lancement (depuis la racine) : E2E_DB=… E2E_SUPABASE_URL=… node scripts/e2e/client/profiles-vehicle.mjs
 
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
@@ -38,6 +36,16 @@ const REDUCED = process.env.E2E_REDUCED === '1';
 
 if (!DB) throw new Error('E2E_DB est obligatoire (la base du banc, jamais une base partagée par défaut).');
 if (!SUPABASE_URL) throw new Error('E2E_SUPABASE_URL est obligatoire (la passerelle temps réel de cette base).');
+
+// Le banc écrit dans sa base : jamais ailleurs qu'en local, jamais sur le banc partagé.
+{
+  const db = new URL(DB);
+  if (!['127.0.0.1', 'localhost'].includes(db.hostname)) throw new Error('E2E_DB doit viser 127.0.0.1.');
+  for (const k of ['host', 'hostaddr', 'service']) {
+    if (db.searchParams.has(k)) throw new Error(`E2E_DB : paramètre « ${k} » interdit.`);
+  }
+  if (db.pathname.replace(/^\//, '') === 'votretour_verify') throw new Error('votretour_verify est la base du banc partagé.');
+}
 
 const ORG_SLUG = 'e2e-profils';
 const OWNER_ID = '4f000000-0000-4000-8000-0000000000e2';
