@@ -269,6 +269,19 @@ export interface VideoInput {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
 
 /**
+ * Date ISO 8601 réelle. La forme ne suffit pas : V8 accepte
+ * « 2026-02-30 » et le reporte au 2 mars, et la chaîne sortirait telle
+ * quelle dans le JSON-LD. On refait donc l'aller-retour du jour civil,
+ * lu en UTC pour qu'un décalage horaire ne fasse pas changer de jour.
+ */
+function isRealIsoDate(value: string): boolean {
+  if (!ISO_DATE.test(value) || Number.isNaN(Date.parse(value))) return false;
+  const day = value.slice(0, 10);
+  const civil = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(civil.getTime()) && civil.toISOString().slice(0, 10) === day;
+}
+
+/**
  * `VideoObject` d'une vidéo réellement montée, ou `null` si l'entrée est
  * incomplète ou incohérente : on ne complète jamais une durée ou une date.
  */
@@ -277,7 +290,7 @@ export function videoObject(video: VideoInput, siteUrl: string): JsonLdNode | nu
   const description = video.description.trim();
   const thumbnails = video.thumbnailUrls.map((url) => url.trim()).filter(Boolean);
   if (!name || !description || thumbnails.length === 0 || !video.contentUrl.trim()) return null;
-  if (!ISO_DATE.test(video.uploadDate) || Number.isNaN(Date.parse(video.uploadDate))) return null;
+  if (!isRealIsoDate(video.uploadDate)) return null;
   if (!Number.isFinite(video.durationSeconds) || Math.round(video.durationSeconds) <= 0) return null;
   return {
     '@type': 'VideoObject',

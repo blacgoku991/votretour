@@ -1,8 +1,21 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { unstable_doesMiddlewareMatch } from 'next/experimental/testing/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import robots from '@/app/robots';
 import sitemap from '@/app/sitemap';
+import { config as middlewareConfig } from '@/middleware';
 import { buildRobots, buildSitemap } from '@/lib/seo/crawl';
-import { DISALLOWED_PATHS, PUBLIC_PAGES, absoluteUrl, isIndexable, seoIndexable, siteUrl } from '@/lib/seo/site';
+import {
+  DISALLOWED_PATHS,
+  PUBLIC_PAGES,
+  SITE_DATES,
+  absoluteUrl,
+  appClipPublished,
+  isIndexable,
+  seoIndexable,
+  siteUrl,
+} from '@/lib/seo/site';
 
 // tests/setup.ts pose NEXT_PUBLIC_SITE_URL=https://votretour.test.
 const SITE = 'https://votretour.test';
@@ -17,7 +30,7 @@ const LEGAL_COMPLETE = {
 } as const;
 
 const saved: Record<string, string | undefined> = {};
-const TOUCHED = ['SEO_INDEXABLE', ...Object.keys(LEGAL_COMPLETE)];
+const TOUCHED = ['SEO_INDEXABLE', 'VERCEL_ENV', 'NEXT_PUBLIC_APP_CLIP_PUBLIE', ...Object.keys(LEGAL_COMPLETE)];
 
 beforeEach(() => {
   for (const key of TOUCHED) {
@@ -50,6 +63,77 @@ describe('indexabilité', () => {
     expect(seoIndexable()).toBe(false);
     process.env.SEO_INDEXABLE = '1';
     expect(seoIndexable()).toBe(true);
+  });
+
+  it('une prévisualisation Vercel reste fermée, même avec SEO_INDEXABLE=1', () => {
+    expect(isIndexable('1', 'https://rangvia-git-x.vercel.app', 'preview')).toBe(false);
+    expect(isIndexable('1', 'https://rangvia-git-x.vercel.app', 'development')).toBe(false);
+    expect(isIndexable('1', 'https://rangvia.fr', 'production')).toBe(true);
+    // Hors Vercel (Docker, poste local), la variable n'existe pas.
+    expect(isIndexable('1', 'https://rangvia.fr', undefined)).toBe(true);
+    expect(isIndexable('1', 'https://rangvia.fr', '')).toBe(true);
+    process.env.SEO_INDEXABLE = '1';
+    process.env.VERCEL_ENV = 'preview';
+    expect(seoIndexable()).toBe(false);
+    expect(robots().rules).toEqual({ userAgent: '*', disallow: '/' });
+    expect(sitemap()).toEqual([]);
+    process.env.VERCEL_ENV = 'production';
+    expect(seoIndexable()).toBe(true);
+  });
+});
+
+describe('App Clip', () => {
+  it('fermé par défaut : aucune page ne le promet sans « 1 » explicite', () => {
+    expect(appClipPublished()).toBe(false);
+    for (const value of ['', '0', 'true', 'oui']) {
+      process.env.NEXT_PUBLIC_APP_CLIP_PUBLIE = value;
+      expect(appClipPublished(), value).toBe(false);
+    }
+    process.env.NEXT_PUBLIC_APP_CLIP_PUBLIE = '1';
+    expect(appClipPublished()).toBe(true);
+  });
+});
+
+describe('dates de révision', () => {
+  it('SITE_DATES : jours ISO réels, jamais dans le futur', () => {
+    const now = Date.now();
+    for (const [page, day] of Object.entries(SITE_DATES)) {
+      expect(day, page).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      const at = new Date(`${day}T00:00:00Z`);
+      // Aller-retour : « 2026-02-30 » passerait la regex et Date.parse.
+      expect(at.toISOString().slice(0, 10), page).toBe(day);
+      expect(at.getTime(), page).toBeLessThanOrEqual(now);
+    }
+    for (const page of PUBLIC_PAGES) {
+      expect(Object.values(SITE_DATES), page.path).toContain(page.lastModified);
+    }
+  });
+});
+
+describe('déploiement Docker : SEO_INDEXABLE identique au build et à l’exécution', () => {
+  // Les pages statiques et ISR figent leur balise robots au build : sans
+  // l'argument, une image « de production » servirait noindex.
+  const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
+
+  it('le Dockerfile le déclare en ARG et le passe à l’étape de compilation', () => {
+    const dockerfile = read('../Dockerfile');
+    const builder = dockerfile.slice(dockerfile.indexOf('AS builder'), dockerfile.indexOf('AS runner'));
+    expect(builder).toMatch(/^ARG SEO_INDEXABLE=?$/m);
+    expect(builder).toMatch(/^\s*SEO_INDEXABLE=\$SEO_INDEXABLE\b/m);
+    expect(builder.indexOf('SEO_INDEXABLE=$SEO_INDEXABLE')).toBeLessThan(builder.indexOf('npm run build'));
+  });
+
+  it('compose le passe en argument de build ET en variable d’exécution', () => {
+    const compose = read('../../../deploy/docker-compose.yml');
+    const app = compose.slice(compose.indexOf('\n  app:'), compose.indexOf('\n  caddy:'));
+    const args = app.slice(app.indexOf('args:'), app.indexOf('image:'));
+    const environment = app.slice(app.indexOf('environment:'), app.indexOf('volumes:'));
+    expect(args).toMatch(/^\s+SEO_INDEXABLE: \$\{SEO_INDEXABLE:-\}$/m);
+    expect(environment).toMatch(/^\s+SEO_INDEXABLE: \$\{SEO_INDEXABLE:-\}$/m);
+    // Inlinée au build : la répéter à l'exécution ferait croire qu'un
+    // redémarrage suffit.
+    expect(args).toMatch(/NEXT_PUBLIC_APP_CLIP_PUBLIE:/);
+    expect(environment).not.toMatch(/NEXT_PUBLIC_APP_CLIP_PUBLIE:/);
   });
 });
 
@@ -182,12 +266,10 @@ describe('robots.txt', () => {
 });
 
 describe('middleware : le site public en cache ne passe pas par l’authentification', () => {
-  it('exclut /pour, sitemap.xml, robots.txt, l’image de partage, /videos et /s/', async () => {
-    const { config } = await import('@/middleware');
-    const [pattern] = config.matcher;
-    expect(pattern).toBeDefined();
-    // Même lecture que Next : le motif doit couvrir TOUT le chemin.
-    const runs = (path: string) => new RegExp(`^${pattern}$`).test(path);
+  // Le vrai compilateur de motifs de Next, pas une RegExp reconstruite.
+  const runs = (url: string) => unstable_doesMiddlewareMatch({ config: middlewareConfig, url });
+
+  it('exclut /pour, sitemap.xml, robots.txt, les images de partage, /videos, /s/ et les icônes', () => {
     for (const path of [
       '/pour',
       '/pour/garages',
@@ -197,10 +279,15 @@ describe('middleware : le site public en cache ne passe pas par l’authentifica
       '/opengraph-image',
       '/videos/garages/demo.mp4',
       '/s/jeton-brut',
+      '/icon.png',
+      '/apple-icon.png',
+      '/e/barber-house',
     ]) {
       expect(runs(path), path).toBe(false);
     }
-    // Le reste continue d'y passer, y compris des chemins voisins.
+  });
+
+  it('le reste continue d’y passer, y compris des chemins voisins', () => {
     for (const path of [
       '/',
       '/app',
@@ -213,6 +300,7 @@ describe('middleware : le site public en cache ne passe pas par l’authentifica
       '/pourquoi',
       '/sitemap.xml.bak',
       '/robots.txt/x',
+      '/s',
     ]) {
       expect(runs(path), path).toBe(true);
     }

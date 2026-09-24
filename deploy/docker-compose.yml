@@ -191,6 +191,10 @@ services:
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
         # « 1 » une fois l'App Clip publié : les pages peuvent le citer.
         NEXT_PUBLIC_APP_CLIP_PUBLIE: ${NEXT_PUBLIC_APP_CLIP_PUBLIE:-}
+        # Pas envoyée au navigateur, mais lue au build par les pages
+        # statiques et ISR (balise robots des pages métier) : elle doit
+        # valoir ici la même chose que dans « environment » plus bas.
+        SEO_INDEXABLE: ${SEO_INDEXABLE:-}
     image: votretour-app:local
     restart: unless-stopped
     depends_on:
@@ -206,10 +210,14 @@ services:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY:?SERVICE_ROLE_KEY manquant}
       NEXT_PUBLIC_SITE_URL: ${SITE_URL}
-      # Indexation : vide = robots.txt fermé et sitemap vide. Lue à chaque
-      # requête : un redémarrage de « app » suffit.
+      # Indexation : vide = robots.txt fermé et sitemap vide. robots.txt
+      # et sitemap.xml la relisent à chaque requête, mais les pages
+      # statiques l'ont figée au build (argument ci-dessus) : la changer
+      # impose « docker compose build app && docker compose up -d app ».
+      # NEXT_PUBLIC_APP_CLIP_PUBLIE n'est volontairement pas répétée ici :
+      # inlinée à la compilation, sa valeur d'exécution serait ignorée et
+      # laisserait croire qu'un redémarrage suffit.
       SEO_INDEXABLE: ${SEO_INDEXABLE:-}
-      NEXT_PUBLIC_APP_CLIP_PUBLIE: ${NEXT_PUBLIC_APP_CLIP_PUBLIE:-}
       SESSION_HASH_SECRET: ${SESSION_HASH_SECRET:?SESSION_HASH_SECRET manquant}
       CRON_SECRET: ${CRON_SECRET:?CRON_SECRET manquant}
       NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}

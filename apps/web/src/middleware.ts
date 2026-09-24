@@ -40,11 +40,10 @@ export async function middleware(request: NextRequest) {
   const user = data.user;
   const { pathname } = request.nextUrl;
 
-  const isPrivate =
-    pathname.startsWith('/app') ||
-    pathname.startsWith('/admin') ||
-    pathname.startsWith('/scan') ||
-    pathname.startsWith('/bienvenue');
+  // Par segment entier, jamais par préfixe de texte : « /app » ne doit
+  // pas attraper /apple-icon.png ni une future page /applications.
+  const inSection = (section: string) => pathname === section || pathname.startsWith(`${section}/`);
+  const isPrivate = ['/app', '/admin', '/scan', '/bienvenue'].some(inSection);
 
   if (isPrivate && !user) {
     const url = request.nextUrl.clone();
@@ -97,7 +96,10 @@ export const config = {
      * statique n'a pas à attendre GoTrue, et un robot n'a pas de session.
      * /s/… (rattachement d'une fiche par jeton) est exclu pour que le jeton
      * brut ne traverse jamais le middleware ni ses journaux.
+     *
+     * /apple-icon.png aussi : c'est une ressource statique, qu'iOS et les
+     * robots demandent sans session.
      */
-    '/((?!_next/static|_next/image|favicon.ico|icon|sw.js|manifest.webmanifest|\\.well-known|e/|tv(?:/|$)|media/|api/client/|api/cron/|api/stripe/|api/tv/|api/event/|pour(?:/|$)|sitemap\\.xml$|robots\\.txt$|opengraph-image(?:/|$)|videos/|s/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|sw.js|manifest.webmanifest|\\.well-known|e/|tv(?:/|$)|media/|api/client/|api/cron/|api/stripe/|api/tv/|api/event/|pour(?:/|$)|sitemap\\.xml$|robots\\.txt$|opengraph-image(?:/|$)|videos/|s/).*)',
   ],
 };

@@ -30,12 +30,21 @@ ARG NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 # seulement configuré) : les pages publiques peuvent alors le citer.
 # Vide par défaut : aucune page ne promet ce qu'un client ne trouvera pas.
 ARG NEXT_PUBLIC_APP_CLIP_PUBLIE=
+# Indexation par les moteurs (« 1 » sur la seule production en https).
+# Pas de préfixe NEXT_PUBLIC_ : rien ne part au navigateur. Mais les pages
+# statiques et ISR (pages métier /pour/…) calculent leur balise robots AU
+# BUILD : sans la même valeur ici qu'à l'exécution, une image construite
+# sans le drapeau servirait « noindex » en production jusqu'à la première
+# régénération. robots.txt et sitemap.xml, dynamiques, relisent la valeur
+# du conteneur ; les deux doivent donc toujours concorder.
+ARG SEO_INDEXABLE=
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
     NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
     NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY \
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=$NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY \
     NEXT_PUBLIC_APP_CLIP_PUBLIE=$NEXT_PUBLIC_APP_CLIP_PUBLIE \
+    SEO_INDEXABLE=$SEO_INDEXABLE \
     NEXT_TELEMETRY_DISABLED=1 \
     NODE_ENV=production
 

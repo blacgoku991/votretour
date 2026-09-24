@@ -196,9 +196,19 @@ describe('VideoObject', () => {
     expect(videoObject({ ...video, durationSeconds: Number.NaN }, SITE)).toBeNull();
     expect(videoObject({ ...video, uploadDate: 'hier' }, SITE)).toBeNull();
     expect(videoObject({ ...video, uploadDate: '2026-13-45' }, SITE)).toBeNull();
+    // Forme correcte, jour impossible : V8 le reporterait au 2 mars.
+    expect(videoObject({ ...video, uploadDate: '2026-02-30' }, SITE)).toBeNull();
+    expect(videoObject({ ...video, uploadDate: '2026-02-29T10:00:00Z' }, SITE)).toBeNull();
+    expect(videoObject({ ...video, uploadDate: '2026-04-31' }, SITE)).toBeNull();
     expect(videoObject({ ...video, thumbnailUrls: [] }, SITE)).toBeNull();
     expect(videoObject({ ...video, name: '  ' }, SITE)).toBeNull();
     expect(videoObject({ ...video, contentUrl: '' }, SITE)).toBeNull();
+  });
+
+  it('accepte une date avec heure et décalage, même quand l’UTC tombe la veille', () => {
+    const at = '2026-10-02T00:30:00+02:00';
+    expect(videoObject({ ...video, uploadDate: at }, SITE)?.uploadDate).toBe(at);
+    expect(videoObject({ ...video, uploadDate: '2028-02-29' }, SITE)?.uploadDate).toBe('2028-02-29');
   });
 
   it('garde une URL déjà absolue et accepte une page de visionnage', () => {

@@ -4,10 +4,11 @@ import { buildSitemap, type SitemapMetier } from '@/lib/seo/crawl';
 import { seoIndexable, siteUrl } from '@/lib/seo/site';
 
 /**
- * sitemap.xml — rendu à la requête : SEO_INDEXABLE et les mentions
- * légales se règlent dans l'environnement du conteneur, sans nouvelle
- * image. Figé au build (où SEO_INDEXABLE n'existe pas), le sitemap
- * resterait vide en production.
+ * sitemap.xml — rendu à la requête : les mentions légales se règlent dans
+ * l'environnement du conteneur, sans nouvelle image, et le sitemap suit
+ * SEO_INDEXABLE tel qu'il est au démarrage (argument de build ET variable
+ * d'exécution : voir le Dockerfile). Figé au build, il ne verrait ni les
+ * mentions complétées après coup, ni une image construite sans le drapeau.
  */
 export const dynamic = 'force-dynamic';
 
