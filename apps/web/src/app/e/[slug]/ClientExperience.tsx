@@ -337,7 +337,7 @@ export function ClientExperience({
 
 type Connection = 'connecting' | 'live' | 'polling' | 'offline';
 
-function Header({
+export function Header({
   name, subtitle, logoUrl, connection, queueStatus, inQueue,
 }: {
   name: string;
@@ -954,7 +954,7 @@ function LeaveControl({
    Notifications — sans jamais promettre l'impossible
    ================================================================== */
 
-function NotificationPanel({
+export function NotificationPanel({
   organizationId, entryId, vapidPublicKey,
 }: {
   organizationId: string;
@@ -1051,7 +1051,7 @@ function NotificationPanel({
    Écran 3 — fin de passage + avis Google
    ================================================================== */
 
-function DonePanel({ ticket, onRejoin }: { ticket: TicketState; onRejoin: () => void }) {
+export function DonePanel({ ticket, onRejoin }: { ticket: TicketState; onRejoin: () => void }) {
   const reviewUrl = ticket.location.googleReviewUrl;
 
   return (
@@ -1103,7 +1103,7 @@ function DonePanel({ ticket, onRejoin }: { ticket: TicketState; onRejoin: () => 
   );
 }
 
-function ClosedPanel({ ticket, onRejoin }: { ticket: TicketState; onRejoin: () => void }) {
+export function ClosedPanel({ ticket, onRejoin }: { ticket: TicketState; onRejoin: () => void }) {
   const status = ticket.entry.status;
   const message =
     status === 'absent' ? 'Vous avez été noté absent. Présentez-vous au comptoir pour reprendre votre place.'

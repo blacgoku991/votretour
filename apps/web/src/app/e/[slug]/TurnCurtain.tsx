@@ -16,6 +16,12 @@ import styles from './client.module.css';
  *
  * En mouvement réduit, ou quand on arrive directement sur cet état (page
  * rechargée), le rideau est simplement là, sans transition.
+ *
+ * `title` et `subtitle` : le même rideau pour les profils métier
+ * (« Votre véhicule est prêt », « Guichet 4 »). Sans eux, il dit
+ * exactement ce qu'il disait : « C'est votre tour », « Présentez-vous au
+ * comptoir ». Un titre fourni remplace le couple « C'est » / « votre
+ * tour » : il se suffit à lui-même.
  */
 
 const FLIP_MS = 640;
@@ -28,6 +34,8 @@ export function TurnCurtain({
   animate,
   locationName,
   clientName,
+  title,
+  subtitle,
   children,
 }: {
   /** Conteneur du Rang : on y cherche la latte « Vous » (.slat--self). */
@@ -36,6 +44,10 @@ export function TurnCurtain({
   animate: boolean;
   locationName: string;
   clientName: string | null;
+  /** Titre du métier ; défaut : « C'est votre tour ». */
+  title?: string;
+  /** Consigne sous le titre ; défaut : « Présentez-vous au comptoir ». */
+  subtitle?: string;
   children: React.ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -79,7 +91,7 @@ export function TurnCurtain({
   }, []);
 
   return (
-    <div ref={rootRef} className={styles.curtain} role="region" aria-label="C’est votre tour">
+    <div ref={rootRef} className={styles.curtain} role="region" aria-label={title ?? 'C’est votre tour'}>
       <div ref={bgRef} className={styles.curtainBg} aria-hidden="true" />
       <div className={styles.curtainInner}>
         <p className={styles.curtainPlace}>{locationName}</p>
@@ -89,9 +101,9 @@ export function TurnCurtain({
         <div className={styles.curtainMain} role={animate ? undefined : 'alert'}>
           <Seuil tone="ink" draw label="Comptoir" className={styles.curtainSeuil}>
             {clientName && <p className={styles.turnName}>{clientName}</p>}
-            <p className={styles.turnKicker}>C’est</p>
-            <h2 ref={titleRef} tabIndex={-1} className={styles.turnTitle}>votre tour</h2>
-            <p className={styles.turnHint}>Présentez-vous au comptoir</p>
+            {title === undefined && <p className={styles.turnKicker}>C’est</p>}
+            <h2 ref={titleRef} tabIndex={-1} className={styles.turnTitle}>{title ?? 'votre tour'}</h2>
+            <p className={styles.turnHint}>{subtitle ?? 'Présentez-vous au comptoir'}</p>
           </Seuil>
         </div>
 

@@ -1,0 +1,436 @@
+/* =====================================================================
+   Écran client des profils métier — pièces communes.
+
+   Même colonne, même sol, même en-tête et mêmes boutons que l'écran des
+   barbiers (client.module.css, réutilisé tel quel) : ce fichier n'ajoute
+   que ce que le métier apporte. Les champs sont accrochés au rail
+   (.field-rail) ; les choix sont des lattes en relief (tranche dure de
+   2 px) ; une seule couleur forte, le vermillon, pour le geste principal
+   et le choix en cours. On n'anime que transform et opacity ; en
+   mouvement réduit, tout est à sa place, immobile.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   Le rideau du métier (enveloppe de TurnCurtain)
+   --------------------------------------------------------------------- */
+
+/* Point de départ invisible du rideau : il épouse l'objet du client. */
+.curtainOrigin {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: none;
+}
+.curtainOrigin::before { display: none; }
+
+/* Un titre de métier est plus long que « votre tour » : même voix
+   (Archivo large et grasse), corps resserré pour tenir en trois lignes
+   à 390 px sans couper un mot. */
+.ready[data-long] h2 {
+  font-size: clamp(2.5rem, 1.5rem + 5.6vw, 3.75rem);
+  line-height: 0.94;
+  letter-spacing: -0.035em;
+  hyphens: none;
+  overflow-wrap: normal;
+}
+
+/* La consigne sous le titre : jamais un mot seul sur sa ligne. */
+.ready h2 + p { text-wrap: balance; }
+
+/* L'objet du client posé sur le vermillon : la plaque, le numéro, le
+   chevalet. Centré, au-dessus des actions. */
+.readyObject {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 10px;
+  min-width: 0;
+}
+
+.readyNote {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 0 16px;
+  border-radius: 16px;
+  border: 1.5px solid var(--accent-ink);
+  font-variation-settings: 'wdth' 104, 'wght' 720;
+  font-size: 1.0625rem;
+  line-height: 1.25;
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------------
+   Inscription : l'objet en tête
+   --------------------------------------------------------------------- */
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kicker {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 0.6875rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.heroTitle {
+  font-variation-settings: 'wdth' 112, 'wght' 800;
+  font-size: clamp(1.875rem, 1.3rem + 2.6vw, 2.5rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+/* La plaque qui s'écrit pendant la frappe. Vierge, elle attend, un rien
+   en retrait ; dès le premier caractère, elle se pose. */
+.platePreview {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+  padding: 18px 0 6px;
+  transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-3) var(--ease-slat);
+}
+.platePreview[data-empty] {
+  opacity: 1;
+  transform: translateY(4px);
+}
+
+.heroNote {
+  max-width: 34ch;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/* Guichet : les tuiles du numéro à venir, vides, dans un cadre pointillé. */
+.ticketToCome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin-block: auto;
+  padding: 26px 20px 24px;
+  border-radius: var(--r-card);
+  border: 2px dashed color-mix(in oklab, var(--accent) 55%, transparent);
+}
+.ticketToComeLabel {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 0.6875rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.ticketToComeTiles {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.blankTile {
+  position: relative;
+  width: 50px;
+  height: 70px;
+  border-radius: 8px;
+  background: var(--slat);
+  box-shadow: 0 2px 0 var(--slat-edge), var(--edge-light);
+}
+/* La charnière du volet, au milieu de chaque tuile. */
+.blankTile::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--ink-1000);
+  opacity: 0.6;
+}
+.blankTile[data-dash] {
+  width: 16px;
+  height: 5px;
+  border-radius: 3px;
+  box-shadow: none;
+  background: var(--line-strong);
+}
+.blankTile[data-dash]::after { display: none; }
+/* Les tuiles attendent : une respiration lente, en opacité seulement. */
+@media (prefers-reduced-motion: no-preference) {
+  .blankTile:not([data-dash]) { animation: tile-wait 2.8s var(--ease-out) infinite; }
+  .blankTile:nth-child(3) { animation-delay: 140ms; }
+  .blankTile:nth-child(4) { animation-delay: 280ms; }
+  .blankTile:nth-child(5) { animation-delay: 420ms; }
+}
+@keyframes tile-wait {
+  0%, 70%, 100% { opacity: 1; }
+  82% { opacity: 0.5; }
+}
+
+/* Le formulaire suit l'objet de tête sans être repoussé tout en bas : il
+   peut être long (atelier), c'est le bouton qui colle au pouce. */
+.joinForm { margin-top: 4px; }
+
+/* ---------------------------------------------------------------------
+   Immatriculation
+   --------------------------------------------------------------------- */
+.regRow { position: relative; }
+
+.regInput {
+  padding-right: 48px;
+  font-variation-settings: 'wdth' 80, 'wght' 720;
+  font-size: 1.375rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+.regInput::placeholder {
+  letter-spacing: 0.08em;
+  font-variation-settings: 'wdth' 80, 'wght' 600;
+}
+.regInput[data-valid] { border-color: color-mix(in oklab, var(--jade-500) 60%, transparent); }
+.regInput[aria-invalid] { border-color: var(--danger-text); }
+
+.regOk {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-top: -13px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--jade-500) 20%, transparent);
+  color: var(--jade-500);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .regOk { animation: pop-in var(--dur-2) var(--ease-out) both; }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.6); }
+  to   { opacity: 1; transform: none; }
+}
+
+.regFoot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 1.4em;
+}
+.regFoot > p { min-width: 0; }
+
+.linkButton {
+  flex: none;
+  min-height: 32px;
+  padding: 0 2px;
+  font-size: 0.8125rem;
+  font-variation-settings: 'wght' 620;
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-strong);
+}
+@media (pointer: coarse) { .linkButton { min-height: 44px; } }
+
+/* ---------------------------------------------------------------------
+   Puces de motif et bascules
+   --------------------------------------------------------------------- */
+.chips,
+.toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text);
+  font-variation-settings: 'wdth' 100, 'wght' 620;
+  font-size: 0.9375rem;
+  line-height: 1.1;
+  transition: transform var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out),
+              border-color var(--dur-1) var(--ease-out);
+}
+.chip:active { transform: scale(0.97); }
+.chip[data-on] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+@media (hover: hover) {
+  .chip:not([data-on]):hover { border-color: color-mix(in oklab, var(--text) 40%, transparent); }
+}
+
+.chipBox {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-left: -4px;
+  border-radius: 5px;
+  border: 1.5px solid var(--line-strong);
+  color: var(--accent-ink);
+}
+.chip[data-on] .chipBox { background: var(--accent); border-color: var(--accent); }
+
+.afterChips { margin-top: 10px; }
+
+/* ---------------------------------------------------------------------
+   Appareil : six lattes carrées, le pictogramme au-dessus du mot
+   --------------------------------------------------------------------- */
+.deviceGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.deviceKind {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 84px;
+  padding: 10px 6px;
+  border-radius: var(--r-field);
+  background: var(--slat);
+  color: var(--text-muted);
+  box-shadow: 0 2px 0 var(--slat-edge);
+  font-variation-settings: 'wdth' 96, 'wght' 640;
+  font-size: 0.8125rem;
+  line-height: 1.15;
+  transition: transform var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
+}
+.deviceKind:active { transform: translateY(2px); box-shadow: 0 0 0 var(--slat-edge); }
+.deviceKind[data-on] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 3px 0 var(--slat-edge-self), 0 8px 22px -12px color-mix(in oklab, var(--accent) 70%, transparent);
+}
+.deviceKind[data-on] svg { stroke-width: 1.9; }
+
+/* Le rappel permanent : jamais le code de déverrouillage. */
+.guard {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px 14px 12px 12px;
+  border-radius: var(--r-field);
+  border: 1px solid color-mix(in oklab, var(--copper-500) 45%, transparent);
+  background: color-mix(in oklab, var(--copper-500) 10%, transparent);
+  color: var(--text);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+.guard > svg { margin-top: 1px; color: var(--copper-500); }
+
+/* ---------------------------------------------------------------------
+   Couverts : le chevalet entre « − » et « + »
+   --------------------------------------------------------------------- */
+.stepper {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 56px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0 2px;
+}
+.stepBtn {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: 0 2px 0 var(--slat-edge);
+  transition: transform var(--dur-1) var(--ease-out), opacity var(--dur-1) var(--ease-out);
+}
+.stepBtn svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.stepBtn:active:not(:disabled) { transform: translateY(2px); }
+.stepBtn:disabled {
+  opacity: 0.35;
+  border-style: dashed;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.stepTent {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+/* À chaque couvert ajouté, le chevalet se repose sur la table. */
+@media (prefers-reduced-motion: no-preference) {
+  .stepSettle { display: inline-flex; animation: tent-settle var(--dur-3) var(--ease-slat) both; }
+}
+@keyframes tent-settle {
+  from { transform: translateY(-6px) rotate(-1.5deg); opacity: 0.6; }
+  to   { transform: none; opacity: 1; }
+}
+
+/* ---------------------------------------------------------------------
+   Choix exclusif : un curseur en relief qui glisse sous l'option
+   --------------------------------------------------------------------- */
+.segmented {
+  --seg-pad: 4px;
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  padding: var(--seg-pad);
+  border-radius: calc(var(--r-field) + 2px);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+}
+.segThumb {
+  position: absolute;
+  top: var(--seg-pad);
+  bottom: var(--seg-pad);
+  left: var(--seg-pad);
+  width: calc((100% - var(--seg-pad) * 2) / var(--seg-n));
+  border-radius: var(--r-field);
+  background: var(--slat);
+  box-shadow: 0 2px 0 var(--slat-edge), var(--edge-light);
+  transform: translateX(calc(100% * var(--seg-i)));
+  transition: transform var(--dur-3) var(--ease-slat);
+}
+@media (prefers-reduced-motion: reduce) {
+  .segThumb { transition: none; }
+}
+.segItem {
+  position: relative;
+  z-index: 1;
+  min-height: 48px;
+  padding: 6px 8px;
+  border-radius: var(--r-field);
+  color: var(--text-muted);
+  font-variation-settings: 'wdth' 96, 'wght' 640;
+  font-size: 0.875rem;
+  line-height: 1.2;
+  text-wrap: balance;
+  transition: color var(--dur-2) var(--ease-out);
+}
+.segItem[aria-checked='true'] { color: var(--text); font-variation-settings: 'wdth' 96, 'wght' 720; }
+.segItem:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

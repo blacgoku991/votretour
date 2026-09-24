@@ -1,0 +1,178 @@
+/* =====================================================================
+   Le guichet et la boutique, côté client.
+
+   Guichet : LE TABLEAU D'APPEL tenu dans la main. Un panneau encre, en
+   relief, qui porte le numéro en volets de gare (« A-042 »), puis le
+   volet du nombre de personnes devant. Le numéro remplace le Rang : c'est
+   lui que la salle appellera, jamais un nom.
+
+   Boutique : l'étiquette de sac (latte percée en haut) pour une commande
+   suivie ; sinon, la file des barbiers, « Caisse » en tête.
+   ===================================================================== */
+
+.board {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 20px 18px;
+  border-radius: var(--r-card);
+  /* Le tableau reste encre dans les deux thèmes : c'est un objet. */
+  background: var(--ink-1000);
+  color: var(--bone-100);
+  border: 1px solid color-mix(in oklab, var(--bone-100) 10%, transparent);
+  box-shadow:
+    0 3px 0 var(--ink-700),
+    0 26px 48px -26px rgb(0 0 0 / 0.9),
+    inset 0 1px 0 color-mix(in oklab, var(--bone-100) 7%, transparent);
+  /* Les tuiles du volet, un cran plus claires que le panneau. */
+  --flap-tile: var(--ink-700);
+}
+
+.boardLabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 0.6875rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.boardLabel::before {
+  content: '';
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.number { align-self: flex-start; max-width: 100%; }
+
+.noNumber {
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: #9AA3AF;
+}
+
+/* Le filet du tableau, entre le numéro et le compte. */
+.boardRule {
+  height: 0;
+  border-top: 1px dashed color-mix(in oklab, var(--bone-100) 22%, transparent);
+}
+
+.boardCount {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  min-width: 0;
+}
+.boardCount > :first-child { flex: none; }
+.boardCount p > :first-child { color: var(--bone-100); }
+
+/* Sur le rideau : le numéro et sa flèche vers le guichet. */
+.curtainNumber { --flap-tile: var(--ink-900); }
+
+.curtainError {
+  font-variation-settings: 'wght' 700;
+  font-size: 0.9375rem;
+  text-align: center;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---------------------------------------------------------------------
+   Boutique : l'étiquette de sac
+   --------------------------------------------------------------------- */
+.bagTag {
+  position: relative;
+  align-self: center;
+  width: min(100%, 300px);
+  margin: 6px 0 0;
+  padding: 40px 22px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: var(--bone-200);
+  color: var(--ink-900);
+  /* Coins supérieurs coupés : une étiquette, pas une carte. */
+  clip-path: polygon(22px 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 0 100%, 0 22px);
+  border-radius: 0 0 var(--r-card) var(--r-card);
+  box-shadow: inset 0 -3px 0 var(--bone-500);
+  transform: rotate(1.2deg);
+}
+.bagHole {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--bone-400), inset 0 2px 3px rgb(0 0 0 / 0.6);
+}
+.bagKicker {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.bagRef {
+  font-variation-settings: 'wdth' 118, 'wght' 820;
+  font-size: clamp(2rem, 1.5rem + 2.6vw, 2.5rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.bagName {
+  font-variation-settings: 'wdth' 100, 'wght' 620;
+  font-size: 0.9375rem;
+  color: var(--ink-500);
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.orderLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+.orderChip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  background: var(--slat);
+  color: var(--text);
+  font-variation-settings: 'wdth' 100, 'wght' 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.curtainOrder {
+  display: inline-flex;
+  align-items: center;
+  min-height: 56px;
+  padding: 0 20px;
+  border-radius: var(--r-slat);
+  background: var(--bone-200);
+  color: var(--ink-900);
+  box-shadow: 0 3px 0 var(--bone-500);
+  font-variation-settings: 'wdth' 118, 'wght' 820;
+  font-size: 1.75rem;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}

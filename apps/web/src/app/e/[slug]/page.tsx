@@ -8,6 +8,7 @@ import { ACTIVITY_LABEL } from '@/lib/copy';
 import type { EntryPoint } from '@/lib/types';
 import { ClientExperience, type StaffGate } from './ClientExperience';
 import { UnassignedPlate } from './UnassignedPlate';
+import { ProfileExperience, type ProfileEntryPoint } from './profiles/ProfileExperience';
 import { findUnassignedStockPlate } from '@/server/plate-stock';
 import { getSessionUser } from '@/server/auth';
 import styles from './client.module.css';
@@ -173,6 +174,29 @@ export default async function EntryPointPage({ params, searchParams }: PageProps
     if (raw === 'link') return 'link' as const;
     return 'qr' as const;
   })();
+
+  // Profils métier (atelier, table, guichet, boutique) : leur propre
+  // écran. Walkin, event et toute campagne d'événement gardent
+  // ClientExperience ci-dessous, inchangée.
+  const profile = (effectiveEntryPoint as ProfileEntryPoint).queue?.profile ?? 'walkin';
+  if (profile !== 'walkin' && profile !== 'event' && !eventId) {
+    return (
+      <main className={styles.screen} data-theme="dark" data-accent={entryPoint.settings.brandAccent}>
+        <span className={`floor-marks ${styles.sideMarks}`} aria-hidden="true" />
+        <div className={`client-shell ${styles.inner}`}>
+          <ProfileExperience
+            entryPoint={effectiveEntryPoint as ProfileEntryPoint}
+            initialTicket={initialTicket}
+            source={source}
+            staffGate={staffGate}
+            vapidPublicKey={vapidPublicKey()}
+            activityLabel={ACTIVITY_LABEL[entryPoint.organization.activity] ?? null}
+            walletSlot={null}
+          />
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className={styles.screen} data-theme="dark" data-accent={entryPoint.settings.brandAccent}>

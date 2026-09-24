@@ -1,0 +1,70 @@
+/* =====================================================================
+   La table, côté client — des groupes, un chevalet, un vrai délai.
+
+   Le volet compte les GROUPES avant vous ; le chevalet (PartySize) porte
+   vos couverts, posé à côté, comme sur le pupitre de l'hôte. Le Rang
+   suit, « Accueil » en tête. À l'appel, le rideau vermillon et le délai
+   réel pour se présenter, en chiffres tabulaires (seul le texte change,
+   aucune animation à la seconde).
+   ===================================================================== */
+
+.head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.head > :first-child { min-width: 0; }
+
+.tent {
+  flex: none;
+  display: inline-flex;
+  padding-bottom: 6px;
+}
+
+/* Sous le rideau : le chevalet et le temps qui reste, côte à côte. */
+.readyRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+
+.countdown {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.countdownLabel {
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+  font-size: 0.6875rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.countdownValue {
+  font-variation-settings: 'wdth' 118, 'wght' 820;
+  font-size: clamp(2.75rem, 2rem + 4vw, 3.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+/* Délai passé : on presse, sans dire que la table est perdue. */
+.countdown[data-late] .countdownValue { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 6px; }
+
+/* Installé : le chevalet, seul, posé sur la table. */
+.doneTent {
+  display: flex;
+  justify-content: flex-start;
+  padding-left: 4px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .doneTent { animation: tent-land var(--dur-5) var(--ease-slat) 120ms both; }
+}
+@keyframes tent-land {
+  from { opacity: 0; transform: translateY(-18px) rotate(-3deg); }
+  70%  { opacity: 1; }
+  to   { opacity: 1; transform: none; }
+}

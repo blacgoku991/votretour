@@ -1,0 +1,488 @@
+/* =====================================================================
+   La fiche d'atelier, côté client — véhicule ou appareil.
+
+   L'objet central est l'ÉTIQUETTE DE CLÉ du lien de suivi (/s/[jeton],
+   claim.module.css) : une latte du Rang percée d'un œillet, accrochée à
+   son anneau. Le client qui a scanné l'étiquette retrouve ici le même
+   objet. Dessous, le Rang vertical des étapes (StageRail) ; le devis en
+   cuivre (il attend le client) ; le vermillon reste à « Prêt ».
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   L'étiquette et son anneau
+   --------------------------------------------------------------------- */
+.hang {
+  --tag-w: min(100%, 340px);
+  --ring: 60px;
+  --eyelet-y: 23px;
+  position: relative;
+  display: grid;
+  justify-items: center;
+  margin: 0;
+  padding-top: calc(var(--ring) * 51 / 64 - var(--eyelet-y));
+}
+
+.ring {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 2;
+  width: var(--ring);
+  height: var(--ring);
+  margin-left: calc(var(--ring) / -2);
+  fill: none;
+  stroke: var(--bone-400);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.55));
+}
+.ring path {
+  stroke: var(--bone-100);
+  stroke-width: 1.4;
+  opacity: 0.55;
+}
+
+.tag {
+  position: relative;
+  width: var(--tag-w);
+  padding: 44px 18px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  /* Un objet : il reste en os en thème sombre, comme la plaque. */
+  background: var(--bone-200);
+  color: var(--ink-900);
+  border-radius: 30px 30px var(--r-card) var(--r-card);
+  box-shadow:
+    0 3px 0 var(--bone-500),
+    0 28px 50px -24px rgb(0 0 0 / 0.85),
+    inset 0 1px 0 rgb(255 255 255 / 0.7);
+  transform-origin: 50% var(--eyelet-y);
+  transform: rotate(-1.5deg);
+}
+
+.eyelet {
+  position: absolute;
+  top: calc(var(--eyelet-y) - 9px);
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 3px var(--bone-400),
+    0 0 0 4px var(--bone-500),
+    inset 0 2px 3px rgb(0 0 0 / 0.65);
+}
+
+.tagKicker {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+
+/* Juste après l'inscription : l'étiquette se balance une fois autour de
+   son œillet, puis se tient. Au rechargement, elle est simplement là. */
+@media (prefers-reduced-motion: no-preference) {
+  .hang[data-swing] .tag { animation: tag-swing 1500ms var(--ease-out) both; }
+  .hang[data-state='done'] .stamp { animation: stamp-in 520ms var(--ease-slat) 380ms both; }
+  .tagGhost { animation: tag-slip 900ms var(--ease-out) both; }
+}
+@keyframes tag-swing {
+  0%   { opacity: 0; transform: translateY(-10px) rotate(11deg); }
+  18%  { opacity: 1; }
+  38%  { transform: rotate(-6deg); }
+  58%  { transform: rotate(2.6deg); }
+  78%  { transform: rotate(-3deg); }
+  100% { opacity: 1; transform: rotate(-1.5deg); }
+}
+@keyframes tag-slip {
+  from { opacity: 0; transform: translateY(0) rotate(0deg); }
+  to   { opacity: 1; transform: translateY(10px) rotate(4deg); }
+}
+@keyframes stamp-in {
+  from { opacity: 0; transform: rotate(-8deg) scale(1.35); }
+  to   { opacity: 1; transform: rotate(-8deg) scale(1); }
+}
+
+/* Rendu : un tampon jade sur l'étiquette. */
+.stamp {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  padding: 4px 9px 3px;
+  border: 2px solid var(--jade-500);
+  border-radius: 6px;
+  color: #127A57;
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+  font-size: 0.75rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  transform: rotate(-8deg);
+}
+
+/* Plus suivi : l'étiquette vide, en pointillé, décrochée. */
+.tagGhost {
+  min-height: 150px;
+  padding-top: 52px;
+  background: transparent;
+  border: 2px dashed var(--line-strong);
+  box-shadow: none;
+  color: var(--text-faint);
+  gap: 12px;
+  transform: translateY(10px) rotate(4deg);
+}
+.tagGhost .eyelet {
+  top: calc(var(--eyelet-y) - 11px);
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--line-strong);
+}
+.hang[data-state='empty'] { --tag-w: min(88%, 300px); margin-bottom: 12px; }
+.hang[data-state='empty'] .ring { stroke: var(--ink-400); filter: none; }
+.ghostLine {
+  width: 72%;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--slat);
+  opacity: 0.55;
+}
+.ghostLineShort { width: 44%; }
+
+/* ---------------------------------------------------------------------
+   Le sujet : plaque, ou appareil et dossier
+   --------------------------------------------------------------------- */
+.subject {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  min-width: 0;
+}
+.plate { display: block; max-width: 100%; }
+
+.subjectWho {
+  font-variation-settings: 'wdth' 100, 'wght' 700;
+  font-size: 1.0625rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  text-align: center;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.subjectModel {
+  font-variation-settings: 'wdth' 106, 'wght' 780;
+  font-size: 1.5rem;
+  line-height: 1.1;
+  text-align: center;
+}
+.subjectStay {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  background: rgb(11 14 19 / 0.07);
+  font-variation-settings: 'wdth' 92, 'wght' 680;
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-500);
+}
+
+.device {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 100%;
+}
+.deviceIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--bone-000);
+  color: var(--ink-900);
+  box-shadow: 0 2px 0 var(--bone-500), inset 0 0 0 1px rgb(11 14 19 / 0.1);
+}
+.deviceText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.deviceKind {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-400);
+}
+.deviceModel {
+  font-variation-settings: 'wdth' 100, 'wght' 760;
+  font-size: 1.25rem;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------------
+   Les étapes, la file d'arrivée, la promesse
+   --------------------------------------------------------------------- */
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.intake {
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+.intake strong {
+  color: var(--text);
+  font-variation-settings: 'wght' 700;
+  white-space: nowrap;
+}
+
+/* La promesse du garage, jamais celle du logiciel. */
+.promise {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--line);
+  font-variation-settings: 'wdth' 100, 'wght' 660;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+.promise > svg { margin-top: 2px; color: var(--text-muted); }
+.promiseWho {
+  font-variation-settings: 'wdth' 100, 'wght' 450;
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------
+   Le devis — cuivre, en relief
+   --------------------------------------------------------------------- */
+.quote {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 18px 16px;
+  border-radius: var(--r-card);
+  background: color-mix(in oklab, var(--copper-500) 9%, var(--surface-raised));
+  border: 1px solid color-mix(in oklab, var(--copper-500) 42%, transparent);
+  box-shadow: 0 3px 0 color-mix(in oklab, var(--copper-500) 45%, var(--ink-1000));
+}
+@media (prefers-reduced-motion: no-preference) {
+  .quote[data-awaiting] { animation: quote-in var(--dur-4) var(--ease-slat) both; }
+}
+@keyframes quote-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.quoteHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.quoteKicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+  font-size: 0.6875rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--copper-500);
+}
+.quotePip {
+  width: 14px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--copper-500);
+}
+.quoteSent {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.quoteAmount {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.quoteUnits {
+  font-variation-settings: 'wdth' 118, 'wght' 820;
+  font-size: clamp(3rem, 2.2rem + 4vw, 3.75rem);
+  letter-spacing: -0.04em;
+}
+.quoteCents {
+  font-variation-settings: 'wdth' 110, 'wght' 700;
+  font-size: 1.375rem;
+  letter-spacing: -0.01em;
+  color: var(--text-muted);
+}
+
+.quoteLabel {
+  font-variation-settings: 'wdth' 100, 'wght' 620;
+  font-size: 1.0625rem;
+  line-height: 1.35;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+.quoteNotice {
+  padding: 10px 12px;
+  border-radius: var(--r-field);
+  background: color-mix(in oklab, var(--copper-500) 18%, transparent);
+  font-variation-settings: 'wght' 640;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+
+.quoteActions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+/* Confirmation en ligne, tenue par un filet cuivre. */
+.quoteConfirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+  padding: 4px 0 4px 14px;
+  border-left: 2px solid var(--copper-500);
+}
+.quoteConfirmText {
+  font-variation-settings: 'wdth' 100, 'wght' 620;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+.quoteConfirmText strong { font-variation-settings: 'wght' 780; white-space: nowrap; }
+.quoteConfirmRow {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 10px;
+}
+
+.quoteFine {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-faint);
+  text-wrap: pretty;
+}
+
+/* Décidé : une ligne, jade ou brique. */
+.quoteDone {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 14px 0;
+  border-block: 1px solid var(--line);
+}
+.quoteDoneMark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--jade-500) 20%, transparent);
+  color: var(--jade-500);
+}
+.quoteDone[data-decision='declined'] .quoteDoneMark {
+  background: color-mix(in oklab, var(--brique-500) 22%, transparent);
+  color: var(--danger-text);
+}
+.quoteDoneText { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.quoteDoneTitle {
+  font-variation-settings: 'wdth' 100, 'wght' 700;
+  font-size: 0.9375rem;
+  line-height: 1.3;
+}
+.quoteDoneBody {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------------
+   Un téléphone, plusieurs fiches
+   --------------------------------------------------------------------- */
+.others {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.otherList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.other {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 16px;
+  border-radius: var(--r-slat);
+  background: var(--slat);
+  box-shadow: 0 2px 0 var(--slat-edge);
+  color: var(--text);
+  text-align: left;
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.other:active { transform: translateY(2px); }
+.otherName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variation-settings: 'wdth' 100, 'wght' 680;
+  font-size: 0.9375rem;
+}
+.otherStage {
+  flex: none;
+  font-variation-settings: 'wdth' 92, 'wght' 650;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Erreur sur le vermillon : encre, soulignée, jamais du rouge sur rouge. */
+.curtainError {
+  font-variation-settings: 'wght' 700;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  text-align: center;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (min-width: 600px) {
+  .hang { --ring: 68px; }
+  .tag { padding-inline: 24px; }
+}
