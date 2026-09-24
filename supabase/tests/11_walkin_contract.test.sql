@@ -23,7 +23,9 @@
 -- saurait pas lire.
 --
 -- Données : une organisation « r0-contrat-barbier » dédiée, effacée au
--- début (rejouable sur une base déjà peuplée) et à la fin.
+-- début (rejouable sur une base déjà peuplée) et à la fin, avec ses
+-- slugs d'URL : slug_registry n'a pas de clé étrangère vers les
+-- organisations, rien ne les efface en cascade.
 -- =====================================================================
 
 \set ON_ERROR_STOP on
@@ -268,6 +270,7 @@ begin
   raise notice '══ Contrat walkin (barbiers) : référence de non-régression ══';
 
   delete from public.organizations where slug like 'r0-contrat-barbier%';
+  delete from public.slug_registry where slug like 'r0-contrat-barbier%';
   delete from auth.users where id = c_owner;
   insert into auth.users (id, email, raw_user_meta_data)
   values (c_owner, 'owner@r0-contrat.test', '{"full_name":"Karim R."}'::jsonb);
@@ -380,6 +383,34 @@ begin
                    "brandAccent": "signal", "locale": "fr"}}',
     'resolve_entry_point : valeurs lues par l''écran d''inscription');
 
+  -- Même résolution par l'URL de l'établissement (/e/<slug>, sans
+  -- plaque) : mêmes clés, plaque à null, file par défaut.
+  v_res := public.resolve_entry_point('r0-contrat-barbier-bastille');
+  perform internal.r0_keys(v_res, k_resolve, null, 'resolve_entry_point (établissement)');
+  perform internal.r0_keys(v_res -> 'location', k_resolve_location, null,
+    'resolve_entry_point.location (établissement)');
+  perform internal.r0_keys(v_res -> 'queue', k_resolve_queue,
+    jsonb_build_object('profile', '["walkin"]'::jsonb, 'publicOptions', t_public_options),
+    'resolve_entry_point.queue (établissement)');
+  perform internal.r0_eq(
+    jsonb_build_object('status', v_res -> 'status', 'slug', v_res -> 'slug',
+                       'plate', v_res -> 'plate', 'queue', v_res -> 'queue' -> 'id',
+                       'location', v_res -> 'location' -> 'id'),
+    jsonb_build_object('status', 'ok', 'slug', 'r0-contrat-barbier-bastille',
+                       'plate', null, 'queue', v_queue, 'location', v_loc),
+    'resolve_entry_point par l''établissement : plaque nulle, file par défaut');
+
+  -- Organisation suspendue : l'écran « indisponible » ne lit que le
+  -- statut ; rien d'autre ne doit fuiter, ni par la plaque ni par
+  -- l'établissement.
+  update public.organizations set status = 'suspended' where id = v_org;
+  perform internal.r0_eq(public.resolve_entry_point(v_plate), '{"status": "suspended"}',
+    'resolve_entry_point sur une organisation suspendue (plaque) : statut seul');
+  perform internal.r0_eq(public.resolve_entry_point('r0-contrat-barbier-bastille'),
+    '{"status": "suspended"}',
+    'resolve_entry_point sur une organisation suspendue (établissement) : statut seul');
+  update public.organizations set status = 'active' where id = v_org;
+
   -- ───────────────────────────────────────────────────────────────────
   raise notice '';
   raise notice '── 3. Quatre clients rejoignent : Amine, Bilal, Chloé, Driss ──';
@@ -488,14 +519,21 @@ begin
   perform internal.r0_keys(v_snap -> 'counts', k_snap_counts, t_snap_counts, 'queue_snapshot.counts');
 
   -- Depuis 0035, le poste d'un pro peut demander les informations métier
-  -- (p_include_details => true, paramètre ajouté en dernier). En walkin il
-  -- n'y en a aucune : l'instantané complet est identique à celui par
-  -- défaut, horodatage mis à part. Contrôle sauté sur un moteur antérieur.
-  if exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-              where n.nspname = 'public' and p.proname = 'queue_snapshot' and p.pronargs = 2) then
+  -- (queue_snapshot(uuid, boolean), p_include_details => true). En walkin
+  -- il n'y en a aucune : l'instantané complet est identique à celui par
+  -- défaut, horodatage mis à part. Le contrôle n'est sauté que sur un
+  -- moteur antérieur aux profils (pas de queues.profile) : dès que les
+  -- profils existent, une signature renommée ou élargie le ferait
+  -- disparaître en silence, c'est donc un échec.
+  if to_regprocedure('public.queue_snapshot(uuid,boolean)') is not null then
     execute 'select public.queue_snapshot($1, true)' into v_res using v_queue;
     perform internal.r0_eq(v_res - 'generatedAt', v_snap - 'generatedAt',
       'queue_snapshot avec les informations métier : identique en walkin');
+  elsif exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'queues' and column_name = 'profile') then
+    raise exception 'ÉCHEC: queues.profile existe mais public.queue_snapshot(uuid, boolean) est introuvable';
+  else
+    raise notice '  --  queue_snapshot(uuid, boolean) absent : moteur antérieur aux profils';
   end if;
 
   perform internal.r0_eq(
@@ -613,7 +651,16 @@ begin
   update public.queue_events set created_at = now() - interval '29 days' where id = v_ev_new;
 
   v_res := public.purge_expired_data();
-  perform internal.r0_assert((v_res ->> 'anonymizedEntries')::int >= 1, 'la purge anonymise au moins un ticket');
+  -- anonymizedEntries compte toute la base (d'autres tests y laissent
+  -- des tickets) : le compte exact se vérifie dans l'organisation du test,
+  -- où seul le ticket de 31 jours d'Amine est au-delà de la rétention.
+  perform internal.r0_assert((v_res ->> 'anonymizedEntries')::int >= 1,
+    'la purge annonce au moins un ticket anonymisé');
+  perform internal.r0_eq(
+    (select jsonb_agg(public_id order by public_id) from public.queue_entries
+      where organization_id = v_org and client_name is null),
+    jsonb_build_array(v_id ->> 'Amine'),
+    'dans l''organisation, seul le ticket de 31 jours est anonymisé');
 
   perform internal.r0_eq(
     (select jsonb_build_object('name', client_name, 'session', client_session_id,
@@ -727,7 +774,11 @@ begin
 
   -- ───────────────────────────────────────────────────────────────────
   delete from public.organizations where id = v_org;
+  delete from public.slug_registry where slug like 'r0-contrat-barbier%';
   delete from auth.users where id = c_owner;
+  perform internal.r0_assert(
+    not exists (select 1 from public.slug_registry where slug like 'r0-contrat-barbier%'),
+    'nettoyage : aucun slug orphelin laissé derrière le test');
 
   raise notice '';
   raise notice '✅ Contrat walkin : tous les tests passent.';

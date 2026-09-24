@@ -13,6 +13,8 @@
 //   node scripts/e2e/walkin-baseline.mjs --keep     # garde l'organisation
 //
 // Variables (voir README.md) : E2E_BASE_URL, E2E_DATABASE_URL, E2E_CHROMIUM.
+// La base par défaut est votretour_e2e, dédiée : jamais votretour_verify,
+// que verify-db.sh efface et que le banc partagé utilise.
 //
 // Déterminisme : l'organisation « Barber Témoin » est jetable et
 // entièrement mise en scène (noms, identifiants publics, heures). Le
@@ -22,7 +24,8 @@
 // =====================================================================
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
@@ -33,35 +36,94 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const BASELINE_DIR = join(HERE, 'baseline');
 const OUT_DIR = join(HERE, '.out');
 
+/**
+ * Les écrans du scénario, dans l'ordre où il les rencontre. C'est la
+ * liste de référence : un nom de capture absent d'ici est une erreur de
+ * programmation, une image de baseline/ absente d'ici ou non comparée
+ * fait échouer le passage (sinon retirer une capture du scénario
+ * « passerait » en silence).
+ */
+const SCREENS = [
+  'client-inscription', 'client-en-file', 'client-retire', 'client-retour', 'client-tour',
+  'pro-file-bureau', 'pro-file-telephone', 'ecran-tv',
+  'client-termine', 'client-file-fermee', 'pro-reglages',
+];
+
 const args = process.argv.slice(2);
 const UPDATE = args.includes('--update');
 const KEEP = args.includes('--keep');
 const ONLY = (() => {
   const i = args.indexOf('--only');
-  return i >= 0 && args[i + 1] ? new Set(args[i + 1].split(',').map((s) => s.trim())) : null;
+  if (i < 0) return null;
+  const names = (args[i + 1] ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+  const unknown = names.filter((n) => !SCREENS.includes(n));
+  if (names.length === 0 || unknown.length > 0) {
+    console.error(`✗ --only : écran inconnu ${unknown.length ? unknown.join(', ') : '(liste vide)'}.`);
+    console.error(`  Écrans : ${SCREENS.join(', ')}`);
+    process.exit(2);
+  }
+  return new Set(names);
 })();
 
 const BASE_URL = (process.env.E2E_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/$/, '');
-const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgresql://postgres@127.0.0.1:54399/votretour_verify';
+const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgresql://postgres@127.0.0.1:54399/votretour_e2e';
 const CHROMIUM = process.env.E2E_CHROMIUM
   ?? (existsSync('/opt/pw-browsers/chromium-1194/chrome-linux/chrome')
     ? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'
     : undefined);
 
-/** Part de pixels différents tolérée par capture (0,1 %). */
-const MAX_DIFF_RATIO = 0.001;
+/**
+ * Tolérance : aucun pixel. Sur la machine qui a produit les références,
+ * chaque passage donne 0 px, en `next dev` comme en `next start`, avant
+ * comme après le chantier ; pixelmatch écarte déjà les pixels
+ * d'anticrénelage. Toute marge laissait passer du vrai changement : une
+ * lettre changée coûte 135 à 1 400 px (0,01 à 0,05 % de l'écran, sous
+ * l'ancien seuil de 0,1 %), un accent retiré 2 à 8 px (mesures dans
+ * README.md).
+ */
+const MAX_DIFF_PIXELS = 0;
 /** Sensibilité couleur de pixelmatch (0 = stricte, 1 = laxiste). */
 const PIXEL_THRESHOLD = 0.1;
 
 // ---------------------------------------------------------------------
 // Garde-fou : ce script crée et supprime des données. Il ne parle qu'à
 // un banc local, jamais à une base distante.
+//
+// Le nom d'hôte de l'URI ne suffit pas : libpq accepte aussi l'hôte en
+// paramètre (?host=…, ?hostaddr=…), dans un fichier de service
+// (?service=…) ou dans l'environnement (PGHOSTADDR l'emporte sur l'hôte
+// de l'URI). On refuse ces paramètres et on lance psql sans ces
+// variables : l'adresse vérifiée est bien celle à laquelle il se connecte.
 // ---------------------------------------------------------------------
 const isLocal = (host) => ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(host);
-if (!isLocal(new URL(DB_URL).hostname) || !isLocal(new URL(BASE_URL).hostname)) {
-  console.error('✗ Banc local uniquement : E2E_DATABASE_URL et E2E_BASE_URL doivent viser 127.0.0.1.');
+function refuse(message) {
+  console.error(`✗ Banc local uniquement : ${message}`);
   process.exit(2);
 }
+function checkDatabaseUrl(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return refuse('E2E_DATABASE_URL n’est pas une URI postgresql://.');
+  }
+  if (!['postgres:', 'postgresql:'].includes(url.protocol)) refuse('E2E_DATABASE_URL doit être une URI postgresql://.');
+  if (!isLocal(url.hostname)) refuse('E2E_DATABASE_URL doit viser 127.0.0.1.');
+  const hostParams = [...url.searchParams.keys()].filter((k) => ['host', 'hostaddr', 'service'].includes(k));
+  if (hostParams.length > 0) refuse(`paramètre ${hostParams.join(', ')} interdit dans E2E_DATABASE_URL.`);
+  const database = decodeURIComponent(url.pathname.replace(/^\//, ''));
+  // La base de verify-db.sh et du banc partagé : effacée et recréée par
+  // d'autres, jamais la cible d'un script qui y crée ses propres données.
+  if (!database || database === 'votretour_verify') {
+    refuse('choisissez une base dédiée (votretour_e2e par défaut), pas votretour_verify.');
+  }
+}
+checkDatabaseUrl(DB_URL);
+if (!isLocal(new URL(BASE_URL).hostname)) refuse('E2E_BASE_URL doit viser 127.0.0.1.');
+
+const PSQL_ENV = Object.fromEntries(
+  Object.entries(process.env).filter(([k]) => !['PGHOST', 'PGHOSTADDR', 'PGSERVICE', 'PGSERVICEFILE'].includes(k)),
+);
 
 // ---------------------------------------------------------------------
 // La scène : un mardi de mars à 9 h 42, heure de Paris. Hors de toute
@@ -106,6 +168,7 @@ function sql(text) {
   return execFileSync('psql', [DB_URL, '-X', '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1'], {
     input: text,
     encoding: 'utf8',
+    env: PSQL_ENV,
     stdio: ['pipe', 'pipe', 'pipe'],
   }).trim();
 }
@@ -196,8 +259,9 @@ function setup() {
        where organization_id = v_org;
     end
     $$;
-    -- Le banc est partagé par tous les tests locaux, depuis la même
-    -- adresse : on remet à zéro le seul compteur que ce script consomme.
+    -- Tous les passages viennent de la même adresse : on remet à zéro le
+    -- seul compteur de débit que ce script consomme (base dédiée au banc
+    -- des captures, voir la garde plus haut).
     delete from public.rate_limits where bucket_key like 'join:ip:%';
     commit;`);
   setQueueStatus('open');
@@ -260,6 +324,14 @@ function watch(page, label) {
     const text = message.text();
     if (/hydrat/i.test(text)) problems.push(`${label} — hydratation : ${text.split('\n')[0].slice(0, 200)}`);
   });
+  // Une erreur serveur peut laisser un écran intact (repli, nouvel
+  // essai) : elle ne se verrait pas sur la capture, on la compte à part.
+  page.on('response', (response) => {
+    if (response.status() >= 500) {
+      const { pathname } = new URL(response.url());
+      problems.push(`${label} — réponse ${response.status()} sur ${response.request().method()} ${pathname}`);
+    }
+  });
 }
 
 async function settle(page) {
@@ -293,9 +365,28 @@ function encode(png) {
   return PNG.sync.write(png, { deflateLevel: 9, filterType: -1 });
 }
 
-async function capture(page, name, { fullPage = false } = {}) {
+/**
+ * Agrandit la fenêtre à la hauteur de la page. Contrairement à la capture
+ * « page entière », les éléments fixes (barre d'onglets du téléphone)
+ * restent en bas au lieu d'être peints à mi-hauteur, par-dessus le
+ * contenu qui était sous la ligne de flottaison.
+ */
+async function growToContent(page) {
+  const { width } = page.viewportSize();
+  for (let i = 0; i < 5; i += 1) {
+    const height = await page.evaluate(() => document.documentElement.scrollHeight);
+    if (height === page.viewportSize().height) return;
+    await page.setViewportSize({ width, height });
+    await settle(page);
+  }
+  throw new Error('hauteur de page instable : capture impossible');
+}
+
+async function capture(page, name, { fullPage = false, tall = false } = {}) {
+  if (!SCREENS.includes(name)) throw new Error(`capture « ${name} » absente de SCREENS`);
   if (ONLY && !ONLY.has(name)) return;
   await settle(page);
+  if (tall) await growToContent(page);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
@@ -332,13 +423,39 @@ async function capture(page, name, { fullPage = false } = {}) {
     threshold: PIXEL_THRESHOLD,
   });
   const ratio = count / (actual.width * actual.height);
-  const ok = ratio <= MAX_DIFF_RATIO;
+  const ok = count <= MAX_DIFF_PIXELS;
   if (!ok) writeFileSync(join(OUT_DIR, `${name}.diff.png`), encode(diff));
   results.push({
     name,
     status: ok ? 'ok' : 'ÉCHEC',
     detail: `${count} px différents (${(ratio * 100).toFixed(3)} %)`,
   });
+}
+
+/**
+ * L'application et psql doivent lire la même base : sinon chaque écran
+ * échouerait sans dire pourquoi. Les slugs fixes ne le prouvent pas (une
+ * autre base peut garder l'organisation d'un passage --keep) : on
+ * enregistre un slug de sonde aléatoire vers l'établissement, l'application
+ * doit l'ouvrir, puis on le retire avant le premier écran.
+ */
+async function checkAppReadsDatabase() {
+  const probe = `e2e-sonde-${randomBytes(6).toString('hex')}`;
+  sql(`insert into public.slug_registry (slug, kind, organization_id, ref_id)
+         select ${lit(probe)}, 'location', organization_id, id
+           from public.locations where slug = ${lit(LOCATION_SLUG)};`);
+  try {
+    const response = await fetch(`${BASE_URL}/e/${probe}`, { redirect: 'manual' }).catch((error) => {
+      throw new Error(`application injoignable sur ${BASE_URL} (${error instanceof Error ? error.message : error})`);
+    });
+    if (response.status !== 200) {
+      throw new Error(
+        `la sonde /e/${probe} répond ${response.status} : l’application sur ${BASE_URL} ne lit pas la base ${DB_URL}.`,
+      );
+    }
+  } finally {
+    sql(`delete from public.slug_registry where slug = ${lit(probe)};`);
+  }
 }
 
 /** Ramène la page au premier plan : le client recharge son ticket. */
@@ -359,20 +476,24 @@ async function joinAs(page, name) {
 async function run() {
   rmSync(OUT_DIR, { recursive: true, force: true });
   setup();
-
-  // Au fauteuil de Karim, et deux personnes qui attendent.
-  walkin('Marc');
-  staffAction('Marc', 'start_serving', 'Karim');
-  walkin('Léa');
-  walkin('Hugo');
-  normalizeTimes();
-
-  const browser = await chromium.launch({
-    executablePath: CHROMIUM,
-    args: ['--no-sandbox', '--disable-dev-shm-usage', '--font-render-hinting=none'],
-  });
-
+  // Dès que l'organisation existe, tout arrêt (sonde refusée, écran
+  // introuvable) passe par le nettoyage : rien ne reste dans la base.
+  let browser = null;
   try {
+    await checkAppReadsDatabase();
+
+    // Au fauteuil de Karim, et deux personnes qui attendent.
+    walkin('Marc');
+    staffAction('Marc', 'start_serving', 'Karim');
+    walkin('Léa');
+    walkin('Hugo');
+    normalizeTimes();
+
+    browser = await chromium.launch({
+      executablePath: CHROMIUM,
+      args: ['--no-sandbox', '--disable-dev-shm-usage', '--font-render-hinting=none'],
+    });
+
     const plate = `/e/${PLATE_CODE}`;
 
     // 1. Inscription : la file est ouverte, trois personnes y sont.
@@ -427,12 +548,15 @@ async function run() {
     staffAction('Rayan', 'mark_absent', null, { policy: 'hold' });
     normalizeTimes();
 
+    // Toute la hauteur : « Prochain » (Paul appelé) et « En attente »
+    // (Zoé, Lina) sont sous la ligne de flottaison, et ce sont les zones
+    // du poste que les profils métier touchent.
     const auth = await login(browser);
     for (const [kind, name] of [['desktop', 'pro-file-bureau'], ['phone', 'pro-file-telephone']]) {
       const pro = await (await newContext(browser, kind, auth)).newPage();
       watch(pro, name);
       await open(pro, `/app/${ORG_SLUG}/file`);
-      await capture(pro, name);
+      await capture(pro, name, { tall: true });
       await pro.context().close();
     }
     const tv = await (await newContext(browser, 'tv', auth)).newPage();
@@ -466,7 +590,7 @@ async function run() {
     await capture(settings, 'pro-reglages', { fullPage: true });
     await settings.context().close();
   } finally {
-    await browser.close();
+    await browser?.close();
     if (!KEEP) cleanup();
   }
 }
@@ -476,6 +600,22 @@ try {
 } catch (error) {
   console.error(`✗ Scénario interrompu : ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
+}
+
+// Toute référence doit avoir été comparée, et tout écran du scénario
+// capturé : une capture retirée ou renommée ne passe pas en silence.
+const seen = new Set(results.map((r) => r.name));
+const expectedScreens = ONLY ? SCREENS.filter((n) => ONLY.has(n)) : SCREENS;
+for (const name of expectedScreens) {
+  if (!seen.has(name)) results.push({ name, status: 'ÉCHEC', detail: 'écran jamais capturé par le scénario' });
+}
+if (!ONLY) {
+  const stale = existsSync(BASELINE_DIR)
+    ? readdirSync(BASELINE_DIR).filter((f) => f.endsWith('.png') && !SCREENS.includes(f.slice(0, -4)))
+    : [];
+  for (const file of stale) {
+    results.push({ name: file.slice(0, -4), status: 'ÉCHEC', detail: 'référence sans écran dans le scénario (à retirer ?)' });
+  }
 }
 
 const width = Math.max(...results.map((r) => r.name.length), 10);
