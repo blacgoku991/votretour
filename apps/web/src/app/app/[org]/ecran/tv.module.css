@@ -684,3 +684,16 @@
   .sceneBox { min-height: calc(var(--u) * 520); }
   .eventKicker, .eventQr figcaption { font-size: calc(var(--u) * 16); }
 }
+
+/* Écrans par métier (lot P5) : leur état est plus long (« Guichets
+   ouverts ») ; en colonne, il prend sa propre ligne au lieu de pousser
+   l'horloge hors du cadre. Sélecteur réservé aux profils (data-screen) :
+   l'écran des barbiers ne change pas d'un pixel. */
+@container (max-width: 719px) {
+  .screen[data-screen] .topRight { flex-wrap: wrap; row-gap: calc(var(--u) * 12); }
+  .screen[data-screen] .status { flex: 1 1 100%; }
+}
+@container (max-aspect-ratio: 1/1) {
+  .screen[data-screen] .topRight { flex-wrap: wrap; row-gap: calc(var(--u) * 12); }
+  .screen[data-screen] .status { flex: 1 1 100%; }
+}

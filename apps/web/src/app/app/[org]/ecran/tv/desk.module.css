@@ -1,0 +1,180 @@
+/* LE TABLEAU D'APPEL — un volet de gare poussé à l'extrême.
+
+   Le panneau de l'appel courant est un objet : une plaque d'encre en
+   relief (tranche dure dessous, comme les lattes), sur laquelle les
+   tuiles du numéro se détachent d'un cran plus clair. */
+
+.board {
+  --flap-tile: var(--ink-600);
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: calc(var(--u) * 26);
+  padding: calc(var(--u) * 40) calc(var(--u) * 56);
+  border-radius: calc(var(--u) * 28);
+  background: var(--ink-800);
+  box-shadow: var(--edge-light), 0 calc(var(--u) * 8) 0 var(--ink-1000);
+  overflow: clip;
+}
+/* Le rail d'appel : une encoche vermillon sur le bord gauche du panneau
+   quand un numéro est appelé (la forme signature des lattes). */
+.board[data-state='call']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: calc(var(--u) * 10);
+  height: calc(var(--u) * 132);
+  translate: 0 -50%;
+  border-radius: 0 calc(var(--u) * 6) calc(var(--u) * 6) 0;
+  background: var(--accent);
+}
+
+.number { display: flex; min-width: 0; }
+/* L'objet TicketNumber pose sa propre teinte de tuile : on la reprend sur
+   sa racine (enfant direct), d'un cran plus clair que le panneau. */
+.number > span,
+.announceCall > span:first-child { --flap-tile: var(--ink-600); }
+.number :global(.flap-row--tile) { gap: 0.06em; }
+
+/* « → GUICHET 3 » : la destination de TicketNumber, à l'échelle du panneau
+   (elle mesure 0,56 em de son parent). */
+/* Boîte flex : pas de ligne de texte à 204 u autour de la destination
+   (elle ne mesure que 0,56 em), donc un bloc centré au pixel. */
+.dest { display: flex; font-size: calc(var(--u) * 204); line-height: 1; min-width: 0; }
+.dest > span { max-width: 100%; }
+.dest :global(svg) { stroke-width: 2.8; }
+
+.noNumber {
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+  font-size: calc(var(--u) * 120);
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  color: var(--bone-100);
+}
+
+.waitingBoard { display: flex; flex-direction: column; gap: calc(var(--u) * 22); }
+.idleTitle {
+  font-variation-settings: 'wdth' 118, 'wght' 780;
+  font-size: calc(var(--u) * 72);
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  max-width: 14ch;
+  text-wrap: balance;
+  color: var(--bone-100);
+}
+.idleLine {
+  font-size: calc(var(--u) * 28);
+  line-height: 1.35;
+  max-width: 36ch;
+  color: var(--text-muted);
+}
+
+.counts {
+  flex: none;
+  padding-top: calc(var(--u) * 6);
+}
+
+/* ----- Derniers appels : des lattes, les appels en cours d'abord ----- */
+.log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 14);
+  min-height: 0;
+}
+.row {
+  --flap-tile: var(--ink-600);
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: calc(var(--u) * 22);
+  padding: calc(var(--u) * 16) calc(var(--u) * 24) calc(var(--u) * 16) calc(var(--u) * 26);
+  border-radius: calc(var(--u) * 16);
+  background: var(--ink-700);
+  box-shadow: var(--edge-light), 0 calc(var(--u) * 4) 0 var(--ink-1000);
+}
+/* Appel en cours ailleurs : repère cuivre (on attend encore la personne). */
+.row[data-live='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: calc(var(--u) * 6);
+  height: 52%;
+  translate: 0 -50%;
+  border-radius: 0 3px 3px 0;
+  background: var(--copper-500);
+}
+/* Appel déjà pris en charge : la latte recule d'un plan. */
+.row[data-live='false'] { background: var(--ink-800); }
+.row[data-live='false'] > * { opacity: 0.66; }
+
+.rowTicket { min-width: 0; }
+.row > span:first-child { --flap-tile: var(--ink-600); }
+.rowNoNumber {
+  font-variation-settings: 'wdth' 112, 'wght' 760;
+  font-size: calc(var(--u) * 34);
+  color: var(--bone-100);
+}
+.rowDesk { display: flex; font-size: calc(var(--u) * 58); line-height: 1; min-width: 0; overflow: hidden; }
+.rowDesk > span { max-width: 100%; }
+.rowTime {
+  font-variation-settings: 'wdth' 100, 'wght' 650;
+  font-size: calc(var(--u) * 24);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.row[data-live='true'] .rowTime {
+  color: var(--copper-500);
+  font-variation-settings: 'wdth' 100, 'wght' 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: calc(var(--u) * 20);
+}
+.logEmpty { font-size: calc(var(--u) * 26); line-height: 1.4; color: var(--text-muted); max-width: 22ch; }
+
+/* ----- Annonce ----- */
+.announceCall {
+  --flap-tile: var(--ink-600);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--u) * 30);
+}
+.announceCall :global(.flap-row--tile) { gap: 0.06em; }
+.announceDest { display: flex; font-size: calc(var(--u) * 210); line-height: 1; }
+
+@container (max-width: 719px) {
+  .row { gap: calc(var(--u) * 14); padding-inline: calc(var(--u) * 18) calc(var(--u) * 16); }
+  .row > span:first-child { --flap-size: calc(var(--u) * 40) !important; }
+  .rowTime { font-size: calc(var(--u) * 18); }
+  .board { padding: calc(var(--u) * 28) calc(var(--u) * 30); min-height: calc(var(--u) * 300); }
+  .number > span { --flap-size: calc(var(--u) * 120) !important; }
+  .dest { font-size: calc(var(--u) * 110); }
+  .idleTitle { font-size: calc(var(--u) * 42); }
+  .idleLine { font-size: calc(var(--u) * 20); }
+  .rowDesk { font-size: calc(var(--u) * 40); }
+  .announceCall > span:first-child { --flap-size: calc(var(--u) * 110) !important; }
+  .announceDest { font-size: calc(var(--u) * 100); }
+}
+@container (max-aspect-ratio: 1/1) {
+  .row { gap: calc(var(--u) * 14); padding-inline: calc(var(--u) * 18) calc(var(--u) * 16); }
+  .row > span:first-child { --flap-size: calc(var(--u) * 40) !important; }
+  .rowTime { font-size: calc(var(--u) * 18); }
+  .board { padding: calc(var(--u) * 28) calc(var(--u) * 30); min-height: calc(var(--u) * 300); }
+  .number > span { --flap-size: calc(var(--u) * 120) !important; }
+  .dest { font-size: calc(var(--u) * 110); }
+  .idleTitle { font-size: calc(var(--u) * 42); }
+  .idleLine { font-size: calc(var(--u) * 20); }
+  .rowDesk { font-size: calc(var(--u) * 40); }
+  .announceCall > span:first-child { --flap-size: calc(var(--u) * 110) !important; }
+  .announceDest { font-size: calc(var(--u) * 100); }
+}

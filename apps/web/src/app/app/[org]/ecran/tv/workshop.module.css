@@ -1,0 +1,262 @@
+/* « VÉHICULES PRÊTS » — la fiche d'atelier au mur.
+
+   Chaque ligne est une latte en relief dont l'encoche gauche devient
+   l'ŒILLET d'une étiquette de clé : un trou rond, creusé jusqu'au sol,
+   cerclé d'un renfort. La plaque (Immatriculation, masquée) est posée
+   dessus, à la taille que permet le nombre de lignes. */
+
+.list {
+  --ws-plate: calc(var(--u) * 500);
+  --ws-ticket: calc(var(--u) * 96);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: calc(var(--u) * 20);
+  min-height: 0;
+}
+.list[data-density='hero'] {
+  --ws-plate: calc(var(--u) * 640);
+  --ws-ticket: calc(var(--u) * 150);
+}
+.list[data-density='grid'] {
+  --ws-plate: calc(var(--u) * 300);
+  --ws-ticket: calc(var(--u) * 72);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(var(--u) * 18);
+}
+/* Deux colonnes : la plaque grandit tant que les rangées tiennent dans la
+   hauteur de la scène (4 rangées au plus, 8 prêts). */
+.list[data-density='grid'][data-rows='2'] { --ws-plate: calc(var(--u) * 440); --ws-ticket: calc(var(--u) * 96); }
+.list[data-density='grid'][data-rows='3'] { --ws-plate: calc(var(--u) * 380); --ws-ticket: calc(var(--u) * 84); }
+
+.card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--u) * 32);
+  min-width: 0;
+  padding: calc(var(--u) * 28) calc(var(--u) * 40) calc(var(--u) * 28) calc(var(--u) * 92);
+  border-radius: calc(var(--u) * 22);
+  background: var(--ink-700);
+  box-shadow: var(--edge-light), 0 calc(var(--u) * 6) 0 var(--ink-1000);
+  --ws-tile: var(--ink-600);
+}
+.list[data-density='hero'] .card { padding: calc(var(--u) * 48) calc(var(--u) * 56) calc(var(--u) * 48) calc(var(--u) * 116); }
+.list[data-density='grid'] .card {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: calc(var(--u) * 16);
+  padding: calc(var(--u) * 20) calc(var(--u) * 24) calc(var(--u) * 20) calc(var(--u) * 72);
+}
+/* Le dernier prêt, celui qu'on vient de prévenir : la latte s'éclaircit
+   d'un cran et son œillet se cercle de vermillon. */
+.card[data-latest='true'] { background: var(--ink-600); --ws-tile: var(--ink-500); }
+
+/* L'œillet : percé jusqu'au sol (même couleur que le fond de l'écran),
+   ombre portée à l'intérieur, renfort autour. */
+.eyelet {
+  position: absolute;
+  left: calc(var(--u) * 34);
+  top: 50%;
+  width: calc(var(--u) * 26);
+  height: calc(var(--u) * 26);
+  translate: 0 -50%;
+  border-radius: 50%;
+  background: var(--floor);
+  box-shadow:
+    inset 0 calc(var(--u) * 3) calc(var(--u) * 5) rgb(0 0 0 / 0.7),
+    0 0 0 calc(var(--u) * 5) color-mix(in oklab, var(--bone-100) 9%, transparent);
+}
+.list[data-density='hero'] .eyelet { left: calc(var(--u) * 44); width: calc(var(--u) * 34); height: calc(var(--u) * 34); }
+.list[data-density='grid'] .eyelet { left: calc(var(--u) * 26); width: calc(var(--u) * 22); height: calc(var(--u) * 22); }
+.card[data-latest='true'] .eyelet {
+  box-shadow:
+    inset 0 calc(var(--u) * 3) calc(var(--u) * 5) rgb(0 0 0 / 0.7),
+    0 0 0 calc(var(--u) * 5) var(--accent);
+}
+
+.ident { display: flex; min-width: 0; }
+/* La plaque suit la densité (la classe de l'objet fixe sa largeur par
+   taille ; on la reprend à l'échelle de l'écran). */
+.card .plate[data-size] { --reg-w: var(--ws-plate); }
+
+.dossier {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--ws-ticket) * 0.3);
+  min-width: 0;
+}
+.dossier :global(.flap-row--tile) { gap: 0.06em; }
+/* Le numéro de dossier : son mot au-dessus, ses tuiles d'un cran plus
+   claires que la latte (l'objet pose sa propre teinte sur sa racine). */
+.dossierNo { display: flex; flex-direction: column; gap: calc(var(--u) * 10); }
+.dossierNo > span:last-child { --flap-tile: var(--ws-tile); }
+.dossierWord {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: calc(var(--u) * 18);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.announceDossier > span:last-child { --flap-tile: var(--ink-600); }
+.device {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--u) * 8);
+  color: var(--bone-100);
+}
+.glyph { width: calc(var(--ws-ticket) * 0.72); height: calc(var(--ws-ticket) * 0.72); }
+.deviceLabel {
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: calc(var(--u) * 18);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.meta {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: calc(var(--u) * 14);
+}
+.list[data-density='grid'] .meta { flex-direction: row; align-items: center; gap: calc(var(--u) * 16); }
+.list[data-density='hero'] .meta > span:first-child { font-size: calc(var(--u) * 28); }
+.since {
+  font-size: calc(var(--u) * 28);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.list[data-density='hero'] .since { font-size: calc(var(--u) * 36); }
+.list[data-density='grid'] .since { font-size: calc(var(--u) * 24); }
+.since strong { color: var(--bone-100); font-variation-settings: 'wdth' 112, 'wght' 760; }
+
+.countOnly {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+}
+
+/* ----- Le planning, en une barre : quatre colonnes du poste du pro ----- */
+.planning {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 22);
+  padding-top: calc(var(--u) * 8);
+}
+.bar {
+  display: flex;
+  gap: calc(var(--u) * 6);
+  height: calc(var(--u) * 30);
+}
+.seg {
+  flex-basis: 0;
+  min-width: calc(var(--u) * 14);
+  border-radius: calc(var(--u) * 7);
+  box-shadow: var(--edge-light), 0 calc(var(--u) * 4) 0 var(--ink-1000);
+}
+.barEmpty {
+  flex: 1;
+  border-radius: calc(var(--u) * 7);
+  border: 2px dashed var(--line-strong);
+}
+.seg[data-col='intake'], .legend [data-col='intake'] > i { background: var(--ardoise-500); }
+.seg[data-col='workshop'], .legend [data-col='workshop'] > i { background: var(--cobalt-500); }
+.seg[data-col='waiting'], .legend [data-col='waiting'] > i { background: var(--copper-500); }
+.seg[data-col='ready'], .legend [data-col='ready'] > i { background: var(--accent); }
+
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(var(--u) * 16) calc(var(--u) * 24);
+}
+.legend li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: calc(var(--u) * 12);
+  font-size: calc(var(--u) * 22);
+  color: var(--text-muted);
+}
+.legend i {
+  width: calc(var(--u) * 14);
+  height: calc(var(--u) * 14);
+  border-radius: calc(var(--u) * 4);
+}
+.legend span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.legend strong {
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+  font-size: calc(var(--u) * 30);
+  color: var(--bone-100);
+}
+
+/* ----- Annonce ----- */
+.announceRow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--u) * 40);
+}
+.announceRow .announcePlate[data-size] { --reg-w: calc(var(--u) * 860); }
+.announceDossier {
+  --flap-tile: var(--ink-600);
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 48);
+  color: var(--bone-100);
+}
+.announceDossier :global(.flap-row--tile) { gap: 0.06em; }
+.announceGlyph { width: calc(var(--u) * 150); height: calc(var(--u) * 150); }
+.announceLine {
+  font-variation-settings: 'wdth' 112, 'wght' 760;
+  font-size: calc(var(--u) * 48);
+  letter-spacing: -0.015em;
+  color: var(--bone-100);
+}
+
+@container (max-width: 719px) {
+  .list, .list[data-density='hero'], .list[data-density='grid'] {
+    --ws-plate: calc(var(--u) * 300);
+    --ws-ticket: calc(var(--u) * 70);
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .card, .list[data-density='hero'] .card, .list[data-density='grid'] .card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: calc(var(--u) * 14);
+    padding: calc(var(--u) * 20) calc(var(--u) * 22) calc(var(--u) * 20) calc(var(--u) * 66);
+  }
+  .list .meta { flex-direction: row; align-items: center; }
+  .list .since { font-size: calc(var(--u) * 20); }
+  .legend li { font-size: calc(var(--u) * 18); }
+  .announceRow .announcePlate[data-size] { --reg-w: calc(var(--u) * 460); }
+  .announceLine { font-size: calc(var(--u) * 28); }
+}
+@container (max-aspect-ratio: 1/1) {
+  .list, .list[data-density='hero'], .list[data-density='grid'] {
+    --ws-plate: calc(var(--u) * 300);
+    --ws-ticket: calc(var(--u) * 70);
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .card, .list[data-density='hero'] .card, .list[data-density='grid'] .card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: calc(var(--u) * 14);
+    padding: calc(var(--u) * 20) calc(var(--u) * 22) calc(var(--u) * 20) calc(var(--u) * 66);
+  }
+  .list .meta { flex-direction: row; align-items: center; }
+  .list .since { font-size: calc(var(--u) * 20); }
+  .legend li { font-size: calc(var(--u) * 18); }
+  .announceRow .announcePlate[data-size] { --reg-w: calc(var(--u) * 460); }
+  .announceLine { font-size: calc(var(--u) * 28); }
+}

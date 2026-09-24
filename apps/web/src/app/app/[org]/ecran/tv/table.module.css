@@ -1,0 +1,134 @@
+/* « TABLES PRÊTES » — le chevalet posé sur la latte.
+
+   Chaque groupe appelé est une latte en relief ; son chevalet (PartySize,
+   vermillon : la table est prête) est posé à gauche, le numéro ou le
+   prénom en volets à droite. */
+
+.list {
+  --tb-tent: calc(var(--u) * 196);
+  --tb-call: calc(var(--u) * 92);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: calc(var(--u) * 20);
+  min-height: 0;
+}
+.list[data-density='hero'] {
+  --tb-tent: calc(var(--u) * 280);
+  --tb-call: calc(var(--u) * 136);
+}
+.list[data-density='grid'] {
+  /* Sous ~90 px, le chevalet ne lit plus son chiffre : plancher en px. */
+  --tb-tent: max(96px, calc(var(--u) * 124));
+  --tb-call: calc(var(--u) * 54);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(var(--u) * 18);
+}
+/* Deux rangées seulement (4 groupes) : chevalets et prénoms plus grands. */
+.list[data-density='grid'][data-rows='2'] { --tb-tent: calc(var(--u) * 170); --tb-call: calc(var(--u) * 64); }
+
+.card {
+  --flap-tile: var(--ink-600);
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 36);
+  min-width: 0;
+  padding: calc(var(--u) * 22) calc(var(--u) * 36);
+  border-radius: calc(var(--u) * 22);
+  background: var(--ink-700);
+  box-shadow: var(--edge-light), 0 calc(var(--u) * 6) 0 var(--ink-1000);
+}
+.list[data-density='hero'] .card { padding: calc(var(--u) * 40) calc(var(--u) * 56); gap: calc(var(--u) * 56); }
+.list[data-density='grid'] .card { padding: calc(var(--u) * 16) calc(var(--u) * 22); gap: calc(var(--u) * 22); }
+
+/* Le chevalet à l'échelle de l'écran (l'objet fixe sa largeur par taille). */
+.card .tent[data-size] { --tent-w: var(--tb-tent); }
+.tentEmpty {
+  flex: none;
+  width: var(--tb-tent);
+  aspect-ratio: 1 / 0.92;
+  border-radius: calc(var(--u) * 12);
+  border: 2px dashed var(--line-strong);
+}
+
+.ident {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 16);
+  min-width: 0;
+}
+.call { display: flex; min-width: 0; }
+.call > span { --flap-tile: var(--ink-600); }
+.call :global(.flap-row--tile) { gap: 0.06em; }
+.noCall {
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+  font-size: calc(var(--tb-call) * 0.62);
+  line-height: 1;
+  color: var(--bone-100);
+}
+.line {
+  font-variation-settings: 'wdth' 104, 'wght' 700;
+  font-size: calc(var(--u) * 28);
+  line-height: 1.2;
+  color: var(--accent);
+}
+.list[data-density='hero'] .line { font-size: calc(var(--u) * 38); }
+.list[data-density='grid'] .line { font-size: calc(var(--u) * 21); }
+.time { color: var(--text-muted); font-variation-settings: 'wdth' 100, 'wght' 500; }
+.time strong { color: var(--bone-100); font-variation-settings: 'wdth' 112, 'wght' 760; }
+
+/* ----- Annonce ----- */
+.announceRow {
+  --flap-tile: var(--ink-600);
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 72);
+}
+.announceRow .announceTent[data-size] { --tent-w: calc(var(--u) * 300); }
+.announceCall {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(var(--u) * 30);
+  min-width: 0;
+}
+.announceCall :global(.flap-row--tile) { gap: 0.06em; }
+.announceCall > span:first-child { --flap-tile: var(--ink-600); }
+.announceLine {
+  font-variation-settings: 'wdth' 112, 'wght' 760;
+  font-size: calc(var(--u) * 46);
+  letter-spacing: -0.015em;
+  color: var(--bone-100);
+}
+
+@container (max-width: 719px) {
+  .list, .list[data-density='hero'], .list[data-density='grid'] {
+    --tb-tent: max(96px, calc(var(--u) * 150));
+    --tb-call: calc(var(--u) * 58);
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .card, .list[data-density='hero'] .card, .list[data-density='grid'] .card { padding: calc(var(--u) * 16) calc(var(--u) * 20); gap: calc(var(--u) * 20); }
+  .list .line { font-size: calc(var(--u) * 20); }
+  .announceRow { flex-direction: column; gap: calc(var(--u) * 28); }
+  .announceRow .announceTent[data-size] { --tent-w: calc(var(--u) * 160); }
+  .announceCall { align-items: center; }
+  .announceCall > span:first-child { --flap-size: calc(var(--u) * 80) !important; }
+  .announceLine { font-size: calc(var(--u) * 26); }
+}
+@container (max-aspect-ratio: 1/1) {
+  .list, .list[data-density='hero'], .list[data-density='grid'] {
+    --tb-tent: max(96px, calc(var(--u) * 150));
+    --tb-call: calc(var(--u) * 58);
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .card, .list[data-density='hero'] .card, .list[data-density='grid'] .card { padding: calc(var(--u) * 16) calc(var(--u) * 20); gap: calc(var(--u) * 20); }
+  .list .line { font-size: calc(var(--u) * 20); }
+  .announceRow { flex-direction: column; gap: calc(var(--u) * 28); }
+  .announceRow .announceTent[data-size] { --tent-w: calc(var(--u) * 160); }
+  .announceCall { align-items: center; }
+  .announceCall > span:first-child { --flap-size: calc(var(--u) * 80) !important; }
+  .announceLine { font-size: calc(var(--u) * 26); }
+}

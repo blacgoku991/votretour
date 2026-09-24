@@ -1,0 +1,341 @@
+/* =====================================================================
+   ÉCRANS DE SALLE PAR MÉTIER — la grammaire commune.
+
+   Mêmes règles que l'écran des barbiers (tv.module.css) : tout en --u
+   (1 px d'un écran 1920 × 1080), toujours sombre, sur le sol (--floor).
+   Une seule couleur forte, le vermillon, pour ce que la salle attend :
+   « prêt », « appelé ». Le cuivre pour ce qui attend encore quelqu'un.
+   On n'anime que transform et opacity ; en mouvement réduit, rien ne
+   glisse.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   Corps : la scène (ce qu'on vient chercher des yeux) | le côté (chiffres)
+   --------------------------------------------------------------------- */
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 64fr) minmax(0, 36fr);
+  gap: calc(var(--u) * 56);
+}
+.body[data-split='even'] { grid-template-columns: minmax(0, 58fr) minmax(0, 42fr); }
+
+.stage,
+.aside {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 24);
+}
+.aside {
+  padding-left: calc(var(--u) * 48);
+  border-left: 1px solid var(--line);
+}
+
+/* ----- Étiquettes de section (même dessin que l'écran walkin, un cran plus
+   grandes : ce sont les seuls mots de la scène) ----- */
+.head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--u) * 20);
+  min-height: calc(var(--u) * 50);
+}
+.headLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--u) * 14);
+  font-size: calc(var(--u) * 24);
+  color: var(--text-muted);
+}
+.headLabel::before {
+  content: '';
+  width: calc(var(--u) * 28);
+  height: calc(var(--u) * 4);
+  border-radius: 2px;
+  background: var(--accent);
+}
+.headNote {
+  font-size: calc(var(--u) * 22);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.headNote strong { color: var(--bone-100); font-variation-settings: 'wdth' 112, 'wght' 760; }
+
+/* ----- Compteur en volet ----- */
+.stat {
+  display: flex;
+  align-items: flex-end;
+  gap: calc(var(--u) * 28);
+  --flap-tile: var(--ink-700);
+  min-width: 0;
+}
+.stat[data-tone='signal'] :global(.flap) { color: var(--accent); }
+.stat[data-tone='copper'] :global(.flap) { color: var(--copper-500); }
+.statText {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 12);
+  padding-bottom: calc(var(--u) * 12);
+  min-width: 0;
+}
+.statLabel {
+  font-variation-settings: 'wdth' 112, 'wght' 760;
+  font-size: calc(var(--u) * 40);
+  line-height: 1;
+  letter-spacing: -0.015em;
+  color: var(--bone-100);
+  text-wrap: balance;
+}
+.statDetail {
+  font-size: calc(var(--u) * 26);
+  line-height: 1.25;
+  color: var(--text-muted);
+}
+.statDetail strong { color: var(--bone-100); font-variation-settings: 'wdth' 112, 'wght' 760; }
+
+/* ----- Petits compteurs en ligne ----- */
+.minis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(var(--u) * 16);
+}
+.mini {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 10);
+  padding: calc(var(--u) * 18) calc(var(--u) * 22);
+  border-radius: calc(var(--u) * 16);
+  background: var(--ink-800);
+  box-shadow: var(--edge-light), 0 calc(var(--u) * 4) 0 var(--ink-1000);
+  min-width: 0;
+}
+.miniLabel {
+  font-size: calc(var(--u) * 20);
+  line-height: 1.2;
+  color: var(--text-muted);
+}
+.miniValue {
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+  font-size: calc(var(--u) * 52);
+  line-height: 1;
+  color: var(--bone-100);
+}
+
+/* ----- Pastille d'état ----- */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  align-self: flex-start;
+  padding: 0.34em 0.7em 0.3em;
+  border-radius: 999px;
+  font-variation-settings: 'wdth' 100, 'wght' 800;
+  font-size: calc(var(--u) * 22);
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.tag[data-tone='copper'] { background: var(--copper-500); }
+
+/* ----- Écran au repos ----- */
+.idle {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: calc(var(--u) * 24);
+  min-height: 0;
+}
+.idleTitle {
+  font-variation-settings: 'wdth' 118, 'wght' 780;
+  font-size: calc(var(--u) * 76);
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  max-width: 14ch;
+  text-wrap: balance;
+  color: var(--bone-100);
+}
+.idleLine {
+  font-size: calc(var(--u) * 30);
+  line-height: 1.35;
+  max-width: 34ch;
+  color: var(--text-muted);
+  text-wrap: pretty;
+}
+
+/* ----- Pied ----- */
+.foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--u) * 24);
+  padding-top: calc(var(--u) * 22);
+  border-top: 1px solid var(--line);
+  font-size: calc(var(--u) * 22);
+  color: var(--text-muted);
+}
+.hintLine { display: inline-flex; align-items: center; gap: calc(var(--u) * 14); min-width: 0; }
+.nfc {
+  flex: none;
+  width: calc(var(--u) * 34);
+  height: calc(var(--u) * 34);
+  color: var(--accent);
+}
+.today { white-space: nowrap; }
+.today strong {
+  color: var(--bone-100);
+  font-variation-settings: 'wdth' 118, 'wght' 800;
+}
+
+/* ---------------------------------------------------------------------
+   L'ANNONCE — un panneau en relief qui monte du sol, au centre de l'écran.
+   --------------------------------------------------------------------- */
+.announce {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  padding: calc(var(--u) * 60);
+}
+.announceScrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklab, var(--floor) 88%, transparent);
+  opacity: 0;
+}
+/* La flaque de lumière sous le panneau : la seule lumière de l'écran,
+   comme derrière le seuil de la file au sol. */
+.announceScrim::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 72%;
+  width: calc(var(--u) * 1400);
+  height: calc(var(--u) * 320);
+  translate: -50% -50%;
+  background: radial-gradient(closest-side, var(--spill), transparent);
+}
+.announceCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--u) * 36);
+  min-width: calc(var(--u) * 960);
+  max-width: 100%;
+  padding: calc(var(--u) * 52) calc(var(--u) * 96) calc(var(--u) * 64);
+  border-radius: calc(var(--u) * 36);
+  background: var(--ink-800);
+  box-shadow:
+    var(--edge-light),
+    0 calc(var(--u) * 14) 0 var(--ink-1000),
+    0 calc(var(--u) * 60) calc(var(--u) * 120) calc(var(--u) * -40) rgb(0 0 0 / 0.9);
+  overflow: clip;
+  opacity: 0;
+  transform: translateY(calc(var(--u) * 72)) scale(0.96);
+}
+.announceKicker {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--u) * 16);
+  font-size: calc(var(--u) * 28);
+  color: var(--bone-100);
+}
+.announceKicker::before {
+  content: '';
+  width: calc(var(--u) * 36);
+  height: calc(var(--u) * 5);
+  border-radius: 3px;
+  background: var(--accent);
+}
+.announceBody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--u) * 32);
+  max-width: 100%;
+}
+/* Le temps qui reste : une barre vermillon au pied du panneau, qui se
+   remplit pendant la durée de l'annonce (transform seulement). */
+.announceTimer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--u) * 8);
+  background: var(--accent);
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+
+.announce[data-phase='shown'] .announceScrim { opacity: 1; }
+.announce[data-phase='shown'] .announceCard { opacity: 1; transform: none; }
+.announce[data-phase='leave'] .announceScrim { opacity: 0; }
+.announce[data-phase='leave'] .announceCard { opacity: 0; transform: translateY(calc(var(--u) * -28)) scale(0.985); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .announceScrim { transition: opacity var(--dur-3) var(--ease-out); }
+  .announceCard {
+    transition:
+      opacity var(--dur-3) var(--ease-out),
+      transform var(--dur-4) var(--ease-slat);
+  }
+  .announce[data-phase='leave'] .announceCard {
+    transition:
+      opacity var(--dur-3) var(--ease-in),
+      transform var(--dur-3) var(--ease-in);
+  }
+  .announce[data-phase='shown'] .announceTimer {
+    transform: scaleX(1);
+    transition: transform var(--announce-hold, 6500ms) linear;
+  }
+}
+/* Mouvement réduit : pas de barre qui avance (c'est un mouvement), le
+   panneau apparaît et disparaît sur place. */
+@media (prefers-reduced-motion: reduce) {
+  .announceTimer { display: none; }
+  .announceCard { transform: none; }
+}
+
+/* ---------------------------------------------------------------------
+   Portrait : écran vertical ou aperçu étroit. tv.module.css passe --u sur
+   un écran de 560 px de large ; ici, la scène et le côté s'empilent.
+   --------------------------------------------------------------------- */
+@container (max-width: 719px) {
+  .body, .body[data-split='even'] { display: flex; flex-direction: column; gap: calc(var(--u) * 30); }
+  .aside { padding-left: 0; border-left: 0; padding-top: calc(var(--u) * 26); border-top: 1px solid var(--line); }
+  .headLabel { font-size: calc(var(--u) * 18); }
+  .headNote { font-size: calc(var(--u) * 17); }
+  .statLabel { font-size: calc(var(--u) * 30); }
+  .statDetail { font-size: calc(var(--u) * 20); }
+  .idleTitle { font-size: calc(var(--u) * 46); }
+  .idleLine { font-size: calc(var(--u) * 22); }
+  .foot { flex-direction: column; align-items: flex-start; font-size: calc(var(--u) * 17); gap: calc(var(--u) * 10); padding-top: calc(var(--u) * 18); }
+  .nfc { width: calc(var(--u) * 28); height: calc(var(--u) * 28); }
+  .announceCard { min-width: 0; width: 100%; padding: calc(var(--u) * 36) calc(var(--u) * 28) calc(var(--u) * 44); }
+  .announceKicker { font-size: calc(var(--u) * 20); }
+}
+@container (max-aspect-ratio: 1/1) {
+  .body, .body[data-split='even'] { display: flex; flex-direction: column; gap: calc(var(--u) * 30); }
+  .aside { padding-left: 0; border-left: 0; padding-top: calc(var(--u) * 26); border-top: 1px solid var(--line); }
+  .headLabel { font-size: calc(var(--u) * 18); }
+  .headNote { font-size: calc(var(--u) * 17); }
+  .statLabel { font-size: calc(var(--u) * 30); }
+  .statDetail { font-size: calc(var(--u) * 20); }
+  .idleTitle { font-size: calc(var(--u) * 46); }
+  .idleLine { font-size: calc(var(--u) * 22); }
+  .foot { flex-direction: column; align-items: flex-start; font-size: calc(var(--u) * 17); gap: calc(var(--u) * 10); padding-top: calc(var(--u) * 18); }
+  .nfc { width: calc(var(--u) * 28); height: calc(var(--u) * 28); }
+  .announceCard { min-width: 0; width: 100%; padding: calc(var(--u) * 36) calc(var(--u) * 28) calc(var(--u) * 44); }
+  .announceKicker { font-size: calc(var(--u) * 20); }
+}

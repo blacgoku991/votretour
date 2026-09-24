@@ -17,6 +17,11 @@ import {
   type TvQueueItem,
   type TvSlat,
 } from './tvSlats';
+import { statusLabelFor, tvScreenFor, type TvScreen } from './tv/model';
+import { DeskTV } from './tv/DeskTV';
+import { PickupTV } from './tv/PickupTV';
+import { TableTV } from './tv/TableTV';
+import { WorkshopTV } from './tv/WorkshopTV';
 import styles from './tv.module.css';
 
 /**
@@ -35,9 +40,22 @@ import styles from './tv.module.css';
  * Aucune valeur liée au temps n'est rendue côté serveur : l'horloge et le
  * décalage anti-marquage arrivent après montage.
  *
- * Données : un DisplaySnapshot (server/display.ts, migration 0031), jamais
- * l'instantané du poste du pro. Le téléviseur est public ; il ne reçoit que
- * ce qu'il affiche : prénoms au comptoir, initiales dans « À suivre ».
+ * Données : un DisplaySnapshot (server/display.ts, migrations 0031 et
+ * 0036), jamais l'instantané du poste du pro. Le téléviseur est public ; il
+ * ne reçoit que ce qu'il affiche : prénoms au comptoir, initiales dans
+ * « À suivre ».
+ *
+ * PAR MÉTIER (lot P5) : l'instantané est une union discriminée par
+ * `profile`. Le cadre (bande haute, horloge, rafraîchissement,
+ * anti-marquage, plein écran) est commun ; le corps est aiguillé par
+ * `tvScreenFor` (tv/model.ts) :
+ *   walkin, event     le corps ci-dessous, INCHANGÉ (mêmes nœuds, mêmes
+ *                     classes : les barbiers ne voient rien bouger) ;
+ *   vehicle, device   tv/WorkshopTV : « Véhicules prêts », plaque masquée ;
+ *   table             tv/TableTV : « Tables prêtes », chevalets ;
+ *   desk              tv/DeskTV : le tableau d'appel, numéros seulement ;
+ *   retail            tv/PickupTV : « Commandes prêtes ».
+ * Le mode événement (bandeau, QR) ne concerne que walkin et event.
  */
 
 export interface TVEventTheme {
@@ -320,16 +338,19 @@ export function TVBoard({
   }
 
   const { queue, location, serving, counts, staff } = snapshot;
-  const activeLogo = eventTheme?.logoUrl || logoUrl;
-  const title = eventTheme?.name || organizationName;
+  const screen = tvScreenFor(snapshot);
+  // Un bandeau d'événement n'a de sens que sur une file de passage.
+  const theme = screen === 'walkin' ? eventTheme : null;
+  const activeLogo = theme?.logoUrl || logoUrl;
+  const title = theme?.name || organizationName;
   const shown = serving.slice(0, 3);
   const waitingLabel = counts.waiting > 1 ? 'personnes en attente' : 'personne en attente';
   // Le téléphone compte toute la file (prestation comprise) ; l'écran met
   // en grand ceux qui attendent. La ligne du dessous relie les deux.
   const atCounter = Math.max(0, counts.active - counts.waiting);
-  const brand = eventTheme ? organizationName : title;
+  const brand = theme ? organizationName : title;
   const place = placeLabel(location.name, brand);
-  const statusLabel = queue.status === 'open' ? 'File ouverte' : queue.status === 'paused' ? 'En pause' : 'File fermée';
+  const statusLabel = statusLabelFor(screen, queue.status);
   const statusPip = queue.status === 'open' ? 'pip pip--live' : queue.status === 'paused' ? 'pip pip--warn' : 'pip pip--off';
   const served = counts.completedToday;
   const sceneSlats = slats.length > 0
@@ -338,7 +359,11 @@ export function TVBoard({
 
   return (
     <div className={styles.frame} data-variant={variant} style={frameStyle} ref={frameRef}>
-      <Root className={styles.screen} data-event={eventTheme ? 'true' : 'false'}>
+      <Root
+        className={styles.screen}
+        data-event={theme ? 'true' : 'false'}
+        data-screen={screen === 'walkin' ? undefined : screen}
+      >
         <div className={styles.content} ref={shiftRef}>
           <header className={styles.top}>
             <div className={styles.brand}>
@@ -351,7 +376,7 @@ export function TVBoard({
               <span className={styles.brandText}>
                 <h1 className={`t-board ${styles.name}`}>{title}</h1>
                 <span className={styles.meta}>
-                  {eventTheme ? `${organizationName} · ` : ''}{place}
+                  {theme ? `${organizationName} · ` : ''}{place}
                 </span>
               </span>
             </div>
@@ -403,152 +428,183 @@ export function TVBoard({
             </div>
           </header>
 
-          {eventTheme && (
+          {screen !== 'walkin' && <ProfileBody snapshot={snapshot} screen={screen} />}
+
+          {theme && (
             <section className={styles.event} aria-label="Événement en cours">
-              {eventTheme.coverUrl && (
+              {theme.coverUrl && (
                 <span
                   className={styles.eventCover}
-                  style={{ backgroundImage: `url(${JSON.stringify(eventTheme.coverUrl)})` }}
+                  style={{ backgroundImage: `url(${JSON.stringify(theme.coverUrl)})` }}
                   aria-hidden="true"
                 />
               )}
               <div className={styles.eventCopy}>
                 <span className={`t-label ${styles.eventKicker}`}>Drop · événement</span>
-                <h2 className={styles.eventTitle}>{eventTheme.heroTitle || eventTheme.name}</h2>
-                {eventTheme.rulesText && <p className={styles.eventRules}>{eventTheme.rulesText}</p>}
+                <h2 className={styles.eventTitle}>{theme.heroTitle || theme.name}</h2>
+                {theme.rulesText && <p className={styles.eventRules}>{theme.rulesText}</p>}
               </div>
-              {eventTheme.id && (
+              {theme.id && (
                 <figure className={styles.eventQr}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={'/api/event/qr?event=' + encodeURIComponent(eventTheme.id)} alt="QR pour rejoindre l’événement" />
-                  <figcaption>{eventTheme.qrLabel || 'Scannez pour rejoindre la file'}</figcaption>
+                  <img src={'/api/event/qr?event=' + encodeURIComponent(theme.id)} alt="QR pour rejoindre l’événement" />
+                  <figcaption>{theme.qrLabel || 'Scannez pour rejoindre la file'}</figcaption>
                 </figure>
               )}
             </section>
           )}
 
-          <div className={styles.main}>
-            <section className={styles.counter} aria-labelledby="tv-comptoir">
-              <div className={styles.head}>
-                <h2 id="tv-comptoir" className={`t-label ${styles.headLabel}`}>Au comptoir</h2>
-                {staff.length > 0 && (
-                  <ul className={styles.team} aria-label="Équipe">
-                    {staff.slice(0, 6).map((member) => {
-                      const tone = member.isOnBreak ? 'pause' : member.isServing ? 'busy' : 'free';
-                      const state = tone === 'pause' ? 'en pause' : tone === 'busy' ? 'en prestation' : 'disponible';
-                      return (
-                        <li key={member.id} className={styles.member} data-tone={tone}>
-                          <i aria-hidden="true" />
-                          <span>{member.name}</span>
-                          <span className="sr-only">, {state}</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-
-              <div className={styles.serving}>
-                {shown.length ? (
-                  <ol className={styles.servingList} data-count={shown.length}>
-                    {shown.map((entry) => {
-                      const name = (entry.name ?? 'Client').trim().toUpperCase().slice(0, 12);
-                      const cells = nameCells(name);
-                      // Une tuile fait 0,74em + 0,06em d'écart : la rangée tient la colonne.
-                      const unit = Math.min(shown.length > 1 ? 76 : 128, Math.floor(1000 / (cells * 0.8)));
-                      return (
-                        <li key={entry.id} className={styles.servingRow}>
-                          <FlapText
-                            fixed
-                            tile
-                            cells={cells}
-                            stagger={40}
-                            text={name}
-                            label={entry.name ?? 'Client'}
-                            size={`calc(var(--u) * ${unit})`}
-                          />
-                          <span className={styles.with}>
-                            {entry.staffName ? <>avec <strong>{entry.staffName}</strong></> : 'En prestation'}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ol>
-                ) : (
-                  <p className={styles.idle}>Prêt pour le prochain client</p>
-                )}
-                {counts.serving > shown.length && (
-                  <p className={styles.more}>+ {counts.serving - shown.length} en prestation</p>
-                )}
-              </div>
-
-              <div className={styles.waiting}>
-                <FlapNumber
-                  tile
-                  value={counts.waiting}
-                  label={`${counts.waiting} ${waitingLabel}`}
-                  size="calc(var(--u) * 232)"
-                />
-                <span className={styles.waitingText}>
-                  <span className={styles.waitingLabel}>{waitingLabel}</span>
-                  {atCounter > 0 && (
-                    <span className={styles.waitingTotal}>
-                      + {atCounter} au comptoir · <strong>{counts.active}</strong> dans la file
-                    </span>
+          {screen === 'walkin' && (
+            <div className={styles.main}>
+              <section className={styles.counter} aria-labelledby="tv-comptoir">
+                <div className={styles.head}>
+                  <h2 id="tv-comptoir" className={`t-label ${styles.headLabel}`}>Au comptoir</h2>
+                  {staff.length > 0 && (
+                    <ul className={styles.team} aria-label="Équipe">
+                      {staff.slice(0, 6).map((member) => {
+                        const tone = member.isOnBreak ? 'pause' : member.isServing ? 'busy' : 'free';
+                        const state = tone === 'pause' ? 'en pause' : tone === 'busy' ? 'en prestation' : 'disponible';
+                        return (
+                          <li key={member.id} className={styles.member} data-tone={tone}>
+                            <i aria-hidden="true" />
+                            <span>{member.name}</span>
+                            <span className="sr-only">, {state}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   )}
-                </span>
-              </div>
-            </section>
+                </div>
 
-            <section className={styles.next} aria-labelledby="tv-suivre">
-              <div className={styles.head}>
-                <h2 id="tv-suivre" className={`t-label ${styles.headLabel}`}>À suivre</h2>
-                <span className={styles.headNote}>
-                  {upcomingCount === 0
-                    ? 'Personne pour l’instant'
-                    : upcomingCount > TV_MAX_SLATS
-                      ? `Les ${TV_MAX_SLATS} premiers sur ${upcomingCount}`
-                      : 'Positions dans la file'}
-                </span>
-              </div>
-              <div
-                className={styles.sceneBox}
-                style={{ ['--tv-fit' as string]: Math.min(1, 4.6 / Math.max(1, sceneSlats.length)).toFixed(3) } as CSSProperties}
-              >
-                <FloorScene
-                  size="lg"
-                  spill
-                  positions={false}
-                  tilt={40}
-                  turn={-3}
-                  className={styles.scene}
-                  slats={sceneSlats}
-                  label={upcomingCount === 0
-                    ? 'Personne en attente'
-                    : `${upcomingCount} ${upcomingCount > 1 ? 'personnes' : 'personne'} à suivre`}
-                />
-              </div>
-            </section>
-          </div>
+                <div className={styles.serving}>
+                  {shown.length ? (
+                    <ol className={styles.servingList} data-count={shown.length}>
+                      {shown.map((entry) => {
+                        const name = (entry.name ?? 'Client').trim().toUpperCase().slice(0, 12);
+                        const cells = nameCells(name);
+                        // Une tuile fait 0,74em + 0,06em d'écart : la rangée tient la colonne.
+                        const unit = Math.min(shown.length > 1 ? 76 : 128, Math.floor(1000 / (cells * 0.8)));
+                        return (
+                          <li key={entry.id} className={styles.servingRow}>
+                            <FlapText
+                              fixed
+                              tile
+                              cells={cells}
+                              stagger={40}
+                              text={name}
+                              label={entry.name ?? 'Client'}
+                              size={`calc(var(--u) * ${unit})`}
+                            />
+                            <span className={styles.with}>
+                              {entry.staffName ? <>avec <strong>{entry.staffName}</strong></> : 'En prestation'}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  ) : (
+                    <p className={styles.idle}>Prêt pour le prochain client</p>
+                  )}
+                  {counts.serving > shown.length && (
+                    <p className={styles.more}>+ {counts.serving - shown.length} en prestation</p>
+                  )}
+                </div>
 
-          <footer className={styles.foot}>
-            <span className={styles.hintLine}>
-              <svg viewBox="0 0 48 48" fill="none" aria-hidden="true" className={styles.nfc}>
-                <g stroke="currentColor" strokeWidth="3.4" strokeLinecap="round">
-                  <path d="M14 17.5a9 9 0 0 1 0 13" />
-                  <path d="M20.5 12a17 17 0 0 1 0 24" />
-                  <path d="M27 6.5a25 25 0 0 1 0 35" />
-                </g>
-                <circle cx="8" cy="24" r="3" fill="currentColor" />
-              </svg>
-              {eventTheme?.qrLabel || 'Approchez votre téléphone de la plaque Rangvia pour rejoindre la file.'}
-            </span>
-            <span className={styles.served}>
-              <strong className="t-num">{served}</strong> {served > 1 ? 'clients servis' : 'client servi'} aujourd’hui
-            </span>
-          </footer>
+                <div className={styles.waiting}>
+                  <FlapNumber
+                    tile
+                    value={counts.waiting}
+                    label={`${counts.waiting} ${waitingLabel}`}
+                    size="calc(var(--u) * 232)"
+                  />
+                  <span className={styles.waitingText}>
+                    <span className={styles.waitingLabel}>{waitingLabel}</span>
+                    {atCounter > 0 && (
+                      <span className={styles.waitingTotal}>
+                        + {atCounter} au comptoir · <strong>{counts.active}</strong> dans la file
+                      </span>
+                    )}
+                  </span>
+                </div>
+              </section>
+
+              <section className={styles.next} aria-labelledby="tv-suivre">
+                <div className={styles.head}>
+                  <h2 id="tv-suivre" className={`t-label ${styles.headLabel}`}>À suivre</h2>
+                  <span className={styles.headNote}>
+                    {upcomingCount === 0
+                      ? 'Personne pour l’instant'
+                      : upcomingCount > TV_MAX_SLATS
+                        ? `Les ${TV_MAX_SLATS} premiers sur ${upcomingCount}`
+                        : 'Positions dans la file'}
+                  </span>
+                </div>
+                <div
+                  className={styles.sceneBox}
+                  style={{ ['--tv-fit' as string]: Math.min(1, 4.6 / Math.max(1, sceneSlats.length)).toFixed(3) } as CSSProperties}
+                >
+                  <FloorScene
+                    size="lg"
+                    spill
+                    positions={false}
+                    tilt={40}
+                    turn={-3}
+                    className={styles.scene}
+                    slats={sceneSlats}
+                    label={upcomingCount === 0
+                      ? 'Personne en attente'
+                      : `${upcomingCount} ${upcomingCount > 1 ? 'personnes' : 'personne'} à suivre`}
+                  />
+                </div>
+              </section>
+            </div>
+          )}
+
+          {screen === 'walkin' && (
+            <footer className={styles.foot}>
+              <span className={styles.hintLine}>
+                <svg viewBox="0 0 48 48" fill="none" aria-hidden="true" className={styles.nfc}>
+                  <g stroke="currentColor" strokeWidth="3.4" strokeLinecap="round">
+                    <path d="M14 17.5a9 9 0 0 1 0 13" />
+                    <path d="M20.5 12a17 17 0 0 1 0 24" />
+                    <path d="M27 6.5a25 25 0 0 1 0 35" />
+                  </g>
+                  <circle cx="8" cy="24" r="3" fill="currentColor" />
+                </svg>
+                {theme?.qrLabel || 'Approchez votre téléphone de la plaque Rangvia pour rejoindre la file.'}
+              </span>
+              <span className={styles.served}>
+                <strong className="t-num">{served}</strong> {served > 1 ? 'clients servis' : 'client servi'} aujourd’hui
+              </span>
+            </footer>
+          )}
         </div>
       </Root>
     </div>
   );
+}
+
+/** La consigne du pied de page, dans les mots du métier. */
+const PROFILE_HINT: Record<Exclude<TvScreen, 'walkin'>, string> = {
+  workshop: 'Approchez votre téléphone de la plaque Rangvia pour suivre votre véhicule.',
+  table: 'Approchez votre téléphone de la plaque Rangvia pour vous inscrire sur la liste.',
+  desk: 'Approchez votre téléphone de la plaque Rangvia pour prendre un numéro.',
+  pickup: 'Approchez votre téléphone de la plaque Rangvia pour rejoindre la file ou suivre votre commande.',
+};
+
+/**
+ * Le corps d'un écran de métier. Le double contrôle (écran ET profil)
+ * rétrécit le type sans conversion : chaque écran ne reçoit que sa forme.
+ */
+function ProfileBody({ snapshot, screen }: { snapshot: DisplaySnapshot; screen: TvScreen }) {
+  if (screen === 'workshop' && (snapshot.profile === 'vehicle' || snapshot.profile === 'device')) {
+    const hint = snapshot.profile === 'device'
+      ? 'Approchez votre téléphone de la plaque Rangvia pour suivre votre appareil.'
+      : PROFILE_HINT.workshop;
+    return <WorkshopTV snapshot={snapshot} hint={hint} />;
+  }
+  if (screen === 'table' && snapshot.profile === 'table') return <TableTV snapshot={snapshot} hint={PROFILE_HINT.table} />;
+  if (screen === 'desk' && snapshot.profile === 'desk') return <DeskTV snapshot={snapshot} hint={PROFILE_HINT.desk} />;
+  if (screen === 'pickup' && snapshot.profile === 'retail') return <PickupTV snapshot={snapshot} hint={PROFILE_HINT.pickup} />;
+  return null;
 }
