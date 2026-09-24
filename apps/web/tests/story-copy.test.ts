@@ -238,7 +238,9 @@ describe('pages métier : la séquence de chaque métier', () => {
   it('au comptoir d’aujourd’hui, le rideau dit la phrase exacte de l’écran du client', () => {
     // La phrase est relue DANS l'élément de l'écran client, pas n'importe où dans le fichier.
     const curtain = read('app/e/[slug]/TurnCurtain.tsx');
-    const hint = /className=\{styles\.turnHint\}>([^<{]+)</.exec(curtain)?.[1]?.trim();
+    // Texte en dur, ou défaut d'une consigne passée en props (« {subtitle ?? '…'} »).
+    const m = /className=\{styles\.turnHint\}>(?:\{\s*\w+\s*\?\?\s*'([^']+)'\s*\}|([^<{]+))</.exec(curtain);
+    const hint = (m?.[1] ?? m?.[2])?.trim();
     expect(hint).toBe(TURN_HINT);
     expect(HOME_STORY_COPY.turn.line).toBe(TURN_HINT);
     for (const page of pagesFor(TODAY)) {
