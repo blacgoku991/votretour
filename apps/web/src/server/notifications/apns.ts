@@ -106,15 +106,21 @@ export function closeApnsSessions(): void {
   sessions.clear();
 }
 
-/** Codes APNs pour lesquels le destinataire n'existe plus. */
-const DEAD_TOKEN_REASONS = new Set([
+/**
+ * Codes APNs pour lesquels le destinataire n'existe plus. Exportés (en
+ * lecture seule) pour les mises à jour Apple Wallet (server/wallet/apple/
+ * apns.ts), qui classent les réponses d'APNs de la même façon : une seule
+ * liste à tenir à jour.
+ */
+export const DEAD_TOKEN_REASONS: ReadonlySet<string> = new Set([
   'BadDeviceToken',
   'Unregistered',
   'DeviceTokenNotForTopic',
   'ExpiredToken',
 ]);
 
-const RETRIABLE_REASONS = new Set([
+/** Codes APNs d'un échec passager : on réessaie plus tard. */
+export const RETRIABLE_REASONS: ReadonlySet<string> = new Set([
   'TooManyRequests',
   'InternalServerError',
   'ServiceUnavailable',
