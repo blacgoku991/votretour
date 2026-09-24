@@ -68,3 +68,13 @@ jobs:
           PGPORT: 54399
           PGHOST: 127.0.0.1
           PGUSER: postgres
+      # La production peut recevoir les profils (0031-0038) avant Wallet
+      # (0021-0030) : ce second ordre doit donner le même schéma qu'une base
+      # neuve, et la suite de tests doit y passer aussi.
+      - name: Rejouer les migrations dans l'ordre de la production
+        run: ./scripts/verify-db-order.sh
+        env:
+          PGPORT: 54399
+          PGHOST: 127.0.0.1
+          PGUSER: postgres
+          DBNAME: votretour_verify_order
