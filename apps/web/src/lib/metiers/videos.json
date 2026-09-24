@@ -7,8 +7,8 @@
     "height": 1080,
     "uploadDate": "2026-09-24",
     "files": {
-      "mp4": "/videos/barbiers/demo-16x9.ae378fb6.mp4",
-      "webm": "/videos/barbiers/demo-16x9.d99f56eb.webm",
+      "mp4": "/videos/barbiers/demo-16x9.c6b3553f.mp4",
+      "webm": "/videos/barbiers/demo-16x9.1355b400.webm",
       "poster": {
         "jpg": "/videos/barbiers/poster.8bb45d51.jpg",
         "webp": "/videos/barbiers/poster.02219809.webp",
@@ -16,12 +16,12 @@
       },
       "teaser": {
         "mp4": "/videos/barbiers/teaser.d354b955.mp4",
-        "webm": "/videos/barbiers/teaser.ac6ab652.webm"
+        "webm": "/videos/barbiers/teaser.11ecd0ba.webm"
       }
     },
     "bytes": {
-      "mp4": 3853872,
-      "webm": 2437104,
+      "mp4": 3857580,
+      "webm": 2438898,
       "poster": {
         "jpg": 56800,
         "webp": 35354,
@@ -49,8 +49,8 @@
     "height": 1080,
     "uploadDate": "2026-09-24",
     "files": {
-      "mp4": "/videos/evenements-et-drops/demo-16x9.931a5b86.mp4",
-      "webm": "/videos/evenements-et-drops/demo-16x9.ab857a5d.webm",
+      "mp4": "/videos/evenements-et-drops/demo-16x9.f5380cf8.mp4",
+      "webm": "/videos/evenements-et-drops/demo-16x9.62794487.webm",
       "poster": {
         "jpg": "/videos/evenements-et-drops/poster.dc24abdf.jpg",
         "webp": "/videos/evenements-et-drops/poster.0ce4f9b7.webp",
@@ -58,12 +58,12 @@
       },
       "teaser": {
         "mp4": "/videos/evenements-et-drops/teaser.1356e3b1.mp4",
-        "webm": "/videos/evenements-et-drops/teaser.6cb2b4ca.webm"
+        "webm": "/videos/evenements-et-drops/teaser.5eeecb49.webm"
       }
     },
     "bytes": {
-      "mp4": 2924261,
-      "webm": 2132313,
+      "mp4": 2927160,
+      "webm": 2134450,
       "poster": {
         "jpg": 58076,
         "webp": 38088,
