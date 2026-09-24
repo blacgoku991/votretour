@@ -257,6 +257,28 @@ describe('le parcours rendu (OnboardingFlow, premier écran)', () => {
     expect(html).not.toContain(INSTALL_NOTE);
     expect(html).toContain('Créons votre file.');
   });
+
+  it('la phrase est lue par une région vivante présente dès le premier affichage, vide pour un barbier', async () => {
+    const { createElement } = await import('react');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const actual = await vi.importActual<typeof import('@/app/bienvenue/OnboardingFlow')>('@/app/bienvenue/OnboardingFlow');
+    const markup = (activity: ActivityType) =>
+      renderToStaticMarkup(createElement(actual.OnboardingFlow, { userName: 'Camille Martin', initialActivity: activity }));
+    expect(markup('barber')).toContain('<p class="sr-only" aria-live="polite"></p>');
+    expect(markup('garage')).toContain(`<p class="sr-only" aria-live="polite">${INSTALL_NOTE}</p>`);
+    // Les deux phrases visibles ne sont pas annoncées une seconde fois.
+    expect(markup('garage')).not.toMatch(/role="status"/);
+  });
+
+  it('aucune phrase ne dit au commerçant qu’il choisit ou modifie son métier', async () => {
+    const { createElement } = await import('react');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const { RailNote } = await import('@/app/bienvenue/StepRail');
+    const rail = renderToStaticMarkup(createElement(RailNote)).replace(/<[^>]+>/g, '');
+    expect(rail).toBe('Vos réglages restent modifiables ensuite, depuis votre tableau de bord.');
+    const html = [await render('garage'), await render('health'), await render('barber'), rail].join(' ');
+    expect(html).not.toMatch(/Tout reste modifiable|Métier présélectionné|choisi(ssez)? (votre|le) métier|changer de métier/i);
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -330,13 +352,30 @@ describe('completeOnboarding', () => {
     expect(state.rpc).toHaveLength(0);
   });
 
-  it('santé : aucune demande d’avis par défaut, même avec un lien saisi', async () => {
+  it('santé : aucune demande d’avis par défaut, même avec un lien saisi ; la file garde {review: false} (0042)', async () => {
     await completeOnboarding(baseInput('health'));
     expect(locationUpdate().google_review_url).toBeNull();
+    expect(state.updates.find((u) => u.table === 'queues')).toBeUndefined();
+    expect(state.audits[0]?.metadata).toMatchObject({ activity: 'health', requestReviews: false });
   });
 
-  it('santé : l’avis s’active seulement sur demande explicite', async () => {
-    await completeOnboarding({ ...baseInput('health'), requestReviews: true });
-    expect(locationUpdate().google_review_url).toBe('https://g.page/r/exemple');
+  it('santé, administration : l’avis s’active seulement sur demande explicite, écrite sur la file', async () => {
+    for (const activity of ['health', 'admin_service'] as const) {
+      state.updates.length = 0;
+      state.audits.length = 0;
+      await completeOnboarding({ ...baseInput(activity), requestReviews: true });
+      expect(locationUpdate().google_review_url).toBe('https://g.page/r/exemple');
+      // Sans cela, la file née sans avis (0042) ne l'enverrait jamais.
+      expect(state.updates.filter((u) => u.table === 'queues')).toEqual([
+        { table: 'queues', values: { profile_options: { review: true } }, eq: ['id', 'queue-1'] },
+      ]);
+      expect(state.audits[0]?.metadata).toMatchObject({ activity, requestReviews: true });
+    }
+  });
+
+  it('barbier : ni retouche de la file ni trace d’un choix d’avis', async () => {
+    await completeOnboarding({ ...baseInput('barber') });
+    expect(state.updates.find((u) => u.table === 'queues')).toBeUndefined();
+    expect(state.audits[0]?.metadata).not.toHaveProperty('requestReviews');
   });
 });

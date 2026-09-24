@@ -100,9 +100,13 @@ export function StepRail({
   );
 }
 
-/** Pied de la colonne de progression. */
+/**
+ * Pied de la colonne de progression. « Vos réglages », pas « tout » : il
+ * est posé à côté de la grille d'activités, et le métier, lui, n'est pas
+ * modifiable par le commerçant (l'équipe Rangvia l'active).
+ */
 export function RailNote() {
-  return <p className={styles.railNote}>Tout reste modifiable ensuite, depuis votre tableau de bord.</p>;
+  return <p className={styles.railNote}>Vos réglages restent modifiables ensuite, depuis votre tableau de bord.</p>;
 }
 
 export function StepBand({

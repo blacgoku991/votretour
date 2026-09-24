@@ -16,6 +16,20 @@
 --   sur l'organisation (même règle qu'avant : seulement si elle était
 --   encore « other »). Pour un barbier, rien ne change : c'était déjà
 --   walkin, avec exactement ces réglages (test 11).
+-- * Deux exceptions, pour ne rien perdre en attendant l'installation
+--   (qui peut prendre des jours) de ce qu'offrait le guichet de 0037 :
+--     - santé et service administratif : pas de demande d'avis Google
+--       (profile_options = {"review": false}, forme acceptée en walkin :
+--       claim_entry_notification et l'écran client la respectent déjà).
+--       Décision du propriétaire pour la santé ; sans objet pour un
+--       service administratif. Coller plus tard un lien d'avis dans les
+--       Réglages ne suffit donc pas à solliciter des patients ;
+--     - santé : le prénom n'est pas demandé (ask_client_name = false). Un
+--       prénom dans la file d'un cabinet dit qu'une personne consulte :
+--       c'est déjà une donnée de santé (RGPD, art. 9).
+--   Le métier attribué ensuite (switch_queue_profile → apply_profile_
+--   defaults) pose ses propres réglages ; revenir au passage rétablit
+--   ceux-ci, avec ces deux exceptions.
 -- * provision_organization (0011) n'est pas redéfinie : elle délègue la
 --   file à create_location, et hérite donc de la règle.
 --
@@ -90,6 +104,16 @@ begin
   -- posées par le même chemin qu'en 0037 pour un barbier (le mode de file
   -- choisi est gardé en walkin). Le métier viendra du super-admin.
   perform internal.apply_profile_defaults(v_queue.id, 'walkin', v_activity);
+
+  -- Santé et service administratif : les deux exceptions ci-dessus. Le
+  -- barbier, le garage, le restaurant, « autre »… n'entrent pas ici : leur
+  -- file reste exactement celle d'un barbier qui s'inscrit (tests 11 et 42).
+  if v_activity in ('health', 'admin_service') then
+    update public.queues
+       set profile_options = jsonb_build_object('review', false),
+           ask_client_name = v_activity <> 'health'
+     where id = v_queue.id;
+  end if;
   select * into v_queue from public.queues where id = v_queue.id;
 
   -- Horaires par défaut : lundi-samedi 9h-19h, dimanche fermé.
@@ -126,7 +150,7 @@ end;
 $$;
 
 comment on function public.create_location(uuid,text,public.activity_type,text,text,text,text,text,text,public.queue_mode,uuid,text) is
-  'Crée un établissement, sa file (toujours au passage : le métier est attribué par le super-admin) et sa plaque. Réservée à service_role.';
+  'Crée un établissement, sa file (toujours au passage : le métier est attribué par le super-admin ; ni avis Google en santé et en service administratif, ni prénom en santé) et sa plaque. Réservée à service_role.';
 
 -- Motif de 0010 : jamais appelable depuis le navigateur. `create or
 -- replace` garde les droits de 0037 ; on les repose pour que ce fichier

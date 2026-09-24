@@ -219,3 +219,109 @@ describe('refus', () => {
     expect(db.rpcCalls).toHaveLength(0);
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* « Métier à activer » : la règle partagée (liste, vue d'ensemble,     */
+/* fiche d'un établissement)                                            */
+/* ------------------------------------------------------------------ */
+
+const { ACTIVITIES_WITH_METIER, metierToActivate, metiersToActivate } = await import('@/app/admin/etablissements/metier-pending');
+
+describe('métier à activer', () => {
+  it('une activité à métier propre sans aucune file dans ce métier : à activer', () => {
+    expect(metierToActivate('garage', ['walkin'])).toBe('vehicle');
+    expect(metierToActivate('auto_center', [])).toBe('vehicle');
+    expect(metierToActivate('phone_repair', ['walkin', 'walkin'])).toBe('device');
+    expect(metierToActivate('restaurant', ['walkin'])).toBe('table');
+    expect(metierToActivate('health', ['walkin'])).toBe('desk');
+    expect(metierToActivate('admin_service', ['walkin'])).toBe('desk');
+    expect(metierToActivate('shop', ['walkin'])).toBe('retail');
+    // Un autre métier que celui de l'activité n'éteint pas le signal.
+    expect(metierToActivate('garage', ['table'])).toBe('vehicle');
+  });
+
+  it('dès qu’une file est dans le métier : plus rien, même si d’autres restent au passage', () => {
+    expect(metierToActivate('garage', ['walkin', 'vehicle'])).toBeNull();
+    expect(metierToActivate('health', ['desk'])).toBeNull();
+  });
+
+  it('jamais pour un barbier, un salon, « Autre », un événement ou une activité inconnue', () => {
+    for (const activity of ['barber', 'hair_salon', 'nail_bar', 'beauty', 'other', 'event', 'spa', null, undefined, '__proto__']) {
+      expect(metierToActivate(activity, ['walkin'])).toBeNull();
+    }
+    expect([...ACTIVITIES_WITH_METIER].sort()).toEqual(
+      ['admin_service', 'aftersales', 'auto_center', 'counter', 'garage', 'health', 'phone_repair', 'restaurant', 'shop'],
+    );
+  });
+
+  it('pour une liste d’organisations, les files des autres organisations sont ignorées', () => {
+    const pending = metiersToActivate(
+      [
+        { id: 'g1', activity: 'garage' },
+        { id: 'g2', activity: 'garage' },
+        { id: 'b1', activity: 'barber' },
+        { id: 'r1', activity: 'restaurant' },
+      ],
+      [
+        { organization_id: 'g1', profile: 'walkin' },
+        { organization_id: 'g2', profile: 'vehicle' },
+        { organization_id: 'x9', profile: 'table' },
+      ],
+    );
+    expect([...pending.entries()]).toEqual([['g1', 'vehicle'], ['r1', 'table']]);
+  });
+
+  it('la tuile de la vue d’ensemble : compteur, noms, lien vers la liste filtrée', async () => {
+    const { createElement } = await import('react');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const { MetiersToActivateCard } = await import('@/app/admin/etablissements/MetiersToActivate');
+    const html = renderToStaticMarkup(createElement(MetiersToActivateCard, {
+      data: { count: 4, names: ['Garage 92', 'Chez Paul', 'Labo Voltaire'] },
+    }));
+    const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    expect(html).toContain('href="/admin/etablissements?metier=a-activer"');
+    expect(html).toContain('data-waiting="1"');
+    expect(text).toContain('Métiers à activer');
+    expect(text).toContain('Garage 92 · Chez Paul · Labo Voltaire et 1 autre attendent l’interface de leur métier.');
+    const one = renderToStaticMarkup(createElement(MetiersToActivateCard, { data: { count: 1, names: ['Garage 92'] } }));
+    expect(one.replace(/<[^>]+>/g, ' ')).toContain('Garage 92 attend l’interface de son métier.');
+    const none = renderToStaticMarkup(createElement(MetiersToActivateCard, { data: { count: 0, names: [] } }));
+    expect(none).not.toContain('data-waiting');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* La confirmation du super-admin : ce qu'elle dit avant               */
+/* ------------------------------------------------------------------ */
+
+const { assignSummary } = await import('@/app/admin/etablissements/[id]/MetierPanel');
+
+describe('confirmation d’attribution', () => {
+  const labelOf = (p: string) => p;
+
+  it('santé → guichet : dit « ni prénom… ni avis », sans alerte de sensibilité', () => {
+    const r = assignSummary({ from: 'walkin', to: 'desk', activity: 'health', fromOptions: { review: false }, labelOf });
+    expect(r.lines.join(' ')).toContain('Santé : ni prénom demandé, ni nom à l’écran, ni demande d’avis Google par défaut.');
+    expect(r.healthMismatch).toBe(false);
+    expect(r.reviewDropped).toBe(false);
+  });
+
+  it('avis demandés à l’inscription puis coupés par le guichet : l’équipe le lit avant', () => {
+    for (const activity of ['health', 'admin_service']) {
+      expect(assignSummary({ from: 'walkin', to: 'desk', activity, fromOptions: { review: true }, labelOf }).reviewDropped).toBe(true);
+    }
+    // Un métier qui garde l'avis ne dit rien.
+    expect(assignSummary({ from: 'walkin', to: 'retail', activity: 'health', fromOptions: { review: true }, labelOf }).reviewDropped).toBe(false);
+    // Sans choix explicite, rien à dire.
+    expect(assignSummary({ from: 'walkin', to: 'desk', activity: 'health', fromOptions: {}, labelOf }).reviewDropped).toBe(false);
+  });
+
+  it('un guichet pour une organisation qui n’a pas déclaré un guichet : données de santé NON, dit avant', () => {
+    expect(assignSummary({ from: 'walkin', to: 'desk', activity: 'other', fromOptions: {}, labelOf }).healthMismatch).toBe(true);
+    expect(assignSummary({ from: 'walkin', to: 'desk', activity: 'barber', fromOptions: {}, labelOf }).healthMismatch).toBe(true);
+    for (const activity of ['health', 'admin_service', 'counter']) {
+      expect(assignSummary({ from: 'walkin', to: 'desk', activity, fromOptions: {}, labelOf }).healthMismatch).toBe(false);
+    }
+    expect(assignSummary({ from: 'walkin', to: 'vehicle', activity: 'other', fromOptions: {}, labelOf }).healthMismatch).toBe(false);
+  });
+});

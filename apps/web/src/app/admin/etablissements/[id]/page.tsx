@@ -9,6 +9,7 @@ import { OrganizationControlPanelV2 } from './OrganizationControlPanelV2';
 import { TVManagementPanel } from './TVManagementPanel';
 import { MetierPanel } from './MetierPanel';
 import { isQueueProfile } from '@/lib/profiles';
+import { metierToActivate } from '../metier-pending';
 import styles from '../../admin.module.css';
 import v2 from '../../admin-v2.module.css';
 
@@ -46,7 +47,6 @@ export default async function OrganizationDetailPage({
     { count: activeEntries },
     { count: completed7d },
     { count: notifications7d },
-    { data: activeRows },
   ] = await Promise.all([
     db.from('locations').select(`
       id, name, slug, address_line1, address_line2, postal_code, city,
@@ -79,19 +79,22 @@ export default async function OrganizationDetailPage({
     db.from('notification_deliveries').select('id', { count: 'exact', head: true })
       .eq('organization_id', id).eq('status', 'sent')
       .gte('created_at', new Date(Date.now() - 7 * 86_400_000).toISOString()),
-    // Tickets en cours par file : un changement de métier exige une file
-    // vide (VT017). Seul l'identifiant de la file est lu, aucune donnée
-    // de client.
-    db.from('queue_entries').select('queue_id')
-      .eq('organization_id', id).in('status', ['waiting','notified','returning','present','next','serving']),
   ]);
 
   const plan = Array.isArray(subscription?.plans) ? subscription?.plans[0] : subscription?.plans;
 
-  const activeByQueue = new Map<string, number>();
-  for (const row of (activeRows ?? []) as { queue_id: string }[]) {
-    activeByQueue.set(row.queue_id, (activeByQueue.get(row.queue_id) ?? 0) + 1);
-  }
+  // Tickets en cours par file : un changement de métier exige une file
+  // vide (VT017). Un compte exact par file (en-tête seulement : aucune
+  // ligne, aucune donnée de client), jamais tronqué comme le serait une
+  // liste de lignes au-delà de la limite de PostgREST.
+  const activeByQueue = new Map<string, number>(
+    await Promise.all((queues ?? []).map(async (queue) => {
+      const { count } = await db.from('queue_entries').select('id', { count: 'exact', head: true })
+        .eq('queue_id', queue.id).in('status', ['waiting','notified','returning','present','next','serving']);
+      return [queue.id as string, count ?? 0] as const;
+    })),
+  );
+  const toActivate = metierToActivate(org.activity, (queues ?? []).map((queue) => queue.profile as string | null));
   const locationName = new Map((locations ?? []).map((l) => [l.id as string, l.name as string]));
 
   return (
@@ -146,12 +149,15 @@ export default async function OrganizationDetailPage({
             <span className={styles.cardKicker}>MÉTIER</span>
             <h2 id="metier-titre">Interface par file</h2>
           </div>
-          <span className="chip">Attribué par l’équipe Rangvia</span>
+          {toActivate
+            ? <span className="chip chip--signal">Métier à activer</span>
+            : <span className="chip">Attribué par l’équipe Rangvia</span>}
         </div>
         <MetierPanel
           organizationId={org.id}
           activity={org.activity}
           activityLabel={ACTIVITY_LABEL[org.activity] ?? org.activity}
+          toActivate={toActivate}
           queues={(queues ?? []).map((queue) => ({
             id: queue.id,
             name: queue.name,
@@ -165,7 +171,8 @@ export default async function OrganizationDetailPage({
         />
       </section>
 
-      <section className={styles.adminCard}>
+      {/* Cible du lien « Corrigez d'abord l'activité » de la section Métier. */}
+      <section className={styles.adminCard} id="configuration">
         <div className={styles.adminCardHead}>
           <div>
             <span className={styles.cardKicker}>CONTROL CENTER</span>

@@ -133,6 +133,19 @@ export async function completeOnboarding(
       google_review_url: requestReviews ? (parsed.googleReviewUrl ?? null) : null,
     }).eq('id', locationId);
 
+    // Santé, service administratif : la file naît sans demande d'avis
+    // (`{"review": false}`, posé par create_location en 0042). Le
+    // professionnel qui l'a DEMANDÉE ici, explicitement, l'obtient : son
+    // choix est écrit sur la file (`review: true`, forme admise au
+    // passage), sinon le lien collé plus haut ne servirait jamais. Le
+    // super-admin le lit ensuite avant d'attribuer le métier.
+    if (requestReviews && reviewOffByDefault(parsed.activity)) {
+      const { error: reviewError } = await db.from('queues')
+        .update({ profile_options: { review: true } })
+        .eq('id', result.queue.id);
+      if (reviewError) throw reviewError;
+    }
+
     // Équipe.
     if (parsed.staffNames.length > 0) {
       const accents = ['signal', 'jade', 'cobalt', 'copper', 'brique', 'ardoise'] as const;
@@ -172,7 +185,11 @@ export async function completeOnboarding(
       targetType: 'organization', targetId: organizationId,
       // `activity` : l'activité déclarée ; `targetProfile` : le métier que
       // l'équipe Rangvia activera à l'installation.
-      metadata: { activity: parsed.activity, queueMode: parsed.queueMode, profile, targetProfile: choice.target },
+      metadata: {
+        activity: parsed.activity, queueMode: parsed.queueMode, profile, targetProfile: choice.target,
+        // Seulement là où la demande d'avis est coupée par défaut : le choix du pro.
+        ...(reviewOffByDefault(parsed.activity) ? { requestReviews } : {}),
+      },
     });
 
     return {

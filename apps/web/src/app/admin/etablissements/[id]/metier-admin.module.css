@@ -1,8 +1,9 @@
 /* =====================================================================
    SUPER-ADMIN — MÉTIER, FILE PAR FILE
    Chaque file est une latte ; ouverte, elle devient un établi : les
-   métiers à gauche, la scène du métier (les vrais objets du produit) à
-   droite, la confirmation dessous. Les lattes, la scène et le ticket de
+   métiers à gauche ; à droite, la scène du métier (les vrais objets du
+   produit) puis la confirmation. Sur une colonne (téléphone), la scène
+   du métier choisi s'ouvre sous sa latte. Les lattes, la scène et le ticket de
    confirmation viennent de reglages/metier.module.css : l'équipe voit ce
    que verra le commerce. On n'anime que transform et opacity, et
    seulement si le mouvement est permis.
@@ -164,9 +165,7 @@
 @keyframes bench-in { from { opacity: 0; transform: translateY(-6px); } }
 
 @container metier-queue (min-width: 900px) {
-  .bench { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 22px 26px; }
-  .previewCol { position: sticky; top: 16px; align-self: start; }
-  .confirmRow { grid-column: 1 / -1; }
+  .bench { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 22px 26px; align-items: start; }
 }
 
 /* Le nom de conteneur est celui que lisent les lattes de metier.module.css
@@ -178,11 +177,6 @@
   border: 0;
   min-width: 0;
 }
-/* Téléphone : l'aperçu vient AVANT les lattes, pour que le choix se voie. */
-@container metier-queue (max-width: 899.98px) {
-  .previewCol { order: -1; }
-}
-
 .previewCol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 @media (prefers-reduced-motion: no-preference) {
   .preview { animation: bench-in var(--dur-2) var(--ease-slat); }
@@ -229,4 +223,34 @@
   font-size: 0.8125rem;
   line-height: 1.45;
   font-variation-settings: 'wght' 600;
+}
+
+/* Une alerte propre à l'activité, dans la confirmation : cuivre, pas
+   rouge (ce n'est pas un refus). */
+.caution {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--copper-500) 14%, transparent);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.caution strong { font-variation-settings: 'wght' 720; }
+.cautionLink { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------------------------------------------------------------------
+   La colonne de droite : l'aperçu, puis la confirmation
+   --------------------------------------------------------------------- */
+.sideCol { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+/* Téléphone et tablette (établi sur une colonne) : l'aperçu du métier
+   choisi vient sous SA latte ; l'aperçu de colonne ne sert qu'au métier
+   actuel, avant tout choix, et laisse la place à la confirmation. */
+.previewNear { display: none; grid-column: 1 / -1; }
+@container metier-queue (max-width: 899.98px) {
+  .previewNear { display: block; }
+  .bench:has(.previewNear) .sideCol .previewCol { display: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .previewNear { animation: bench-in var(--dur-2) var(--ease-slat); }
 }

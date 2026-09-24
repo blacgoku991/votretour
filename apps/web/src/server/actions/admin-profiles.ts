@@ -41,7 +41,15 @@ import { frenchIssues } from '@/server/profiles/queue';
  *
  * Trace : `queue.profile_assigned` (acteur `platform_admin`), en plus de la
  * ligne `queue.profile_changed` que la fonction SQL écrit elle-même (et
- * d'où se relisent les réglages d'avant en cas de retour).
+ * d'où se relisent les réglages d'avant en cas de retour). Cette seconde
+ * ligne garde l'acteur « staff » de la fonction commune (0034) avec
+ * l'identifiant du super-admin : c'est la première qui dit qui a décidé.
+ *
+ * Choix d'avis de l'inscription : un cabinet de santé ou un service
+ * administratif qui a DEMANDÉ les avis Google a `review: true` sur sa
+ * file au passage. Un guichet les coupe par défaut ; la confirmation du
+ * super-admin le dit avant (`assignSummary`, MetierPanel), rien n'est
+ * reporté en silence.
  */
 
 export type AdminProfileResult<T> =

@@ -24,8 +24,9 @@ import styles from './metier.module.css';
  *
  *   1. la scène : le métier de la file, montré par ses propres objets
  *      (plaque, rail d'étapes, chevalet, numéro) et ses deux touches ;
- *   2. la ligne « Métier : Atelier véhicule · activé par l'équipe
- *      Rangvia », sans sélecteur ni bouton ;
+ *   2. le sceau « Activé par l'équipe Rangvia · Un autre métier ?
+ *      Écrivez-nous », sans sélecteur ni bouton (le nom du métier est
+ *      déjà le titre de la scène : il n'est pas répété) ;
  *   3. les options du métier, enregistrées au geste : devis en ligne,
  *      immatriculation obligatoire, couverts, préfixe, guichets.
  *
@@ -163,10 +164,11 @@ export function ProfileSection({
       {/* ------------------------------------------------ Le sceau : lecture seule */}
       <div className={styles.assigned}>
         <span className={styles.assignedGlyph} aria-hidden="true"><ProfileGlyph profile={current} /></span>
+        {/* Le nom du métier est déjà le titre de la scène : le sceau dit
+            seulement qui l'a posé, et comment en changer. */}
         <p className={styles.assignedText}>
-          Métier&nbsp;: <strong>{label}</strong>
-          <span className={styles.assignedDot} aria-hidden="true"> · </span>
-          <span className={styles.assignedBy}>activé par l’équipe Rangvia</span>
+          <strong>Activé par l’équipe Rangvia</strong>
+          <span className="sr-only">{`\u00a0: ${label}`}</span>
         </p>
         <p className={styles.assignedHint}>
           Un autre métier pour «&nbsp;{queue.name}&nbsp;»&nbsp;?{' '}

@@ -231,25 +231,30 @@ export function OnboardingFlow({
                   {/* Pas d'aperçu : le métier est activé par l'équipe. La
                       phrase suit la tuile touchée : sous sa famille au
                       téléphone, sous la grille sur l'étagère (le CSS n'en
-                      montre qu'une, l'autre sort de l'arbre d'accessibilité). */}
+                      montre qu'une). Ces deux phrases VISIBLES sont
+                      décoratives pour un lecteur d'écran : une phrase montée
+                      avec son contenu n'est généralement pas annoncée. C'est
+                      la région vivante ci-dessous, présente dès le premier
+                      affichage et remplie au choix, qui la lit. */}
                   <MetierPicker
                     value={form.activity}
                     onChange={chooseActivity}
                     note={installNote && (
-                      <p className={`${styles.installNote} ${styles.installNear}`} role="status">
-                        <span className={styles.installMark} aria-hidden="true" />
+                      <p className={`${styles.installNote} ${styles.installNear}`} aria-hidden="true">
+                        <span className={styles.installMark} />
                         {installNote}
                       </p>
                     )}
                   />
-                  <div className={styles.installFar} aria-live="polite">
+                  <div className={styles.installFar} aria-hidden="true">
                     {installNote && (
                       <p className={styles.installNote}>
-                        <span className={styles.installMark} aria-hidden="true" />
+                        <span className={styles.installMark} />
                         {installNote}
                       </p>
                     )}
                   </div>
+                  <p className="sr-only" aria-live="polite">{installNote ?? ''}</p>
                 </div>
                 <div className="field">
                   <label htmlFor="place">Nom de l’établissement</label>

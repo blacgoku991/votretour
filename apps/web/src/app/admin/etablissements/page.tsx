@@ -7,6 +7,9 @@ import { formatDate, formatNumber } from '@/lib/format';
 import { ACTIVITY_LABEL } from '@/lib/copy';
 import { OrganizationActions } from './OrganizationActions';
 import { CreateOrganizationV2 } from './CreateOrganizationV2';
+import { ACTIVITIES_WITH_METIER, metiersToActivate } from './metier-pending';
+import { getProfile } from '@/lib/profiles';
+import pending from './metier-pending.module.css';
 import { AdminHero } from '../AdminKit';
 import { ScrollTable } from '../ScrollTable';
 import { SUBSCRIPTION_STATUS_LABEL, labelOf } from '../labels';
@@ -19,12 +22,16 @@ export const dynamic = 'force-dynamic';
 export default async function AdminOrganizationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; etat?: string }>;
+  searchParams: Promise<{ q?: string; etat?: string; metier?: string }>;
 }) {
   // Chaque page revérifie le rôle elle-même : une requête RSC forgée
   // peut sauter le layout /admin, jamais la page qu'elle demande.
   await requirePlatformAdmin();
-  const { q, etat } = await searchParams;
+  const { q, etat, metier } = await searchParams;
+  // « Métier à activer » : les organisations qui attendent l'interface de
+  // leur métier (règle : metier-pending.ts). Le commerçant a lu que
+  // l'équipe l'active à l'installation ; ce filtre est la liste de travail.
+  const onlyPending = metier === 'a-activer';
   const db = supabaseAdmin();
 
   let query = db
@@ -36,8 +43,21 @@ export default async function AdminOrganizationsPage({
   if (q) query = query.ilike('name', `%${q}%`);
   if (etat === 'suspendus') query = query.eq('status', 'suspended');
   if (etat === 'actifs') query = query.eq('status', 'active');
+  if (onlyPending) query = query.in('activity', [...ACTIVITIES_WITH_METIER]);
 
-  const { data: organizations } = await query;
+  const { data: listed } = await query;
+  const listedIds = (listed ?? []).map((o) => o.id);
+
+  // Le profil de chaque file : seul l'identifiant de l'organisation et le
+  // métier sont lus.
+  const { data: queueRows } = listedIds.length
+    ? await db.from('queues').select('organization_id, profile').in('organization_id', listedIds)
+    : { data: [] };
+  const pendingMetier = metiersToActivate(
+    (listed ?? []) as { id: string; activity: string | null }[],
+    (queueRows ?? []) as { organization_id: string; profile: string | null }[],
+  );
+  const organizations = onlyPending ? (listed ?? []).filter((o) => pendingMetier.has(o.id)) : listed;
   const ids = (organizations ?? []).map((o) => o.id);
 
   const [{ data: locations }, { data: subscriptions }, { data: entries }] = await Promise.all([
@@ -80,6 +100,10 @@ export default async function AdminOrganizationsPage({
           <option value="actifs">Actifs</option>
           <option value="suspendus">Suspendus</option>
         </select>
+        <select className="select" name="metier" defaultValue={onlyPending ? 'a-activer' : ''} aria-label="Métier">
+          <option value="">Tous les métiers</option>
+          <option value="a-activer">Métier à activer</option>
+        </select>
         <button type="submit" className="btn btn--solid btn--sm">Filtrer</button>
       </form>
       <div className={styles.commandActions}>
@@ -89,7 +113,10 @@ export default async function AdminOrganizationsPage({
 
       <Section>
         {(organizations ?? []).length === 0 ? (
-          <EmptyState title="Aucun résultat" />
+          <EmptyState
+            title={onlyPending ? 'Aucun métier à activer' : 'Aucun résultat'}
+            description={onlyPending ? 'Chaque organisation inscrite a déjà l’interface de son métier.' : undefined}
+          />
         ) : (
           <ScrollTable label="Établissements">
             <table className={`${styles.table} ${styles.stackTable}`}>
@@ -109,6 +136,7 @@ export default async function AdminOrganizationsPage({
                 {(organizations ?? []).map((org) => {
                   const subscription = subscriptionBy.get(org.id);
                   const plan = Array.isArray(subscription?.plans) ? subscription?.plans[0] : subscription?.plans;
+                  const toActivate = pendingMetier.get(org.id);
                   return (
                     <tr key={org.id}>
                       <th scope="row" className={`${styles.orgName} ${styles.stackLead}`}>
@@ -124,7 +152,18 @@ export default async function AdminOrganizationsPage({
                           </span>
                         </Link>
                       </th>
-                      <td data-label="Activité">{ACTIVITY_LABEL[org.activity] ?? org.activity}</td>
+                      <td data-label="Activité">
+                        <span className={pending.activityCell}>
+                          <span>{ACTIVITY_LABEL[org.activity] ?? org.activity}</span>
+                          {toActivate && (
+                            <span className={pending.pill} title={`À activer : ${getProfile(toActivate).label}`}>
+                              <span className={pending.pillDot} aria-hidden="true" />
+                              Métier à activer
+                              <span className="sr-only">{`\u00a0: ${getProfile(toActivate).label}`}</span>
+                            </span>
+                          )}
+                        </span>
+                      </td>
                       <td data-label="Offre">
                         <span>
                           {plan?.name ?? '—'}

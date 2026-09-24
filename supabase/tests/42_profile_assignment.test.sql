@@ -8,6 +8,9 @@
 --     et create_location (« Ajouter un établissement ») donnent TOUJOURS
 --     une file au passage (walkin), pour chacune des activités, avec les
 --     réglages exacts d'un barbier et sans aucune prestation créée ;
+--     seules exceptions, en attendant l'installation : ni avis Google en
+--     santé et en service administratif ({"review": false}, respecté par
+--     claim_entry_notification), ni prénom demandé en santé ;
 --   - l'activité déclarée est gardée telle quelle sur l'organisation ;
 --   - l'attribution par switch_queue_profile marche toujours : réglages
 --     et motifs du métier, activité relue (santé → guichet sans prénom ni
@@ -69,6 +72,8 @@ declare
   v_services int;
   v_org      uuid;
   v_fn       text;
+  v_expected text;
+  v_uuid     uuid;
 begin
   raise notice '';
   raise notice '══ Métier attribué par l’équipe Rangvia ══';
@@ -97,9 +102,16 @@ begin
     if v_queue.profile <> 'walkin' or v_prov -> 'queue' ->> 'profile' is distinct from 'walkin' then
       raise exception 'ÉCHEC: % donne le métier % (attendu walkin)', v_act, v_queue.profile;
     end if;
-    if internal.p42_settings(v_queue.id) is distinct from v_barber then
-      raise exception 'ÉCHEC: % : réglages % (attendu ceux du barbier %)',
-        v_act, internal.p42_settings(v_queue.id), v_barber;
+    -- Réglages du barbier, à la lettre, sauf santé et service
+    -- administratif : sans avis Google, et sans prénom en santé.
+    v_expected := case v_act
+      when 'health' then 'walkin · {"review": false} · auto_serve · 240 · move_back · 5 · f · f · f · f'
+      when 'admin_service' then 'walkin · {"review": false} · auto_serve · 240 · move_back · 5 · t · f · f · f'
+      else v_barber
+    end;
+    if internal.p42_settings(v_queue.id) is distinct from v_expected then
+      raise exception 'ÉCHEC: % : réglages % (attendu %)',
+        v_act, internal.p42_settings(v_queue.id), v_expected;
     end if;
     -- Le mode choisi est gardé, comme pour un barbier.
     if v_queue.mode <> 'per_staff' then
@@ -115,8 +127,25 @@ begin
     v_q := v_q || jsonb_build_object(v_act::text, v_queue.id);
     v_o := v_o || jsonb_build_object(v_act::text, v_queue.organization_id);
   end loop;
-  raise notice '  ok  les % activités : file au passage, réglages du barbier, aucune prestation, activité gardée',
+  raise notice '  ok  les % activités : file au passage, réglages du barbier (santé et administration : sans avis, santé : sans prénom), aucune prestation, activité gardée',
     (select count(*) from unnest(enum_range(null::public.activity_type)));
+
+  -- La demande d'avis ne part pas d'un cabinet de santé au passage, même
+  -- avec un lien d'avis collé plus tard dans les Réglages ; elle part
+  -- toujours chez le barbier.
+  update public.locations set google_review_url = 'https://g.page/r/p42/review'
+   where id in (select location_id from public.queues where id in ((v_q ->> 'health')::uuid, (v_q ->> 'barber')::uuid));
+  foreach v_fn in array array['health', 'admin_service', 'barber', 'garage'] loop
+    update public.queues set status = 'open' where id = (v_q ->> v_fn)::uuid;
+    v_entry := public.add_walkin(p_queue_id => (v_q ->> v_fn)::uuid, p_client_name => null, p_actor_user_id => v_owner);
+    select id into v_uuid from public.queue_entries where public_id = v_entry -> 'entry' ->> 'id';
+    update public.queue_entries set status = 'completed', completed_at = now() where id = v_uuid;
+    perform internal.assert_eq(
+      public.claim_entry_notification(v_uuid, 'visit_completed'),
+      v_fn in ('barber', 'garage'),
+      v_fn || ' au passage : demande d’avis de fin de visite');
+    update public.queues set status = 'closed' where id = (v_q ->> v_fn)::uuid;
+  end loop;
 
   -- -------------------------------------------------------------------
   raise notice '';
@@ -127,6 +156,13 @@ begin
   perform internal.assert_eq(v_loc -> 'queue' ->> 'profile', 'walkin', 'garage, deuxième établissement');
   perform internal.assert_eq(
     internal.p42_settings((v_loc -> 'queue' ->> 'id')::uuid), v_barber, 'garage, deuxième établissement : réglages');
+
+  -- Santé : l'activité relue sur l'organisation garde les deux exceptions.
+  v_loc := public.create_location((v_o ->> 'health')::uuid, 'P42 Cabinet Nord', null);
+  perform internal.assert_eq(
+    internal.p42_settings((v_loc -> 'queue' ->> 'id')::uuid),
+    'walkin · {"review": false} · auto_serve · 240 · move_back · 5 · f · f · f · f',
+    'santé, deuxième établissement : ni avis ni prénom');
   select count(*) into v_services from public.services where location_id = (v_loc -> 'location' ->> 'id')::uuid;
   perform internal.assert_eq(v_services, 0, 'garage, deuxième établissement : prestations');
 
@@ -189,6 +225,13 @@ begin
   perform public.staff_queue_action(v_entry -> 'entry' ->> 'id', 'remove', v_owner, null);
   v_res := public.switch_queue_profile((v_q ->> 'restaurant')::uuid, 'table', v_admin);
   perform internal.assert_eq(v_res ->> 'profile', 'table', 'file vidée : restaurant → table');
+
+  -- Santé revenue au passage : ses réglages d'avant (sans avis ni prénom).
+  v_res := public.switch_queue_profile((v_q ->> 'health')::uuid, 'walkin', v_admin);
+  perform internal.assert_eq(
+    internal.p42_settings((v_q ->> 'health')::uuid),
+    'walkin · {"review": false} · auto_serve · 240 · move_back · 5 · f · f · f · f',
+    'santé revenue au passage : toujours ni avis ni prénom');
 
   -- Retour au passage : réglages d'avant rétablis.
   v_res := public.switch_queue_profile((v_q ->> 'garage')::uuid, 'walkin', v_admin);

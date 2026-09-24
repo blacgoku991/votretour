@@ -555,7 +555,7 @@ describe('showsMetier (Réglages, section « Métier de la file »)', () => {
 });
 
 describe('ProfileSection (rendu)', () => {
-  it('métier attribué : « Métier : Atelier véhicule · activé par l’équipe Rangvia », sans sélecteur ni « Changer de métier », options présentes', async () => {
+  it('métier attribué : le titre « Atelier véhicule », le sceau « Activé par l’équipe Rangvia », sans sélecteur ni « Changer de métier », options présentes', async () => {
     vi.resetModules();
     vi.doMock('next/navigation', () => ({ useRouter: () => ({ refresh: () => undefined }) }));
     const { createElement } = await import('react');
@@ -575,7 +575,12 @@ describe('ProfileSection (rendu)', () => {
       queue: { id: Q_VEHICLE, name: 'Atelier', profile: 'vehicle' as const, profile_options: {}, ticket_prefix: 'A' },
     }));
     const text = garage.replace(/<[^>]+>/g, '').replace(/&nbsp;|\u00a0/g, ' ');
-    expect(text).toContain('Métier : Atelier véhicule · activé par l’équipe Rangvia');
+    expect(text).toContain('Activé par l’équipe Rangvia');
+    // Le nom du métier est le titre de la scène ; le sceau ne le répète
+    // pas à l'écran (seulement pour un lecteur d'écran).
+    expect(garage).toMatch(/<h3[^>]*>Atelier véhicule<\/h3>/);
+    expect(text).not.toContain('Métier : Atelier véhicule');
+    expect(garage.replace(/<span class="sr-only">[^<]*<\/span>/g, '').match(/Atelier véhicule/g)).toHaveLength(1);
     expect(text).not.toMatch(/Changer de métier|Voir les autres métiers|Choisissez le métier/);
     expect(garage).not.toContain('type="radio" class="sr-only" name="metier-');
     // Les options du métier restent là : devis en ligne, immatriculation.
@@ -599,6 +604,30 @@ describe('ProfileSection (rendu)', () => {
     expect(tyres).toContain('Passage sans rendez-vous');
     expect(tyres).not.toContain('Au fauteuil');
     expect(tyres).not.toContain('Devis en ligne');
+    vi.doUnmock('next/navigation');
+  });
+
+  it('métiers ouverts à tous (OPEN_PROFILES rempli à l’ouverture) : un barbier ne voit toujours rien', async () => {
+    vi.resetModules();
+    vi.doMock('next/navigation', () => ({ useRouter: () => ({ refresh: () => undefined }) }));
+    vi.doMock('@/lib/profiles/capabilities', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@/lib/profiles/capabilities')>();
+      return {
+        ...actual,
+        OPEN_PROFILES: new Set(['walkin', 'event', 'vehicle', 'device', 'table', 'desk', 'retail']),
+      };
+    });
+    const { createElement } = await import('react');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const section = await import('@/app/app/[org]/reglages/ProfileSection');
+    expect(section.showsMetier({ current: 'walkin', features: null, orgHasProfiledQueue: false })).toBe(false);
+    const barber = renderToStaticMarkup(createElement(section.ProfileSection, {
+      orgSlug: 'barber-house', activity: 'barber', features: null, canConfigure: true, staff: [],
+      run: () => undefined, pending: false,
+      queue: { id: Q_WALKIN, name: 'Salon', profile: 'walkin' as const, profile_options: {}, ticket_prefix: 'A' },
+    }));
+    expect(barber).toBe('');
+    vi.doUnmock('@/lib/profiles/capabilities');
     vi.doUnmock('next/navigation');
   });
 });
