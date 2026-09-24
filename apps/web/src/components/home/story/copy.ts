@@ -42,6 +42,13 @@ export interface StoryLink {
 }
 
 export interface StoryText {
+  /**
+   * Qui parle : l'accueil ou une page métier. C'est CE drapeau, et non
+   * l'identité de l'objet, qui décide des variables CSS et du titre long :
+   * l'accueil peut recevoir une copie reconstruite (`buildHomeStoryCopy`,
+   * selon l'App Clip) sans que son DOM change pour autant.
+   */
+  kind: 'home' | 'metier';
   hero: {
     label: string;
     title: string;
@@ -84,6 +91,15 @@ export interface StoryText {
 const HOME_PLACE = 'Barber House';
 
 /**
+ * Sous le rideau « C'est votre tour » : la phrase EXACTE de l'écran du
+ * client en file d'aujourd'hui (app/e/[slug]/TurnCurtain.tsx). Une seule
+ * constante pour l'accueil et les pages métier ; story-copy.test.ts la
+ * relit dans TurnCurtain, pour que la page ne puisse pas mentir si l'écran
+ * change.
+ */
+export const TURN_HINT = 'Présentez-vous au comptoir';
+
+/**
  * Étape 1 de l'accueil. L'App Clip n'est cité qu'une fois PUBLIÉ sur
  * l'App Store (`appClipPublished()`, figé au build) : avant, la même
  * phrase dit ce qui est vrai, le navigateur sur les deux systèmes.
@@ -96,6 +112,7 @@ const ARRIVE_WITHOUT_CLIP =
 /** L'accueil, pour un état donné de l'App Clip (pur : les tests rejouent les deux). */
 export function buildHomeStoryCopy({ appClip }: { appClip: boolean }): StoryText {
   return {
+    kind: 'home',
     hero: {
       label: 'File d’attente virtuelle · barbiers, garages, ongleries, réparateurs',
       title: 'Vos clients n’attendent plus debout.',
@@ -120,7 +137,7 @@ export function buildHomeStoryCopy({ appClip }: { appClip: boolean }): StoryText
       next: 'Prochain client',
     },
     notif: notificationCopy('ahead_one', { locationName: HOME_PLACE }),
-    turn: { lead: 'C’est', main: 'votre tour', line: 'Présentez-vous au comptoir' },
+    turn: { lead: 'C’est', main: 'votre tour', line: TURN_HINT },
     merci: { title: 'Merci pour votre visite', button: 'Laisser un avis Google' },
     steps: [
       {

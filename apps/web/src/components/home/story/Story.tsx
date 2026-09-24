@@ -82,6 +82,21 @@ export interface StoryProps {
   eyebrow?: React.ReactNode;
 }
 
+/**
+ * Compensation du raccourci du libellé du seuil pour une inclinaison de
+ * caméra donnée (degrés). Aux inclinaisons de la séquence (52° sur
+ * téléphone, 56 à 58° sur ordinateur), rien ne change : c'est le rendu
+ * dessiné. Quand la caméra se relève (34° pour le rideau), le libellé est
+ * rallongé de sin(52°) / sin(tilt) pour garder la hauteur apparente qu'il a
+ * pendant la séquence, borné à ×1,6.
+ */
+const SEUIL_REF = Math.sin((52 * Math.PI) / 180);
+export function seuilLabelTransform(tilt: number): string {
+  const t = Math.max(0, Math.min(90, Number.isFinite(tilt) ? tilt : 0));
+  const k = Math.min(1.6, SEUIL_REF / Math.max(Math.sin((t * Math.PI) / 180), 1e-3));
+  return k <= 1.001 ? '' : `scaleY(${k.toFixed(3)})`;
+}
+
 /** Au-delà, le titre du héros descend d'un cran (voir .title[data-length]). */
 const LONG_TITLE = 40;
 
@@ -90,7 +105,9 @@ export function Story({
   skipTargetId = 'apres-histoire',
   eyebrow,
 }: StoryProps): React.JSX.Element {
-  const custom = copy !== HOME_STORY_COPY;
+  // Une page métier pose ses textes en variables CSS et peut réduire un
+  // titre long ; l'accueil jamais, quelle que soit la copie qu'il passe.
+  const custom = copy.kind !== 'home';
   const reduced = useReducedMotion();
   const lite = useLiteDevice();
   const [ready, setReady] = useState(false);
@@ -101,6 +118,7 @@ export function Story({
   const worldRef = useRef<HTMLDivElement | null>(null);
   const floorRef = useRef<HTMLDivElement | null>(null);
   const seuilRef = useRef<HTMLDivElement | null>(null);
+  const seuilLabelRef = useRef<HTMLSpanElement | null>(null);
   const spillRef = useRef<HTMLDivElement | null>(null);
   const voletRef = useRef<HTMLDivElement | null>(null);
   const phoneRef = useRef<HTMLDivElement | null>(null);
@@ -241,6 +259,12 @@ export function Story({
       put(spillRef.current, 'opacity', d.spill.toFixed(3));
       put(seuilRef.current, 'opacity', d.seuilO.toFixed(3));
       put(floorRef.current, 'opacity', d.seuilO.toFixed(3));
+      // Le seuil est debout sur un sol incliné de `tilt` : vu par la caméra,
+      // son libellé est écrasé d'un facteur sin(tilt). Quand la caméra se
+      // relève pour le rideau « votre tour » (34°), il paraîtrait coupé à
+      // mi-hauteur : on le rallonge dans son plan (seuilLabelTransform).
+      // Transform seul, aucune lecture.
+      put(seuilLabelRef.current, 'transform', seuilLabelTransform(cam.tilt));
       d.seg.forEach((v, i) => {
         if (c.seg[i] === v) return;
         c.seg[i] = v;
@@ -274,7 +298,7 @@ export function Story({
     c.t = -1;
     c.seg = [];
     c.styles.clear();
-    for (const el of [worldRef.current, voletRef.current, phoneRef.current, plaqueRef.current, spillRef.current, seuilRef.current, floorRef.current]) {
+    for (const el of [worldRef.current, voletRef.current, phoneRef.current, plaqueRef.current, spillRef.current, seuilRef.current, floorRef.current, seuilLabelRef.current]) {
       if (el) {
         el.style.transform = '';
         el.style.opacity = '';
@@ -317,6 +341,7 @@ export function Story({
       id="histoire"
       className={styles.story}
       data-story=""
+      data-kind={custom ? 'metier' : undefined}
       aria-labelledby="histoire-titre"
     >
       <a className={`skip-link ${styles.skip}`} href={`#${skipTargetId}`}>
@@ -389,7 +414,9 @@ export function Story({
             <div ref={railRef} className={`rail3d ${styles.rail}`} data-story-rail="" />
             <span className={styles.pulse} />
             <div ref={seuilRef} className={`seuil3d ${styles.seuil}`} data-story-seuil="">
-              <span className="seuil3d__label">{copy.seuil}</span>
+              <span ref={seuilLabelRef} className="seuil3d__label">
+                {copy.seuil}
+              </span>
             </div>
 
             {SLOT_IDS.map((id) => (

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { Story } from '@/components/home/story/Story';
+import { Story, seuilLabelTransform } from '@/components/home/story/Story';
 import {
   HOME_STORY_COPY,
   buildHomeStoryCopy,
@@ -141,12 +141,28 @@ describe('accueil : la copie par défaut est celle d’avant', () => {
     expect(html.match(/<h1\b/g)).toHaveLength(1);
   });
 
-  it('la même copie passée explicitement ne change que les variables de la scène', () => {
+  it('la copie de l’accueil reconstruite et passée explicitement rend le même DOM', () => {
+    // L'accueil passera `buildHomeStoryCopy({ appClip })` : un NOUVEL objet.
+    // Le mode « métier » dépend du drapeau `kind`, pas de l'identité de
+    // l'objet : aucune variable CSS, aucun titre réduit, DOM identique.
     const byDefault = renderToStaticMarkup(createElement(Story));
     const explicit = renderToStaticMarkup(createElement(Story, { copy: buildHomeStoryCopy({ appClip: true }) }));
-    // Seule différence permise : l'attribut style de la scène (mêmes textes en variables).
-    const strip = (html: string) => html.replace(/ style="--story-[^"]*"/, '');
-    expect(strip(explicit)).toBe(byDefault);
+    expect(explicit).toBe(byDefault);
+    const withoutClip = renderToStaticMarkup(createElement(Story, { copy: buildHomeStoryCopy({ appClip: false }) }));
+    expect(withoutClip).not.toContain('--story-');
+    expect(withoutClip).not.toContain('data-length');
+    // Seul le texte de l'étape 1 diffère.
+    const body = (copy: StoryText) => copy.steps[0].body;
+    expect(withoutClip.replace(body(buildHomeStoryCopy({ appClip: false })), '')).toBe(
+      byDefault.replace(body(HOME_STORY_COPY), ''),
+    );
+  });
+
+  it('une page métier, elle, pose ses variables', () => {
+    const page = pagesFor(TODAY).find((p) => p.story)!;
+    const copy = metierStoryCopy(page, { enriched: false })!;
+    expect(copy.kind).toBe('metier');
+    expect(renderToStaticMarkup(createElement(Story, { copy }))).toContain('--story-');
   });
 
   it('les replis du CSS sont les textes de l’accueil', () => {
@@ -220,7 +236,11 @@ describe('pages métier : la séquence de chaque métier', () => {
   }
 
   it('au comptoir d’aujourd’hui, le rideau dit la phrase exacte de l’écran du client', () => {
-    expect(read('app/e/[slug]/TurnCurtain.tsx')).toContain(TURN_HINT);
+    // La phrase est relue DANS l'élément de l'écran client, pas n'importe où dans le fichier.
+    const curtain = read('app/e/[slug]/TurnCurtain.tsx');
+    const hint = /className=\{styles\.turnHint\}>([^<{]+)</.exec(curtain)?.[1]?.trim();
+    expect(hint).toBe(TURN_HINT);
+    expect(HOME_STORY_COPY.turn.line).toBe(TURN_HINT);
     for (const page of pagesFor(TODAY)) {
       const copy = metierStoryCopy(page, { enriched: profileOpenOnPages(page.profile, TODAY) });
       if (copy) expect(copy.turn.line, page.slug).toBe(TURN_HINT);
@@ -264,6 +284,17 @@ describe('outils', () => {
     expect(splitTurn(`Votre véhicule est${NBSP}prêt`)).toEqual({ lead: 'Votre véhicule', main: `est${NBSP}prêt` });
     expect(splitTurn('A-042 · Guichet 3')).toEqual({ lead: 'A-042', main: 'Guichet 3' });
     expect(splitTurn('Prêt')).toEqual({ lead: '', main: 'Prêt' });
+  });
+
+  it('le libellé du seuil ne s’écrase pas quand la caméra se relève', () => {
+    // Inclinaisons de la séquence (52° téléphone, 56-58° ordinateur) : rendu d'origine.
+    for (const tilt of [52, 56, 58]) expect(seuilLabelTransform(tilt)).toBe('');
+    // Rideau (34°) : rallongé pour garder la hauteur apparente de la séquence.
+    const k = Number(/scaleY\(([\d.]+)\)/.exec(seuilLabelTransform(34))?.[1]);
+    expect(k * Math.sin((34 * Math.PI) / 180)).toBeCloseTo(Math.sin((52 * Math.PI) / 180), 2);
+    // Borné, et sûr pour une valeur absurde.
+    expect(seuilLabelTransform(1)).toBe('scaleY(1.600)');
+    expect(seuilLabelTransform(Number.NaN)).toBe('scaleY(1.600)');
   });
 
   it('cssString produit une chaîne CSS valide, même avec des caractères hostiles', () => {

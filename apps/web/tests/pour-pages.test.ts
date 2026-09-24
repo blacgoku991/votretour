@@ -5,10 +5,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MetierRoute, { generateMetadata, generateStaticParams, dynamicParams, revalidate } from '@/app/(marketing)/pour/[metier]/page';
 import MetiersIndexRoute, { generateMetadata as indexMetadata } from '@/app/(marketing)/pour/page';
+import { generateImageMetadata as ogImageMetadata } from '@/app/(marketing)/pour/[metier]/opengraph-image';
 import sitemap from '@/app/sitemap';
 import { MetierPageView } from '@/components/metiers/MetierPageView';
-import { SignatureVisual } from '@/components/metiers/Signature';
-import { profileOpenOnPages } from '@/components/metiers/model';
+import { SignatureVisual, receptionFraming } from '@/components/metiers/Signature';
+import { FinalCta } from '@/components/metiers/FinalCta';
+import { asSentence, metierOgAlt, metierOgLead, ogTitleLines, profileOpenOnPages } from '@/components/metiers/model';
+import { ogTitleSize } from '@/lib/seo/og';
 import { PlansStrip, startingPrice } from '@/components/metiers/PlansStrip';
 import { parseVideoEntry } from '@/components/video/manifest';
 import { CORE } from '@/lib/metiers/capabilities';
@@ -164,6 +167,55 @@ describe('métadonnées', () => {
     expect(indexMetadata().robots).toEqual({ index: true, follow: true });
   });
 
+  it('image de partage : un texte alternatif propre au métier, 404 sans rendu pour un slug inconnu', () => {
+    const alts = new Set<string>();
+    for (const { slug } of published) {
+      const page = selectPublishedMetiers().find((p) => p.slug === slug)!;
+      const images = ogImageMetadata({ params: { metier: slug } });
+      expect(images).toHaveLength(1);
+      expect(images[0]).toMatchObject({ id: 'partage', size: { width: 1200, height: 630 }, contentType: 'image/png' });
+      const alt = images[0]!.alt;
+      expect(alt).toBe(metierOgAlt(page));
+      expect(alt).toContain(page.seo.ogKicker);
+      alts.add(alt);
+    }
+    expect(alts.size).toBe(published.length);
+    // Aucune image déclarée : Next répond 404 avant d'appeler le rendu.
+    expect(ogImageMetadata({ params: { metier: 'inconnu' } })).toEqual([]);
+    for (const m of METIERS.filter((x) => !x.published)) expect(ogImageMetadata({ params: { metier: m.slug } })).toEqual([]);
+  });
+
+  it('la page ne déclare pas d’image à la main : l’URL (suffixe du groupe de routes) vient de Next', async () => {
+    const meta = await generateMetadata({ params: Promise.resolve({ metier: published[0]!.slug }) });
+    expect(meta.openGraph).not.toHaveProperty('images');
+    expect(meta.twitter).not.toHaveProperty('images');
+  });
+
+  it('image de partage : titre en phrase, accroche d’au plus trois lignes, jamais sous un titre trop long', () => {
+    // Relevés sur les images rendues : « Un garage où / personne ne / fait la
+    // queue au / comptoir. » (4 lignes) ; « Le barbershop / est plein, /
+    // personne / n’attend / debout. » (5 lignes, donc sans accroche).
+    expect(ogTitleLines('Un garage où personne ne fait la queue au comptoir.', 64)).toBe(4);
+    expect(ogTitleLines('Un comptoir de réparation qui ne déborde plus.', 64)).toBe(4);
+    expect(ogTitleLines('Le barbershop est plein, personne n’attend debout.', 64)).toBe(5);
+    const barbiers = selectPublishedMetiers().find((p) => p.slug === 'barbiers')!;
+    expect(metierOgLead(barbiers, 64)).toBeNull();
+    for (const page of selectPublishedMetiers()) {
+      const title = asSentence(page.seo.ogTitle);
+      expect(title).toMatch(/[.!?…]$/);
+      const lead = metierOgLead(page, ogTitleSize(title));
+      if (lead) {
+        expect(ogTitleLines(title, ogTitleSize(title))).toBeLessThanOrEqual(4);
+        expect(page.hero.lead.startsWith(lead)).toBe(true);
+        expect(lead.length).toBeLessThanOrEqual(130);
+        expect(lead).toMatch(/[.!?]$/);
+      }
+    }
+    expect(asSentence('Un fauteuil, une file')).toBe('Un fauteuil, une file.');
+    expect(asSentence('Complet ce soir ?')).toBe('Complet ce soir ?');
+    expect(asSentence('Déjà ponctué.')).toBe('Déjà ponctué.');
+  });
+
   it('un slug inconnu n’a pas de métadonnées', async () => {
     expect(await generateMetadata({ params: Promise.resolve({ metier: 'inconnu' }) })).toEqual({});
   });
@@ -238,6 +290,16 @@ describe('le gabarit rendu', () => {
       it('pas d’App Clip tant qu’il n’est pas publié', async () => {
         expect(text(await renderRoute(slug))).not.toMatch(/App\s*Clip/i);
       });
+
+      it('tous les H2 finissent par un point, comme sur l’accueil', async () => {
+        const html = await renderRoute(slug);
+        // Titres visibles seulement : l'intitulé sr-only de la séquence est un repère de navigation.
+        const h2 = [...html.matchAll(/<h2\b([^>]*)>([\s\S]*?)<\/h2>/g)]
+          .filter((m) => !/class="[^"]*\bsr-only\b/.test(m[1]!))
+          .map((m) => text(m[2]!).trim());
+        expect(h2.length).toBeGreaterThan(3);
+        for (const title of h2) expect(title, title).toMatch(/[.!?…»]$/);
+      });
     });
   }
 });
@@ -305,11 +367,55 @@ describe('signatures visuelles', () => {
     expect(visual(pageOf('guichets-et-services', ALL), true)).toMatch(/Appel en cours/);
   });
 
+  it('en « Réception », chaque métier pose son objet : jamais deux fois la même scène', () => {
+    const expected: Record<string, string> = {
+      garages: 'keys',
+      'reparation-telephone': 'phone',
+      restaurants: 'slate',
+      'guichets-et-services': 'tickets',
+      'salons-de-coiffure': 'magazines',
+    };
+    const seen = new Set<string>();
+    for (const [slug, prop] of Object.entries(expected)) {
+      const page = pageOf(slug, TODAY);
+      const html = visual(page, profileOpenOnPages(page.profile, TODAY));
+      expect(html, slug).toContain(`data-prop="${prop}"`);
+      // La légende est lue (figcaption), le dessin est décoratif.
+      expect(html, slug).toMatch(/<figcaption[^>]*>[^<]+<\/figcaption>/);
+      expect(html, slug).toMatch(/<svg[^>]*aria-hidden="true"/);
+      const framing = receptionFraming(page)!;
+      seen.add(`${framing.side}/${framing.tilt}/${framing.turn}`);
+    }
+    // Cadrages tous différents (côté, inclinaison, sens).
+    expect(seen.size).toBe(Object.keys(expected).length);
+    // Les barbiers gardent leurs trois fauteuils, les événements leurs vagues : pas d'objet.
+    expect(visual(pageOf('barbiers', TODAY), true)).not.toContain('data-prop=');
+    // Profil ouvert : l'objet du métier cède la place à l'objet du produit.
+    expect(visual(pageOf('garages', ALL), true)).not.toContain('data-prop=');
+  });
+
+  it('les objets de la « Réception » ne promettent rien de non livré', () => {
+    for (const slug of ['garages', 'reparation-telephone', 'restaurants', 'guichets-et-services']) {
+      const html = visual(pageOf(slug, TODAY), false);
+      expect(text(html), slug).not.toMatch(/devis|étape|diagnostic en cours|couverts|guichet \d/i);
+    }
+  });
+
   it('les composants de signature sont des composants serveur', () => {
-    for (const file of ['Chairs', 'Guichets', 'Reception', 'Tables', 'Workshop']) {
+    for (const file of ['Chairs', 'Guichets', 'Props', 'Reception', 'Tables', 'Workshop']) {
       const source = read(`components/metiers/signatures/${file}.tsx`);
       expect(source, file).not.toMatch(/'use client'|useState|useEffect/);
     }
+  });
+});
+
+describe('appel final', () => {
+  it('une seule légende, sur la plaque', () => {
+    const props = { title: 'T.', lead: 'L.', label: 'Ouvrir ma file', href: '/inscription?activite=barber' };
+    const withQr = text(renderToStaticMarkup(createElement(FinalCta, { ...props, qrSvg: '<svg viewBox="0 0 1 1"></svg>' })));
+    expect(withQr.match(/Scannez/gi)).toHaveLength(1);
+    const withoutQr = text(renderToStaticMarkup(createElement(FinalCta, { ...props, qrSvg: null })));
+    expect(withoutQr).not.toMatch(/Scannez/i);
   });
 });
 

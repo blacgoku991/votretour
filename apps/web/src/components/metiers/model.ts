@@ -46,6 +46,68 @@ export function metierSeuil(page: MetierPage): string {
 }
 
 /**
+ * Un titre affiché comme une phrase, avec son point final. Le registre
+ * écrit certains titres sans ponctuation (ils servent aussi de balise
+ * <title> ou de titre Open Graph, où le point n'a rien à faire) ; à
+ * l'écran et sur les images de partage, tous les H2 et tous les titres
+ * finissent par un point, comme sur l'accueil.
+ */
+export function asSentence(text: string): string {
+  const t = text.trim();
+  return /[.!?…:»]$/u.test(t) ? t : `${t}.`;
+}
+
+/** Au-delà, la phrase d'accroche d'une image de partage déborderait de trois lignes. */
+const OG_LEAD_MAX = 130;
+/**
+ * Signes par ligne du titre d'une image de partage, en Archivo étendu, à
+ * 64 px : 15 à 16 selon les lettres, relevé sur les images rendues. On
+ * compte 15, par prudence : mieux vaut une accroche en moins qu'un titre
+ * qui remonte sur le mot-symbole.
+ */
+const OG_CHARS_AT_64 = 15;
+
+/**
+ * Nombre de lignes du titre d'une image de partage, estimé par une coupe
+ * aux mots (Satori coupe de même) à la taille de police donnée.
+ */
+export function ogTitleLines(title: string, fontSize: number): number {
+  const budget = (OG_CHARS_AT_64 * 64) / fontSize;
+  let lines = 1;
+  let current = 0;
+  for (const word of title.trim().split(/\s+/u)) {
+    const next = current === 0 ? word.length : current + 1 + word.length;
+    if (next > budget && current > 0) {
+      lines += 1;
+      current = word.length;
+    } else {
+      current = next;
+    }
+  }
+  return lines;
+}
+
+/**
+ * La phrase d'accroche de l'image de partage d'un métier : la première
+ * phrase du chapô du héros (celle qui dit le geste), si elle tient en
+ * trois lignes ET si le titre en laisse la place (quatre lignes au plus) ;
+ * sinon rien, plutôt qu'une image qui déborde sur le mot-symbole.
+ */
+export function metierOgLead(page: MetierPage, titleFontSize: number): string | null {
+  if (ogTitleLines(asSentence(page.seo.ogTitle), titleFontSize) > 4) return null;
+  const first = /^.+?[.!?](?=\s|$)/u.exec(page.hero.lead.trim())?.[0] ?? page.hero.lead.trim();
+  return first.length > 0 && first.length <= OG_LEAD_MAX ? first : null;
+}
+
+/**
+ * Texte alternatif de l'image de partage d'un métier : ce qu'elle montre
+ * vraiment (le métier, sa promesse, son seuil), propre à chaque page.
+ */
+export function metierOgAlt(page: MetierPage): string {
+  return `${page.seo.ogKicker} — ${asSentence(page.seo.ogTitle)} La file Rangvia, couchée au sol jusqu’au seuil « ${metierSeuil(page)} ».`;
+}
+
+/**
  * Les autres métiers, pour le maillage : les voisins déclarés par le
  * registre d'abord (garages ↔ réparation, restaurants ↔ événements…),
  * puis tous les autres métiers publiés, dans l'ordre du registre.

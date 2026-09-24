@@ -18,18 +18,95 @@
 .panelTall { height: clamp(380px, 46vw, 540px); }
 .panelTall > :global(.scene3d) { position: absolute; inset: 0; height: 100%; }
 
+/* ------------------------------------------- L'objet du comptoir */
+/* Posé au sol, dans un coin du panneau ; la file se décale de l'autre
+   côté (translate statique, jamais animé). Aucune ombre : la tranche
+   d'os dessinée sous chaque pièce suffit à la poser. */
+.panelTall[data-side='right'] > :global(.scene3d) { translate: -9% 0; }
+.panelTall[data-side='left'] > :global(.scene3d) { translate: 9% 0; }
+.prop {
+  position: absolute;
+  bottom: 22px;
+  z-index: 1;
+  width: clamp(128px, 11vw + 40px, 184px);
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.prop[data-side='right'] { right: 22px; }
+.prop[data-side='left'] { left: 22px; }
+@media (max-width: 719px) {
+  .prop[data-side] { left: auto; right: auto; }
+}
+.propSvg { position: relative; display: block; width: 100%; height: auto; overflow: visible; }
+.propCaption {
+  position: relative;
+  max-width: 100%;
+  text-align: center;
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  line-height: 1.35;
+  color: color-mix(in oklab, var(--bone-100) 58%, transparent);
+  text-wrap: balance;
+}
+/* Textes dessinés dans les objets (étiquette, ardoise, ticket). */
+.propTiny {
+  font-size: 7px;
+  font-variation-settings: 'wdth' 88, 'wght' 720;
+  letter-spacing: 0.16em;
+}
+.propBig {
+  font-size: 23px;
+  font-variation-settings: 'wdth' 125, 'wght' 820;
+  letter-spacing: 0.02em;
+}
+.propChalk {
+  font-size: 12px;
+  font-variation-settings: 'wdth' 112, 'wght' 760;
+  letter-spacing: 0.1em;
+}
+@media (max-width: 719px) {
+  /* Sur téléphone, la file occupe toute la largeur : l'objet ne peut pas
+     se poser à côté. Il passe SOUS la scène, sur une bande du même sol,
+     dessin à gauche et légende à droite. */
+  .panelTall[data-side] { height: auto; }
+  .panelTall[data-side] > :global(.scene3d) { position: relative; inset: auto; height: 360px; translate: none; }
+  .prop {
+    position: relative;
+    inset: auto;
+    width: auto;
+    flex-direction: row;
+    gap: 16px;
+    padding: 14px 20px 18px;
+    border-top: 1px solid var(--floor-line);
+  }
+  .prop .propSvg { width: 104px; flex: none; }
+  .prop .propCaption { text-align: left; font-size: 0.6875rem; }
+}
+
 /* -------------------------------------------------------- Fauteuils */
+/* Trois files de trois places au plus : un panneau moins haut que celui
+   de la réception, et les files centrées verticalement (le seuil au-dessus
+   du centre, la queue en dessous), sans grille vide en bas. */
 .chairs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  height: clamp(340px, 40vw, 440px);
+  height: clamp(300px, 27vw, 380px);
 }
-.chair { height: 100% !important; }
+.chair { height: 100% !important; --world-top: calc(50% - 14px); }
 /* Les trois sols se touchent : une seule scène, trois files. */
 .chair + .chair { border-left: 1px dashed color-mix(in oklab, var(--bone-100) 6%, transparent); }
 @media (max-width: 719px) {
   /* Trois files dans 358 px : lattes plus étroites, libellés plus courts. */
   .chairs :global(.seuil3d__label) { font-size: 0.625rem; letter-spacing: 0.16em; }
+  /* Latte de 90 px : « Vous » seul, l'indice « Avec Sofia » est déjà dit
+     par le seuil de la file. (Libellé, puis indice, dans la face.) */
+  .chairs :global(.slot3d__face) > span > span:first-child { font-size: 12px; overflow: visible; }
+  .chairs :global(.slot3d__face) > span > span + span { display: none; }
+  .chairs :global(.slot3d__face) { padding-inline: 10px; }
 }
 
 /* ---------------------------------------------------------- Atelier */
@@ -110,4 +187,9 @@
 .calls > li[data-now='1'] { opacity: 1; }
 
 /* ----------------------------------------------------------- Vagues */
-.waves { padding-top: 24px; }
+.waves {
+  /* La barrière levée monte au-dessus de la piste : le haut en tient compte. */
+  padding: clamp(28px, 3.4vw, 52px) clamp(20px, 4vw, 56px) clamp(28px, 3vw, 44px);
+}
+.wavesFloor { inset: 0; }
+.wavesTrack { position: relative; }

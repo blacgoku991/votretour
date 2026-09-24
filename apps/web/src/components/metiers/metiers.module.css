@@ -412,7 +412,6 @@
   --plaque-rz: -3deg;
 }
 .ctaPlaqueObj { --plaque-w: 220px !important; }
-.ctaScan { display: none; }
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
     .ctaPlaque {
@@ -438,20 +437,6 @@
   .ctaVisual { order: 0; align-self: stretch; padding-block: 80px; }
   .ctaFloor { inset: 0 -100vw 96px 0; }
   .ctaPlaqueObj { --plaque-w: 260px !important; }
-  .ctaScan {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 40px;
-    display: block;
-    text-align: center;
-    font-variation-settings: 'wdth' 88, 'wght' 700;
-    font-size: 0.6875rem;
-    line-height: 1;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
 }
 
 /* ------------------------------------------------ 3. La signature */
@@ -471,6 +456,8 @@
   vertical-align: middle;
 }
 .sigStage { min-width: 0; }
+/* Signature pleine largeur (vagues) : le panneau suit le texte de près. */
+.sigGrid[data-wide='1'] { gap: 32px; }
 @media (min-width: 1024px) {
   .sigGrid:not([data-wide='1']) {
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
@@ -539,13 +526,15 @@
 .heroFloor { inset: 0; }
 .heroPass { position: relative; padding-block: 48px; }
 /* Le seuil en toutes lettres, posé au sol, très en retrait. */
+/* line-height 1 (et non 0,9) et 28 px de marge : l'accent et le pied des
+   capitales restent dans le panneau, quelle que soit sa hauteur. */
 .heroSeuil {
   position: absolute;
   left: 20px;
-  bottom: 16px;
+  bottom: 28px;
   font-variation-settings: 'wdth' 125, 'wght' 820;
   font-size: clamp(2.5rem, 1.6rem + 4vw, 5rem);
-  line-height: 0.9;
+  line-height: 1;
   letter-spacing: -0.02em;
   text-transform: uppercase;
   color: color-mix(in oklab, var(--bone-100) 7%, transparent);

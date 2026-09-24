@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import robots from '@/app/robots';
 import sitemap from '@/app/sitemap';
 import { config as middlewareConfig } from '@/middleware';
+import { publishedMetiers } from '@/lib/metiers/registry';
 import { buildRobots, buildSitemap } from '@/lib/seo/crawl';
 import {
   DISALLOWED_PATHS,
@@ -142,15 +143,23 @@ describe('sitemap.xml', () => {
     expect(sitemap()).toEqual([]);
   });
 
-  it('indexable : les pages publiques, en URL absolues sur siteUrl, sans route privée', () => {
+  it('indexable : les pages publiques (statiques + métiers publiés), en URL absolues sur siteUrl, sans route privée', () => {
     process.env.SEO_INDEXABLE = '1';
     const entries = sitemap();
     const urls = entries.map((e) => e.url);
+    // Les pages métier viennent du registre (même source que
+    // generateStaticParams de /pour/[metier]) : construites ici depuis
+    // publishedMetiers(), jamais recopiées, pour qu'un métier publié de
+    // plus ne casse pas ce test et qu'un métier oublié le casse.
+    const metiers = publishedMetiers();
+    expect(metiers.length).toBeGreaterThan(0);
     expect(urls).toEqual([
       `${SITE}/`,
       `${SITE}/tarifs`,
       `${SITE}/cgu`,
       `${SITE}/confidentialite`,
+      `${SITE}/pour`,
+      ...metiers.map((m) => `${SITE}/pour/${m.slug}`),
     ]);
     for (const entry of entries) {
       expect(entry.url.startsWith(`${siteUrl()}/`)).toBe(true);

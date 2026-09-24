@@ -1,5 +1,6 @@
 import { PartySize } from '@/components/objects/PartySize';
 import type { SignatureContent } from '@/lib/metiers/types';
+import type { ReceptionFraming } from './Props';
 import { Reception } from './Reception';
 import styles from './signatures.module.css';
 
@@ -14,8 +15,16 @@ import styles from './signatures.module.css';
 
 const STATES = ['called', 'ready', 'waiting', 'waiting'] as const;
 
-export function Tables({ signature, open }: { signature: SignatureContent; open: boolean }): React.JSX.Element {
-  if (!open || signature.kind !== 'tables') return <Reception signature={signature} />;
+export function Tables({
+  signature,
+  open,
+  framing,
+}: {
+  signature: SignatureContent;
+  open: boolean;
+  framing?: ReceptionFraming | null;
+}): React.JSX.Element {
+  if (!open || signature.kind !== 'tables') return <Reception signature={signature} framing={framing} />;
   const tents = signature.lanes
     .map((lane) => Number.parseInt(lane.label, 10))
     .filter((n) => Number.isInteger(n) && n > 0)

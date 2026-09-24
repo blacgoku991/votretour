@@ -6,6 +6,7 @@ import { displayRegistration, maskRegistration } from '@/lib/profiles/registrati
 import { formatTicketNo } from '@/lib/profiles/ticket';
 import type { SignatureContent } from '@/lib/metiers/types';
 import type { ProfileStage } from '@/lib/profiles/types';
+import type { ReceptionFraming } from './Props';
 import { Reception } from './Reception';
 import styles from './signatures.module.css';
 
@@ -46,13 +47,16 @@ export function Workshop({
   signature,
   profile,
   open,
+  framing,
 }: {
   signature: SignatureContent;
   profile: 'vehicle' | 'device';
   /** Le profil est-il ouvert sur les pages (`profileOpenOnPages`) ? */
   open: boolean;
+  /** Cadrage de la version « Réception » (objet du métier). */
+  framing?: ReceptionFraming | null;
 }): React.JSX.Element {
-  if (!open || signature.kind !== 'workshop') return <Reception signature={signature} />;
+  if (!open || signature.kind !== 'workshop') return <Reception signature={signature} framing={framing} />;
 
   const dossier = formatTicketNo('device', 42) ?? '0042';
   return (

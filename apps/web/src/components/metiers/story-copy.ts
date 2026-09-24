@@ -3,7 +3,7 @@ import { NO_REVIEW_ACTIVITIES } from '@/lib/profiles';
 import { profileNotificationCopy } from '@/lib/profiles/copy';
 import type { ProfileNotificationKind, QueueProfile } from '@/lib/profiles/types';
 import type { MetierPage } from '@/lib/metiers/types';
-import { HOME_STORY_COPY, type StoryText } from '@/components/home/story/copy';
+import { TURN_HINT, type StoryText } from '@/components/home/story/copy';
 
 /**
  * LA SÉQUENCE D'UNE PAGE MÉTIER — les mots de `Story`, tirés de la page
@@ -44,8 +44,8 @@ export function splitTurn(text: string): { lead: string; main: string } {
   return { lead: '', main: t };
 }
 
-/** Sous le rideau du client, en file d'aujourd'hui (app/e/[slug]/TurnCurtain.tsx). */
-export const TURN_HINT = 'Présentez-vous au comptoir';
+/** Sous le rideau du client, en file d'aujourd'hui : la constante partagée avec l'accueil. */
+export { TURN_HINT };
 
 /** Le titre de fin de visite, tel que le produit l'écrit (« Merci pour votre visite »). */
 const VISIT_DONE_TITLE = notificationCopy('visit_completed', { locationName: '' }).title;
@@ -88,6 +88,7 @@ export function metierStoryCopy(page: MetierPage, { enriched }: { enriched: bool
   });
 
   return {
+    kind: 'metier',
     hero: {
       label: page.hero.label,
       title: page.hero.title,

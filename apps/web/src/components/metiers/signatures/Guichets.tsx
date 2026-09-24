@@ -1,5 +1,6 @@
 import { TicketNumber } from '@/components/objects/TicketNumber';
 import type { SignatureContent } from '@/lib/metiers/types';
+import type { ReceptionFraming } from './Props';
 import { Reception } from './Reception';
 import styles from './signatures.module.css';
 
@@ -12,8 +13,16 @@ import styles from './signatures.module.css';
  * appelle en ce moment. Profil fermé : la file de l'accueil, vraie
  * aujourd'hui.
  */
-export function Guichets({ signature, open }: { signature: SignatureContent; open: boolean }): React.JSX.Element {
-  if (!open || signature.kind !== 'guichets') return <Reception signature={signature} />;
+export function Guichets({
+  signature,
+  open,
+  framing,
+}: {
+  signature: SignatureContent;
+  open: boolean;
+  framing?: ReceptionFraming | null;
+}): React.JSX.Element {
+  if (!open || signature.kind !== 'guichets') return <Reception signature={signature} framing={framing} />;
   return (
     <div className={`${styles.panel} ${styles.callBoard}`}>
       <p className={`t-label ${styles.callHead}`}>Appel en cours</p>

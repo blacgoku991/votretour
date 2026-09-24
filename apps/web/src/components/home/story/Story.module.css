@@ -115,6 +115,14 @@
   pointer-events: none;
 }
 
+/* Affiche (mouvement réduit, sans JavaScript) sous 420 px : la file
+   inclinée recule vers la droite et la plaque rétrécit un peu, pour que
+   les numéros de rang peints à gauche du rail (3, 4) ne passent pas sous
+   la plaque. --poster-tx ne sert qu'à l'affiche. */
+@media (max-width: 419px) {
+  .stage { --poster-tx: calc(170px - 50vw); }
+}
+
 @media (min-width: 768px) and (max-width: 1023px) {
   .stage {
     --pitch: 56px;
@@ -169,6 +177,8 @@
   margin-top: calc(var(--pitch) * 0.5);
 }
 .seuil { opacity: 0; }
+/* Le libellé s'allonge depuis le haut du linteau (voir seuilLabelTransform). */
+.seuil :global(.seuil3d__label) { transform-origin: 50% 0; }
 /* Sous 1024 px, les cartes du HUD (notification, panneau pro, Merci)
    recouvrent le sol : ses numéros s'estompent pour ne pas dépasser en
    fragments autour d'elles. */
@@ -291,6 +301,10 @@
 .plaqueObj { --plaque-w: 84px !important; }
 @media (min-width: 768px) and (max-width: 1023px) {
   .plaqueObj { --plaque-w: 100px !important; }
+}
+/* Affiche sous 420 px : voir --poster-tx plus haut. */
+@media (max-width: 419px) and (prefers-reduced-motion: reduce) {
+  .plaqueObj { --plaque-w: 74px !important; }
 }
 .phone {
   position: absolute;
@@ -770,6 +784,14 @@
     background: none;
     scroll-margin-top: calc(var(--site-header-h) + 10svh);
   }
+  /* Page métier : la séquence est suivie de sections riches (le problème,
+     la signature) ; piste plus courte sous la dernière étape (environ
+     330 px de vide au lieu de 650 à 1440 × 900). La scène reste collée
+     jusqu'à t ≈ 5,7 : le « Merci » est lu en entier, et la file finit de
+     revenir à plat pendant que la scène s'en va. (L'accueil ne pose pas
+     data-kind : sa piste est inchangée.) */
+  .story[data-kind='metier'] .steps { padding-bottom: 28svh; }
+  .story[data-kind='metier'] .step:last-child { min-height: 52svh; }
   .stepInner { max-width: 30rem; }
   /* Encoche au niveau du kicker ; l'étape active reçoit la latte vermillon. */
   .kicker::before,

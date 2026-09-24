@@ -49,10 +49,12 @@ export function FinalCta({
               pose="none"
               className={styles.ctaPlaqueObj}
               qr={qrSvg ? <span dangerouslySetInnerHTML={{ __html: qrSvg }} /> : undefined}
-              caption="Scannez pour commencer"
+              // Une seule légende, sur la plaque elle-même : le QR mène à
+              // l'inscription, pour continuer sur son téléphone. Sans QR, la
+              // plaque garde sa légende d'objet NFC.
+              caption={qrSvg ? 'Scannez pour continuer sur mobile' : undefined}
             />
           </div>
-          {qrSvg && <p className={styles.ctaScan}>Scannez pour continuer sur votre téléphone</p>}
         </div>
       </div>
     </section>
