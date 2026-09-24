@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { z } from 'zod';
 import { AppError, toAppError } from '@/lib/errors';
 import { assertPlatformAdmin } from '@/server/auth';
@@ -10,6 +10,7 @@ import { propagate, setQueueStatus } from '@/server/queue';
 import { dispatchEventEntryNotification } from '@/server/notifications/dispatch';
 import { env } from '@/lib/env';
 import { eventAccessPath } from '@/lib/event-pass';
+import { PLANS_TAG } from '@/lib/public-plans';
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string; code: string };
 
@@ -132,6 +133,9 @@ export async function updatePlan(
 
     const { error } = await supabaseAdmin().from('plans').update(patch).eq('id', parsed.planId);
     if (error) throw error;
+    // Les pages métier (ISR) lisent les offres en cache étiqueté : le prix
+    // modifié y apparaît tout de suite, sans attendre l'heure de revalidation.
+    revalidateTag(PLANS_TAG);
 
     await audit({
       actor: 'platform_admin', actorUserId: admin.id, action: 'plan.updated',
