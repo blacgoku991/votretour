@@ -59,7 +59,8 @@ cd /opt/votretour/deploy
 Le script demande votre domaine et votre adresse, puis génère tous les
 secrets : mot de passe PostgreSQL, secret JWT, clés `anon` et
 `service_role`, clés Realtime, poivre de session, secret des tâches
-planifiées, paire VAPID pour les notifications Android.
+planifiées, paire VAPID pour les notifications Android, secret des
+passes Apple Wallet (`WALLET_AUTH_SECRET`).
 
 Relançable sans danger : il ne régénère jamais un secret déjà en place.
 
@@ -149,6 +150,25 @@ cd /opt/votretour/deploy && ./scripts/update.sh
 ```
 
 Sauvegarde, `git pull`, reconstruction, migrations, redémarrage.
+
+### Passes Wallet (facultatif)
+
+Le client peut garder son ticket dans Apple Wallet ou Google Wallet,
+mis à jour sur l'écran verrouillé. Tout se règle dans `.env`, bloc
+**PASSES WALLET** : `APPLE_WALLET_*` (les cinq lignes produites par
+`scripts/wallet-apple-import.sh` sur le Mac qui a exporté le certificat)
+et `GOOGLE_WALLET_*` (Issuer ID, clé du compte de service en base64,
+mode `demo` puis `production`). Puis :
+
+```bash
+docker compose up -d app
+```
+
+Aucun conteneur de plus : le conteneur `cron` vide déjà la file d'envoi
+Wallet chaque minute. Sans ces valeurs, aucun bouton n'apparaît ; la
+carte **Passes Wallet** de `/admin` dit ce qui manque, et alerte 30
+jours avant l'expiration annuelle du certificat Apple. Pas à pas :
+**§18 de `SETUP.md`**.
 
 ### Journaux
 

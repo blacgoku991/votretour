@@ -247,6 +247,24 @@ services:
       LEGAL_HOST_NAME: ${LEGAL_HOST_NAME:-}
       LEGAL_HOST_ADDRESS: ${LEGAL_HOST_ADDRESS:-}
       LEGAL_UPDATED_AT: ${LEGAL_UPDATED_AT:-}
+      # Passes Wallet (facultatif, SETUP.md § 18). Vides : aucun bouton,
+      # et la carte « Passes Wallet » de /admin dit ce qui manque. Lues
+      # au démarrage, un « docker compose up -d app » suffit. Aucun
+      # service de plus : le conteneur cron ci-dessous vide déjà la file
+      # d'envoi Wallet chaque minute (/api/cron/notifications).
+      APPLE_WALLET_PASS_TYPE_ID: ${APPLE_WALLET_PASS_TYPE_ID:-}
+      APPLE_WALLET_CERT_PEM: ${APPLE_WALLET_CERT_PEM:-}
+      APPLE_WALLET_KEY_PEM: ${APPLE_WALLET_KEY_PEM:-}
+      APPLE_WALLET_KEY_PASSPHRASE: ${APPLE_WALLET_KEY_PASSPHRASE:-}
+      APPLE_WALLET_WWDR_PEM: ${APPLE_WALLET_WWDR_PEM:-}
+      APPLE_WALLET_TEAM_ID: ${APPLE_WALLET_TEAM_ID:-}
+      # Vide : dérivé de SESSION_HASH_SECRET. bootstrap.sh le remplit.
+      WALLET_AUTH_SECRET: ${WALLET_AUTH_SECRET:-}
+      GOOGLE_WALLET_ISSUER_ID: ${GOOGLE_WALLET_ISSUER_ID:-}
+      GOOGLE_WALLET_SERVICE_ACCOUNT_JSON: ${GOOGLE_WALLET_SERVICE_ACCOUNT_JSON:-}
+      GOOGLE_WALLET_MODE: ${GOOGLE_WALLET_MODE:-demo}
+      GOOGLE_WALLET_CLASS_PREFIX: ${GOOGLE_WALLET_CLASS_PREFIX:-rangvia}
+      GOOGLE_WALLET_ROTATING_BARCODE: ${GOOGLE_WALLET_ROTATING_BARCODE:-false}
     volumes:
       - media-data:/app/data/uploads
 

@@ -10,6 +10,7 @@ import {
   auditActionLabel, labelOf,
 } from './labels';
 import { monthlyRecurringCents } from './revenue';
+import { WalletStatusCard, loadWalletCard } from './WalletStatusCard';
 import styles from './admin.module.css';
 
 export const metadata: Metadata = { title: 'Salle de contrôle', robots: { index: false } };
@@ -63,6 +64,7 @@ export default async function AdminHomePage({
     searchOrganizations,
     searchEvents,
     searchPlates,
+    wallet,
   ] = await Promise.all([
     db.rpc('platform_stats'),
     db.from('queues')
@@ -116,6 +118,7 @@ export default async function AdminHomePage({
           .order('created_at', { ascending: false })
           .limit(8)
       : Promise.resolve({ data: [] }),
+    loadWalletCard(db, now),
   ]);
 
   const stats = raw as PlatformStats | null;
@@ -430,6 +433,8 @@ export default async function AdminHomePage({
           </div>
         </section>
       </div>
+
+      <WalletStatusCard data={wallet} />
 
       <div className={styles.commandGrid}>
         <section className={styles.adminCard}>

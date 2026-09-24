@@ -1,0 +1,453 @@
+import 'server-only';
+import { X509Certificate } from 'node:crypto';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { formatNumber } from '@/lib/format';
+import styles from './wallet-status.module.css';
+
+/**
+ * CARTE « PASSES WALLET » de la salle de contrôle.
+ *
+ * Côté client, un fournisseur Wallet qui n'est pas prêt n'affiche RIEN :
+ * ni bouton grisé, ni mention. C'est voulu (aucune fausse
+ * fonctionnalité), mais cela rend une panne silencieuse. Cette carte est
+ * donc le seul endroit qui dit, pour Apple et pour Google :
+ *   - non configuré (quelles variables manquent),
+ *   - prêt,
+ *   - erreur de configuration, avec la raison exacte du fournisseur ;
+ * plus ce qui s'use ou se bascule : l'échéance du certificat Apple
+ * (alerte à J-30, il se renouvelle chaque année) et le mode Google
+ * (démo : testeurs seulement ; production : tout le monde).
+ *
+ * Aucune valeur secrète n'est lue pour l'affichage : seulement la
+ * présence des variables, et la date de fin du certificat public.
+ */
+
+export type WalletProviderId = 'apple' | 'google';
+
+/** Même forme que ProviderStatus (server/wallet/types.ts, contrat § 3.1 du plan Wallet). */
+export interface WalletProviderStatus {
+  ready: boolean;
+  reason: string | null;
+  details?: Record<string, unknown>;
+}
+
+type WalletState = 'unconfigured' | 'ready' | 'error';
+
+interface ProviderCard {
+  id: WalletProviderId;
+  state: WalletState;
+  reason: string | null;
+  /** Variables à renseigner (noms seulement), quand rien n'est configuré. */
+  missing: string[];
+  /** Variables présentes, mais registre des fournisseurs pas encore branché. */
+  awaitingCode: boolean;
+  activePasses: number | null;
+  alerts24h: number | null;
+  dead7d: number | null;
+}
+
+export interface WalletCardData {
+  apple: ProviderCard & { cert: { expiresAt: string; daysLeft: number } | null };
+  google: ProviderCard & { mode: 'demo' | 'production' | null };
+}
+
+/* ====================================================================
+   Branchement au registre des fournisseurs
+   ==================================================================== */
+
+/**
+ * État des fournisseurs, lu dans le registre du lot W1
+ * (server/wallet/providers.ts → walletStatuses(), mis en cache 5 min).
+ *
+ * REBRANCHEMENT : ce module n'existe pas encore dans cette branche. Une
+ * fois le lot W1 intégré, remplacer le corps par :
+ *
+ *   const { walletStatuses } = await import('@/server/wallet/providers');
+ *   return walletStatuses();
+ *
+ * (import dynamique : la page d'accueil de /admin ne charge le code
+ * Wallet que lorsqu'elle s'affiche). D'ici là, `null` = « non
+ * configuré » pour les deux : on n'affiche jamais « prêt » sans que le
+ * fournisseur l'ait dit lui-même.
+ */
+async function readWalletStatuses(): Promise<Record<WalletProviderId, WalletProviderStatus> | null> {
+  return null;
+}
+
+/* ====================================================================
+   Lecture
+   ==================================================================== */
+
+/**
+ * Variables présentes. Lues directement dans process.env plutôt que dans
+ * lib/env.ts : ce dernier appartient au socle Wallet (lot W1) et gagnera
+ * `integrationStatus().appleWalletConfigured` / `googleWalletConfigured`,
+ * qui disent la même chose. Seule la PRÉSENCE est testée ici.
+ */
+const REQUIRED_ENV: Record<WalletProviderId, readonly string[]> = {
+  apple: [
+    'APPLE_WALLET_PASS_TYPE_ID',
+    'APPLE_WALLET_CERT_PEM',
+    'APPLE_WALLET_KEY_PEM',
+    'APPLE_WALLET_WWDR_PEM',
+  ],
+  google: ['GOOGLE_WALLET_ISSUER_ID', 'GOOGLE_WALLET_SERVICE_ACCOUNT_JSON'],
+};
+
+function missingEnv(id: WalletProviderId): string[] {
+  return REQUIRED_ENV[id].filter((name) => !process.env[name]?.trim());
+}
+
+/** Au moins une variable renseignée : l'exploitant a commencé la configuration. */
+function touched(id: WalletProviderId): boolean {
+  return missingEnv(id).length < REQUIRED_ENV[id].length;
+}
+
+function classify(
+  id: WalletProviderId,
+  status: WalletProviderStatus | undefined,
+): Pick<ProviderCard, 'state' | 'reason' | 'missing' | 'awaitingCode'> {
+  const missing = missingEnv(id);
+  if (status?.ready) return { state: 'ready', reason: null, missing: [], awaitingCode: false };
+  // Registre absent : « non configuré », même si les variables sont là.
+  if (!status) {
+    return { state: 'unconfigured', reason: null, missing, awaitingCode: missing.length === 0 };
+  }
+  // Rien de renseigné : pas une erreur, un choix (Wallet est facultatif).
+  if (!touched(id)) return { state: 'unconfigured', reason: null, missing, awaitingCode: false };
+  return {
+    state: 'error',
+    reason: status.reason?.trim()
+      || (missing.length > 0 ? 'Variables manquantes : ' + missing.join(', ') : 'raison non précisée'),
+    missing,
+    awaitingCode: false,
+  };
+}
+
+/** Date ISO (ou Date) lue dans `details`, sous l'un des noms usuels. */
+function detailDate(details: Record<string, unknown> | undefined, keys: string[]): Date | null {
+  for (const key of keys) {
+    const value = details?.[key];
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+    if (typeof value === 'string' || typeof value === 'number') {
+      const date = new Date(value);
+      if (!Number.isNaN(date.getTime())) return date;
+    }
+  }
+  return null;
+}
+
+/**
+ * Fin de validité du certificat Pass Type ID. Le fournisseur Apple la
+ * donne normalement dans `details` ; à défaut, on la lit dans le
+ * certificat PUBLIC (jamais dans la clé), pour que l'alerte à J-30
+ * existe même quand le fournisseur est en erreur, par exemple parce
+ * que le certificat vient justement d'expirer.
+ */
+function appleCertExpiry(details: Record<string, unknown> | undefined): Date | null {
+  const fromProvider = detailDate(details, ['certExpiresAt', 'expiresAt', 'notAfter']);
+  if (fromProvider) return fromProvider;
+  const raw = process.env.APPLE_WALLET_CERT_PEM?.trim();
+  if (!raw) return null;
+  try {
+    const pem = raw.includes('BEGIN CERTIFICATE')
+      ? raw.replace(/\\n/g, '\n')
+      : Buffer.from(raw, 'base64').toString('utf8');
+    if (!pem.includes('BEGIN CERTIFICATE')) return null;
+    const date = new Date(new X509Certificate(pem).validTo);
+    return Number.isNaN(date.getTime()) ? null : date;
+  } catch {
+    return null; // Certificat illisible : le fournisseur le dira dans sa raison.
+  }
+}
+
+function googleMode(details: Record<string, unknown> | undefined): 'demo' | 'production' {
+  const value = String(details?.mode ?? process.env.GOOGLE_WALLET_MODE ?? '').trim().toLowerCase();
+  return value === 'production' ? 'production' : 'demo';
+}
+
+/** Un compte qui échoue (table absente d'une base pas encore migrée…) vaut « — », pas 0. */
+async function countOrNull(
+  query: PromiseLike<{ count: number | null; error: unknown }>,
+): Promise<number | null> {
+  try {
+    const { count, error } = await query;
+    return error ? null : (count ?? 0);
+  } catch {
+    return null;
+  }
+}
+
+export async function loadWalletCard(db: SupabaseClient, now = new Date()): Promise<WalletCardData> {
+  const since24h = new Date(now.getTime() - 24 * 3_600_000).toISOString();
+  const statuses = await readWalletStatuses().catch(() => null);
+
+  const counts = (provider: WalletProviderId) => Promise.all([
+    // « Actif » : détenu par le fournisseur (appareil inscrit, objet
+    // créé chez Google) et encore tenu à jour.
+    countOrNull(db.from('wallet_passes').select('id', { count: 'exact', head: true })
+      .eq('provider', provider).eq('state', 'active').eq('live', true)),
+    // Alertes réellement acceptées par Apple ou Google (plan § 5.7).
+    countOrNull(db.from('notification_deliveries').select('id', { count: 'exact', head: true })
+      .eq('channel', provider === 'apple' ? 'apple_wallet' : 'google_wallet')
+      .eq('status', 'sent').gte('sent_at', since24h)),
+    // Envois abandonnés ; la purge les efface après 7 jours.
+    countOrNull(db.from('wallet_outbox').select('id', { count: 'exact', head: true })
+      .eq('provider', provider).eq('status', 'dead')),
+  ]);
+
+  const [[appleActive, appleAlerts, appleDead], [googleActive, googleAlerts, googleDead]] =
+    await Promise.all([counts('apple'), counts('google')]);
+
+  const appleStatus = statuses?.apple;
+  const googleStatus = statuses?.google;
+  const apple = classify('apple', appleStatus);
+  const google = classify('google', googleStatus);
+
+  const expiry = apple.state === 'unconfigured' && !apple.awaitingCode ? null : appleCertExpiry(appleStatus?.details);
+
+  return {
+    apple: {
+      id: 'apple',
+      ...apple,
+      activePasses: appleActive,
+      alerts24h: appleAlerts,
+      dead7d: appleDead,
+      cert: expiry
+        ? {
+            expiresAt: expiry.toISOString(),
+            daysLeft: Math.floor((expiry.getTime() - now.getTime()) / 86_400_000),
+          }
+        : null,
+    },
+    google: {
+      id: 'google',
+      ...google,
+      activePasses: googleActive,
+      alerts24h: googleAlerts,
+      dead7d: googleDead,
+      mode: touched('google') ? googleMode(googleStatus?.details) : null,
+    },
+  };
+}
+
+/* ====================================================================
+   Affichage
+   ==================================================================== */
+
+const STATE_LABEL: Record<WalletState, string> = {
+  unconfigured: 'Non configuré',
+  ready: 'Prêt',
+  error: 'Erreur de configuration',
+};
+
+const PROVIDER_META: Record<WalletProviderId, { name: string; device: string; hidden: string }> = {
+  apple: {
+    name: 'Apple Wallet',
+    device: 'iPhone · pass signé, mis à jour par APNs',
+    hidden: 'Aucun bouton Apple Wallet n’est proposé aux clients.',
+  },
+  google: {
+    name: 'Google Wallet',
+    device: 'Android · objet tenu à jour par l’API Google',
+    hidden: 'Aucun bouton Google Wallet n’est proposé aux clients.',
+  },
+};
+
+/** Fenêtre de la jauge : un certificat Pass Type ID vaut un an. */
+const CERT_WINDOW_DAYS = 365;
+const CERT_WARN_DAYS = 30;
+
+const dateFormat = new Intl.DateTimeFormat('fr-FR', {
+  day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Paris',
+});
+
+export function WalletStatusCard({ data }: { data: WalletCardData }) {
+  const ready = [data.apple, data.google].filter((p) => p.state === 'ready').length;
+  const errors = [data.apple, data.google].filter((p) => p.state === 'error').length;
+  const certWarn = data.apple.cert !== null && data.apple.cert.daysLeft <= CERT_WARN_DAYS;
+
+  return (
+    <section className={styles.card} aria-labelledby="wallet-titre">
+      <div className={styles.head}>
+        <div>
+          <span className={styles.kicker}>PASSES WALLET</span>
+          <h2 id="wallet-titre">Apple Wallet et Google Wallet</h2>
+          <p className={styles.lead}>
+            Un fournisseur qui n’est pas prêt n’affiche aucun bouton côté client.
+            La raison exacte n’apparaît qu’ici.
+          </p>
+        </div>
+        <span
+          className={errors > 0 || certWarn ? 'chip chip--copper' : ready > 0 ? 'chip chip--jade' : 'chip'}
+        >
+          {ready}/2 {ready > 1 ? 'prêts' : 'prêt'}
+        </span>
+      </div>
+
+      <div className={styles.grid}>
+        <ProviderTicket provider={data.apple} index={0}>
+          {data.apple.cert && <CertGauge cert={data.apple.cert} />}
+        </ProviderTicket>
+        <ProviderTicket provider={data.google} index={1}>
+          {data.google.mode && <ModeSwitch mode={data.google.mode} />}
+        </ProviderTicket>
+      </div>
+    </section>
+  );
+}
+
+function ProviderTicket({
+  provider, index, children,
+}: {
+  provider: ProviderCard;
+  index: number;
+  children?: React.ReactNode;
+}) {
+  const meta = PROVIDER_META[provider.id];
+  const showMetrics = provider.state !== 'unconfigured' || (provider.activePasses ?? 0) > 0;
+
+  return (
+    <article
+      className={styles.ticket}
+      data-state={provider.state}
+      style={{ '--i': index } as React.CSSProperties}
+      aria-label={`${meta.name} : ${STATE_LABEL[provider.state]}`}
+    >
+      <header className={styles.stub}>
+        <div className={styles.stubText}>
+          <h3>{meta.name}</h3>
+          <p>{meta.device}</p>
+        </div>
+        <span className={styles.state} data-state={provider.state}>
+          <i aria-hidden="true" />
+          {STATE_LABEL[provider.state]}
+        </span>
+      </header>
+
+      <div className={styles.perforation} aria-hidden="true" />
+
+      <div className={styles.body}>
+        {provider.state === 'error' && (
+          <div className={styles.reason} role="note">
+            <span>Raison</span>
+            <p>{provider.reason}</p>
+          </div>
+        )}
+
+        {provider.state === 'unconfigured' && (
+          <div className={styles.setup}>
+            <p>{meta.hidden}</p>
+            {provider.awaitingCode ? (
+              <p className={styles.setupHint}>
+                Variables présentes : l’intégration n’est pas encore branchée dans cette version.
+              </p>
+            ) : provider.missing.length > 0 ? (
+              <>
+                <p className={styles.setupHint}>À renseigner dans le fichier .env du serveur :</p>
+                <ul className={styles.vars}>
+                  {provider.missing.map((name) => <li key={name}><code>{name}</code></li>)}
+                </ul>
+              </>
+            ) : null}
+            <p className={styles.setupHint}>Mode d’emploi : SETUP.md, section 18.</p>
+          </div>
+        )}
+
+        {showMetrics && (
+          <div className={styles.metrics}>
+            <div className={styles.hero}>
+              <strong className="t-num">{metric(provider.activePasses)}</strong>
+              <span>
+                {(provider.activePasses ?? 0) <= 1 ? 'pass actif' : 'passes actifs'}
+                <small>dans un Wallet, tenus à jour</small>
+              </span>
+            </div>
+            <ol className={styles.slats}>
+              <li>
+                <span>Alertes · 24 h</span>
+                <strong className="t-num">{metric(provider.alerts24h)}</strong>
+              </li>
+              <li data-alert={(provider.dead7d ?? 0) > 0 ? 'true' : undefined}>
+                <span>Envois abandonnés · 7 j</span>
+                <strong className="t-num">{metric(provider.dead7d)}</strong>
+              </li>
+            </ol>
+          </div>
+        )}
+
+        {children}
+      </div>
+    </article>
+  );
+}
+
+function metric(value: number | null): string {
+  return value === null ? '—' : formatNumber(value);
+}
+
+function CertGauge({ cert }: { cert: { expiresAt: string; daysLeft: number } }) {
+  const { daysLeft } = cert;
+  const tone = daysLeft < 0 ? 'expired' : daysLeft <= CERT_WARN_DAYS ? 'warn' : 'ok';
+  const ratio = Math.min(1, Math.max(0, daysLeft / CERT_WINDOW_DAYS));
+  const date = dateFormat.format(new Date(cert.expiresAt));
+  const sentence = daysLeft < 0
+    ? `Expiré depuis ${formatNumber(-daysLeft)} jour${-daysLeft > 1 ? 's' : ''}`
+    : daysLeft === 0
+      ? 'Expire aujourd’hui'
+      : `Encore ${formatNumber(daysLeft)} jour${daysLeft > 1 ? 's' : ''}`;
+
+  return (
+    <div className={styles.cert} data-tone={tone}>
+      <div className={styles.certHead}>
+        <span>Certificat Pass Type ID</span>
+        <strong>{daysLeft < 0 ? 'expiré le ' : 'expire le '}{date}</strong>
+      </div>
+      <div
+        className={styles.gauge}
+        role="img"
+        aria-label={`${sentence}. Alerte à 30 jours de l’échéance.`}
+        style={{ '--ratio': ratio, '--warn': CERT_WARN_DAYS / CERT_WINDOW_DAYS } as React.CSSProperties}
+      >
+        <span className={styles.gaugeWarn} />
+        <span className={styles.gaugeFill} />
+        <span className={styles.gaugeMark}><i>J-30</i></span>
+      </div>
+      <p className={styles.certFoot}>
+        <span>{sentence}</span>
+        {tone !== 'ok' && (
+          <span className={styles.certAction}>
+            {tone === 'expired'
+              ? 'Aucun pass Apple ne peut être signé : renouvelez le certificat.'
+              : 'À renouveler dans le portail Apple Developer.'}
+          </span>
+        )}
+      </p>
+    </div>
+  );
+}
+
+function ModeSwitch({ mode }: { mode: 'demo' | 'production' }) {
+  return (
+    <div className={styles.mode}>
+      <div className={styles.modeHead}>
+        <span>Mode de l’émetteur</span>
+        <div
+          className={styles.modeTrack}
+          data-mode={mode}
+          role="img"
+          aria-label={mode === 'demo' ? 'Mode démo' : 'Mode production'}
+        >
+          <span className={styles.modeThumb} aria-hidden="true" />
+          <span data-on={mode === 'demo' ? 'true' : undefined}>Démo</span>
+          <span data-on={mode === 'production' ? 'true' : undefined}>Production</span>
+        </div>
+      </div>
+      <p>
+        {mode === 'demo'
+          ? 'Seuls les comptes de test déclarés dans la console Google voient le bouton ; les passes portent « [TEST ONLY] ».'
+          : 'Accès en publication accordé par Google : le bouton est proposé à tous les clients Android.'}
+      </p>
+    </div>
+  );
+}

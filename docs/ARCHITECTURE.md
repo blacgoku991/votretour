@@ -206,7 +206,75 @@ contraste — contre les deux surfaces réelles du produit, claire et sombre.
 
 ---
 
-## 9. Ce qui reste ouvert
+## 9. Passes Wallet : une file d'envoi commune, alimentée par la base
+
+### Le problème
+
+Un ticket ajouté à Apple Wallet ou à Google Wallet doit suivre la file
+**sans que la page soit ouverte**, et sans que le client reçoive deux
+alertes pour le même moment. Deux fournisseurs aux protocoles opposés :
+Apple ne reçoit qu'un push vide et vient relire le pass sur notre service
+web ; Google reçoit un PATCH de l'objet, et ne fait sonner le téléphone que
+sur un message explicite, trois fois par 24 h au plus. Et une panne chez
+l'un d'eux ne doit jamais bloquer le bouton « Suivant » du commerçant.
+
+### Le choix
+
+- **Un registre** `wallet_passes` (une ligne par ticket et par
+  fournisseur) et **une file d'envoi** `wallet_outbox`, alimentée
+  **uniquement par des déclencheurs** sur `queue_entries`,
+  `event_access_passes`, `queues`, `event_campaigns` et la marque de
+  l'établissement. Toutes les transitions du moteur passent par un
+  `UPDATE` : aucun chemin applicatif ne peut oublier de prévenir le Wallet.
+- **Au plus une ligne en attente par pass** : dix recalculs de position en
+  deux secondes donnent un envoi. La ligne est un drapeau de travail, pas
+  un contenu : au moment d'envoyer, le serveur relit l'état courant
+  (`wallet_pass_snapshot`). Un changement mineur attend 20 s après le
+  précédent ; au-delà de 20 personnes devant, le pass dit « Plus de 20 »,
+  ce qui supprime la plupart des envois pendant un drop.
+- **Un modèle de vue** pur, `buildWalletView()`, puis deux traducteurs
+  (`pass.json` pour Apple, PATCH pour Google) : les deux plateformes
+  affichent les mêmes textes aux mêmes moments. Aucun prénom n'entre dans
+  un pass, ni dans l'instantané qui sert à le dessiner.
+- **Une règle d'alerte** pure, `decideWalletAlert()` : « C'est votre tour »
+  et l'ouverture d'un accès alertent toujours ; les autres moments
+  seulement si aucun autre canal (Web Push, App Clip) ne les a déjà livrés,
+  d'après `notification_deliveries`. Un envoi Wallet qui porte une alerte y
+  est inscrit (`apple_wallet`, `google_wallet`) quand le fournisseur l'a
+  accepté, comme les autres canaux.
+- **Vidage** après la réponse (`after()` dans `propagate()`), et filet
+  chaque minute par `/api/cron/notifications`. La mise en file est isolée
+  dans un bloc d'exception : une erreur Wallet n'annule jamais une action de
+  file.
+- **Masquage** : chaque fournisseur expose `status() → { ready, reason }`.
+  Non prêt, il n'affiche aucun bouton côté client ; la raison n'apparaît
+  que dans la carte **Passes Wallet** du super-admin.
+- **Effacement** 24 h après la fin du passage (inscriptions Apple
+  supprimées, contenu Google vidé), suppression des lignes 7 jours plus
+  tard, par le cron de maintenance.
+
+### Le coût
+
+- Un déclencheur par ligne modifiée ; sans pass, il coûte une lecture
+  d'index partiel vide.
+- Des secrets de plus à exploiter : certificat Pass Type ID à renouveler
+  chaque année (alerte à J-30 dans `/admin`), clé de compte de service
+  Google. Tout est facultatif : sans eux, le produit est inchangé.
+- L'API Google ne permet pas de supprimer un objet : on en efface le
+  contenu.
+
+### Écarté
+
+- **Pousser depuis le code applicatif** après chaque action : il suffisait
+  d'un chemin oublié (un cron, une restauration) pour qu'un pass mente.
+- **Une file par fournisseur** : deux jeux de règles de fusion, de débit et
+  d'alerte à garder alignés, pour un même ticket.
+- **Un service dédié** : le conteneur `cron` existant et `after()`
+  suffisent au volume d'un commerce comme d'un drop.
+
+---
+
+## 10. Ce qui reste ouvert
 
 | Sujet | État | Piste |
 |---|---|---|

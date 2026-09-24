@@ -74,6 +74,28 @@ else
   echo "  Secrets écrits dans $ENV_FILE"
 fi
 
+# Secret des jetons des passes Apple Wallet. Généré même si Wallet n'est
+# pas configuré : il existe ainsi AVANT le premier pass installé. Vide,
+# l'application le dérive de SESSION_HASH_SECRET ; le remplacer par une
+# valeur neuve sur un serveur qui a déjà émis des passes Apple les
+# empêcherait de se mettre à jour. D'où les deux règles : une valeur
+# existante n'est jamais touchée, et on n'en crée pas si Apple Wallet
+# est déjà configuré sans elle. Hors de la boucle ci-dessus : son
+# absence ne doit pas déclencher le garde-fou de JWT_SECRET.
+if [ -z "$(lire WALLET_AUTH_SECRET)" ] && [ -n "$(lire APPLE_WALLET_CERT_PEM)" ]; then
+  echo "  WALLET_AUTH_SECRET vide alors qu'Apple Wallet est configuré : laissé"
+  echo "  vide (dérivé de SESSION_HASH_SECRET) pour ne pas figer les passes"
+  echo "  déjà installés."
+elif [ -z "$(lire WALLET_AUTH_SECRET)" ]; then
+  if command -v openssl >/dev/null 2>&1; then
+    wallet_secret="$(openssl rand -base64 48 | tr -d '\n')"
+  else
+    wallet_secret="$(node -e "process.stdout.write(require('crypto').randomBytes(48).toString('base64'))")"
+  fi
+  ecrire WALLET_AUTH_SECRET "$wallet_secret"
+  echo "  WALLET_AUTH_SECRET généré (passes Apple Wallet)."
+fi
+
 chmod 600 "$ENV_FILE"
 
 echo

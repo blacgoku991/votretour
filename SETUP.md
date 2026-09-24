@@ -15,6 +15,7 @@ section indique ce que vous devez obtenir avant de passer à la suivante.
 | 6 à 11 — Apple, App Clip, APNs | 2 à 4 h | compte Apple Developer payant |
 | 12 à 14 — Avis Google, NFC, QR | 30 min | — |
 | 15 — Le scénario complet | 20 min | — |
+| 18 — Passes Wallet (facultatif) | 1 h, plus l’accord de Google | comptes Apple Developer et émetteur Google Wallet |
 
 Le produit **fonctionne entièrement sans les étapes 6 à 11** : les clients
 Android et les iPhone en navigateur rejoignent la file et voient leur position
@@ -42,7 +43,8 @@ prérequis.
 15. [Le scénario de test complet](#15-le-scénario-de-test-complet)
 16. [Stripe (facultatif)](#16-stripe-facultatif)
 17. [Tâches planifiées](#17-tâches-planifiées)
-18. [Dépannage](#18-dépannage)
+18. [Passes Apple Wallet et Google Wallet (facultatif)](#18-passes-apple-wallet-et-google-wallet-facultatif)
+19. [Dépannage](#19-dépannage)
 
 ---
 
@@ -1352,7 +1354,107 @@ Chaque établissement choisit sa durée de conservation
 
 ---
 
-## 18. Dépannage
+## 18. Passes Apple Wallet et Google Wallet (facultatif)
+
+Le client ajoute son ticket à Apple Wallet (iPhone) ou à Google Wallet
+(Android). Sa position, « C’est votre tour » puis « Merci » s’affichent sur
+l’écran verrouillé, même page fermée.
+
+**Sans configuration, rien n’apparaît** : aucun bouton, aucune mention. La
+carte **Passes Wallet** de `/admin` indique pour chaque fournisseur
+*Non configuré*, *Prêt* ou *Erreur de configuration*, avec la raison exacte,
+l’échéance du certificat Apple et le mode Google.
+
+**Où coller les valeurs** : dans `deploy/.env`, puis
+`docker compose up -d app` (pas besoin de reconstruire l’image). Sur Vercel :
+dans les variables du projet, puis redéployer.
+
+**`WALLET_AUTH_SECRET`** : rien à faire, `deploy/scripts/bootstrap.sh` le
+génère. Sur Vercel, `openssl rand -base64 48`, ou laissez-le vide (il est
+alors dérivé de `SESSION_HASH_SECRET`). Une fois des passes installés, **ne le
+changez plus**.
+
+### 18.1 Apple Wallet (compte Apple Developer)
+
+| # | Où | À faire |
+|---|---|---|
+| 1 | [developer.apple.com](https://developer.apple.com/account) → **Certificates, Identifiers & Profiles → Identifiers → +** | **Pass Type IDs**, identifiant `pass.fr.rangvia.ticket` (définitif : il est inscrit dans chaque pass). |
+| 2 | Sur le Mac : **Trousseau → Assistant de certification → Demander un certificat à une autorité** | Adresse e-mail, « Enregistrée sur le disque ». |
+| 3 | **Certificates → + → Pass Type ID Certificate** | Choisir l’identifiant, envoyer la demande, télécharger `pass.cer`, double-cliquer (il rejoint le Trousseau). |
+| 4 | **Trousseau → Mes certificats → « Pass Type ID: pass.fr.rangvia.ticket »** | Clic droit → **Exporter** → `pass.p12`, **avec** un mot de passe. |
+| 5 | Terminal, à la racine du dépôt, sur ce Mac | `sh scripts/wallet-apple-import.sh pass.p12` |
+
+Le script télécharge et vérifie le certificat intermédiaire Apple WWDR G4,
+contrôle la cohérence de l’ensemble et affiche la date d’expiration. Il
+produit cinq lignes, prêtes à coller telles quelles :
+`APPLE_WALLET_PASS_TYPE_ID`, `APPLE_WALLET_CERT_PEM`, `APPLE_WALLET_KEY_PEM`,
+`APPLE_WALLET_KEY_PASSPHRASE` et `APPLE_WALLET_WWDR_PEM`.
+`APPLE_WALLET_TEAM_ID` reste vide : il est lu dans le certificat.
+
+Collez-les, redémarrez, puis ouvrez `/admin` : **Apple Wallet · Prêt**, et la
+jauge du certificat. Faites la recette avec un iPhone **sur le domaine de
+production** : les mises à jour de pass ne passent jamais par le bac à sable
+APNs.
+
+**Chaque année** : le certificat expire au bout d’un an. La carte passe en
+alerte 30 jours avant. Refaites les étapes 2 à 5 avec le **même** Pass Type
+ID : les passes déjà installés continuent de se mettre à jour.
+
+### 18.2 Google Wallet (compte émetteur)
+
+| # | Où | À faire |
+|---|---|---|
+| 1 | [Google Pay & Wallet Console](https://pay.google.com/business/console) → **Google Wallet API** | Noter l’**Issuer ID** → `GOOGLE_WALLET_ISSUER_ID`. |
+| 2 | [Google Cloud](https://console.cloud.google.com) → votre projet → **APIs & Services → Library** | Activer **Google Wallet API**. |
+| 3 | **IAM & Admin → Service Accounts → Create** | Aucun rôle Cloud. Puis **Keys → Add key → JSON** : le fichier se télécharge. |
+| 4 | Google Pay & Wallet Console → **Users** | Inviter l’adresse du compte de service (`…@….iam.gserviceaccount.com`), rôle **Developer**. |
+| 5 | Google Pay & Wallet Console | Déclarer vos **comptes Google de test** (mode démo). |
+| 6 | Terminal | `base64 < cle.json \| tr -d '\n'` → `GOOGLE_WALLET_SERVICE_ACCOUNT_JSON`. Laissez `GOOGLE_WALLET_MODE=demo`. |
+
+Diagnostic, avec les mêmes variables dans l’environnement :
+`node scripts/google-wallet-check.mjs` (jeton, validation, lecture de classe ;
+n’envoie rien aux clients).
+
+Redémarrez, puis attendez une minute : la tâche planifiée crée la classe de la
+file. La carte affiche **Google Wallet · Prêt · Démo**. En démo, le bouton
+n’est proposé qu’aux membres connectés de l’établissement et au super-admin,
+et les passes portent « [TEST ONLY] ».
+
+**Publication** : après la recette, dans la console, **demandez l’accès en
+publication** (profil d’entreprise complet, captures des passes). Une fois
+l’accord reçu : `GOOGLE_WALLET_MODE=production`, redémarrage. Le bouton est
+alors proposé à tous les clients Android.
+
+Serveur d’essai : `GOOGLE_WALLET_CLASS_PREFIX=rangvia_staging`, pour ne jamais
+partager les classes de la production.
+
+### 18.3 Pièges
+
+| Symptôme dans `/admin` | Cause |
+|---|---|
+| Le script refuse `pass.p12` | Export du Trousseau en chiffrement ancien : le script passe `-legacy` à OpenSSL 3. Mettez OpenSSL à jour s’il échoue encore. |
+| Identifiant différent du certificat | `APPLE_WALLET_PASS_TYPE_ID` ne correspond pas à l’`UID` du certificat : collez les lignes du script sans les retoucher. |
+| Certificat expiré | Renouvelez (§ 18.1, étapes 2 à 5). |
+| Google : 403 | Le compte de service n’a pas été ajouté à l’émetteur (étape 4). |
+| Google : 404 | Mauvais Issuer ID, ou préfixe de classe changé en cours de route. |
+| « Prêt », mais aucun bouton | Le badge officiel n’est pas déposé dans `apps/web/public/wallet/`, ou l’appareil ne convient pas (Apple : iPhone en Safari ; Google : Android, et en démo un membre connecté). |
+| Logo absent d’un pass Google | Google n’accepte que des images en HTTPS : une URL en HTTP est remplacée par le logo Rangvia. |
+
+### 18.4 Rotation et révocation
+
+- **Clé Apple compromise** : révoquez le certificat dans le portail, puis
+  refaites § 18.1, étapes 2 à 5.
+- **Clé Google compromise** : nouvelle clé JSON sur le compte de service,
+  déploiement, puis suppression de l’ancienne dans Google Cloud.
+- **`WALLET_AUTH_SECRET`** : ne le changez qu’en cas de fuite. C’est un
+  coupe-circuit : tous les passes Apple installés cessent de se mettre à jour.
+- **`SESSION_HASH_SECRET`** : le changer invalide les QR Wallet des drops en
+  cours (au plus 15 min), comme ceux du web ; et fige les passes Apple si
+  `WALLET_AUTH_SECRET` est vide.
+
+---
+
+## 19. Dépannage
 
 ### La file
 
@@ -1412,3 +1514,4 @@ Le code est complet. Ces éléments demandent **vos** comptes et ne peuvent pas
 | 8 | Coller le lien d'avis Google de chaque établissement | Pas de bouton d'avis en fin de passage |
 | 9 | Acheter et programmer les tags NFC | Le QR fonctionne seul, mais pas le sans-contact |
 | 10 | Stripe, si vous facturez | Tout reste en période d'essai |
+| 11 | Certificat Pass Type ID et émetteur Google Wallet (§18), puis renouvellement annuel du certificat | Pas de ticket dans Apple Wallet ni Google Wallet |

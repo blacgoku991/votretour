@@ -1,0 +1,520 @@
+/* =====================================================================
+   CARTE « PASSES WALLET » — salle de contrôle
+   ---------------------------------------------------------------------
+   Chaque fournisseur est dessiné comme un billet : une souche (nom,
+   état), une perforation, puis le corps. Les chiffres reprennent le
+   vocabulaire du Rang : un rail, des lattes accrochées par leur
+   encoche, une tranche dure de 2 px en guise de relief. La couleur ne
+   dit jamais l'état seule : chaque état a son libellé.
+
+   Tons : jade = prêt, brique = erreur, ardoise = non configuré. Le
+   vermillon reste réservé au « maintenant » du produit, il n'est pas
+   utilisé ici. Seuls transform et opacity sont animés.
+   ===================================================================== */
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--surface-raised);
+  padding: 22px;
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding-bottom: 18px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.head h2 { font-size: 20px; margin-top: 4px; }
+.kicker {
+  font-size: .6875rem;
+  font-weight: 850;
+  letter-spacing: .16em;
+  color: var(--text-muted);
+}
+.lead {
+  margin-top: 6px;
+  max-width: 60ch;
+  color: var(--text-muted);
+  font-size: .8125rem;
+  line-height: 1.45;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+/* ---------------------------------------------------------------------
+   Le billet
+   --------------------------------------------------------------------- */
+.ticket {
+  --tone: var(--ardoise-500);
+  --tone-text: var(--text-muted);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface-sunken);
+  /* Les demi-cercles de la perforation mordent le bord : on rogne. */
+  overflow: hidden;
+}
+.ticket[data-state='ready'] {
+  --tone: var(--jade-500);
+  --tone-text: #49D7A5;
+  border-color: color-mix(in oklab, var(--jade-500) 26%, transparent);
+}
+.ticket[data-state='error'] {
+  --tone: var(--brique-500);
+  --tone-text: var(--danger-text);
+  border-color: color-mix(in oklab, var(--brique-500) 42%, transparent);
+}
+/* Non configuré : un billet « en pointillés », présent mais pas émis. */
+.ticket[data-state='unconfigured'] { border-style: dashed; border-color: var(--line-strong); }
+
+.stub {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px 14px;
+}
+.stubText { min-width: 0; }
+.stubText h3 {
+  font-size: 1.1875rem;
+  line-height: 1.1;
+  letter-spacing: -.02em;
+  font-variation-settings: 'wdth' 112, 'wght' 780;
+}
+.stubText p {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: .75rem;
+}
+
+.state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--tone) 16%, transparent);
+  color: var(--tone-text);
+  font-size: .6875rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  font-variation-settings: 'wdth' 92, 'wght' 720;
+  white-space: nowrap;
+}
+.state i {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+.state[data-state='unconfigured'] i {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--tone-text);
+}
+/* Prêt : un anneau qui s'élargit et s'éteint, comme un signal reçu. */
+.state[data-state='ready'] i::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--tone);
+  opacity: 0;
+}
+
+/* Perforation : un pointillé entre deux demi-cercles à la couleur de la
+   carte, qui découpent le billet sans une seule image. */
+.perforation {
+  position: relative;
+  height: 18px;
+  background:
+    radial-gradient(circle at 0 50%, var(--surface-raised) 8.5px, transparent 9px),
+    radial-gradient(circle at 100% 50%, var(--surface-raised) 8.5px, transparent 9px);
+}
+.perforation::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 50%;
+  border-top: 1px dashed var(--line-strong);
+}
+
+.body {
+  display: grid;
+  gap: 16px;
+  padding: 14px 20px 20px;
+  flex: 1;
+  align-content: start;
+}
+
+/* ---------------------------------------------------------------------
+   Erreur : la raison du fournisseur, telle quelle
+   --------------------------------------------------------------------- */
+.reason {
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--brique-500) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--brique-500) 32%, transparent);
+}
+.reason span {
+  font-size: .625rem;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  font-variation-settings: 'wdth' 92, 'wght' 760;
+  color: var(--danger-text);
+}
+.reason p {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .78125rem;
+  line-height: 1.45;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------------
+   Non configuré : ce qui manque, par son nom
+   --------------------------------------------------------------------- */
+.setup { display: grid; gap: 8px; }
+.setup > p:first-child { font-size: .875rem; color: var(--text); }
+.setupHint { color: var(--text-muted); font-size: .75rem; line-height: 1.45; }
+.vars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  padding: 0;
+  margin: 2px 0 4px;
+}
+.vars code {
+  display: inline-block;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: color-mix(in oklab, var(--text) 4%, transparent);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .6875rem;
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------------
+   Chiffres : un rail et ses lattes
+   --------------------------------------------------------------------- */
+.metrics {
+  position: relative;
+  display: grid;
+  gap: var(--slat-gap);
+  padding-left: 20px;
+}
+/* Le rail. */
+.metrics::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: var(--rail-w);
+  border-radius: 2px;
+  background: var(--rail);
+}
+
+.hero,
+.slats li {
+  position: relative;
+  border-radius: var(--r-slat);
+  background: var(--slat);
+  box-shadow: 0 2px 0 var(--slat-edge);
+}
+/* L'encoche : le trait part du rail et s'ancre dans la latte. */
+.hero::before,
+.slats li::before {
+  content: '';
+  position: absolute;
+  left: -20px;
+  top: 50%;
+  width: 20px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 2px;
+  background: var(--rail);
+}
+
+/* La latte principale : les passes actifs, plus haute, marquée au ton. */
+.hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 76px;
+  padding: 12px 16px;
+  background: color-mix(in oklab, var(--text) 6%, var(--slat));
+  box-shadow: 0 3px 0 color-mix(in oklab, var(--tone) 70%, var(--slat-edge));
+}
+.hero::before { height: 3px; margin-top: -1.5px; background: var(--tone); }
+.hero strong {
+  font-size: clamp(2.5rem, 6vw, 3.25rem);
+  line-height: .85;
+  letter-spacing: -.04em;
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  color: var(--text);
+}
+.ticket[data-state='ready'] .hero strong { color: var(--tone-text); }
+.hero span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  font-size: .75rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  font-variation-settings: 'wdth' 92, 'wght' 720;
+  color: var(--text);
+}
+.hero small {
+  font-size: .75rem;
+  letter-spacing: 0;
+  text-transform: none;
+  font-variation-settings: 'wdth' 100, 'wght' 450;
+  color: var(--text-muted);
+}
+
+.slats {
+  display: grid;
+  gap: var(--slat-gap);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.slats li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--slat-h);
+  padding: 6px 14px;
+  color: var(--slat-text);
+  font-size: .75rem;
+}
+.slats li span { min-width: 0; }
+.slats li strong {
+  font-size: .9375rem;
+  font-variation-settings: 'wdth' 118, 'wght' 760;
+  color: var(--text);
+}
+.slats li[data-alert='true'] strong { color: var(--danger-text); }
+.slats li[data-alert='true']::before { background: var(--brique-500); }
+
+/* ---------------------------------------------------------------------
+   Certificat Apple : la jauge d'une année, alerte à J-30
+   --------------------------------------------------------------------- */
+.cert {
+  --gauge: var(--jade-500);
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: color-mix(in oklab, var(--text) 3%, transparent);
+}
+.cert[data-tone='warn'] {
+  --gauge: #E3AA66;
+  border-color: color-mix(in oklab, var(--copper-500) 45%, transparent);
+  background: color-mix(in oklab, var(--copper-500) 9%, transparent);
+}
+.cert[data-tone='expired'] {
+  --gauge: var(--brique-500);
+  border-color: color-mix(in oklab, var(--brique-500) 45%, transparent);
+  background: color-mix(in oklab, var(--brique-500) 10%, transparent);
+}
+.certHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+}
+.certHead span,
+.modeHead > span {
+  font-size: .6875rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  font-variation-settings: 'wdth' 92, 'wght' 720;
+  color: var(--text-muted);
+}
+.certHead strong { font-size: .875rem; font-variation-settings: 'wdth' 100, 'wght' 700; }
+
+/* De gauche (échéance) à droite (un an devant soi) : la réserve fond vers
+   la gauche. La zone des 30 derniers jours est teintée SOUS la réserve :
+   elle n'apparaît qu'une fois la réserve entrée dedans. Le repère J-30,
+   lui, reste toujours visible. */
+.gauge {
+  position: relative;
+  height: 10px;
+  margin: 2px 0 16px;
+  border-radius: 5px;
+  background: color-mix(in oklab, var(--text) 7%, transparent);
+}
+.gaugeFill {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--gauge);
+  transform-origin: 0 50%;
+  transform: scaleX(var(--ratio));
+}
+.gaugeWarn {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(var(--warn) * 100%);
+  border-radius: 5px 0 0 5px;
+  background: color-mix(in oklab, var(--copper-500) 30%, transparent);
+}
+.gaugeMark {
+  position: absolute;
+  z-index: 2;
+  left: calc(var(--warn) * 100%);
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: var(--copper-500);
+}
+.gaugeMark i {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 50%;
+  translate: -50% 0;
+  font-style: normal;
+  font-size: .625rem;
+  letter-spacing: .08em;
+  font-variation-settings: 'wdth' 92, 'wght' 760;
+  color: #E3AA66;
+  white-space: nowrap;
+}
+.certFoot {
+  display: grid;
+  gap: 3px;
+  font-size: .75rem;
+  color: var(--text-muted);
+}
+.certAction { color: var(--text); font-variation-settings: 'wdth' 100, 'wght' 600; }
+.cert[data-tone='warn'] .certFoot > span:first-child { color: #E3AA66; }
+.cert[data-tone='expired'] .certFoot > span:first-child { color: var(--danger-text); }
+
+/* ---------------------------------------------------------------------
+   Mode Google : un indicateur à deux cases, en lecture seule
+   --------------------------------------------------------------------- */
+.mode {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: color-mix(in oklab, var(--text) 3%, transparent);
+}
+.modeHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+}
+.modeTrack {
+  --thumb: var(--copper-500);
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: color-mix(in oklab, var(--text) 4%, transparent);
+  cursor: default;
+}
+.modeTrack[data-mode='production'] { --thumb: var(--jade-500); }
+.modeThumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  border-radius: var(--r-pill);
+  background: color-mix(in oklab, var(--thumb) 30%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--thumb) 60%, transparent);
+}
+.modeTrack[data-mode='production'] .modeThumb { transform: translateX(100%); }
+.modeTrack > span:not(.modeThumb) {
+  position: relative;
+  padding: 5px 12px;
+  text-align: center;
+  font-size: .6875rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  font-variation-settings: 'wdth' 92, 'wght' 650;
+  color: var(--text-faint);
+}
+.modeTrack > span[data-on='true'] { color: var(--text); font-variation-settings: 'wdth' 92, 'wght' 780; }
+.mode > p { font-size: .75rem; line-height: 1.45; color: var(--text-muted); }
+
+/* ---------------------------------------------------------------------
+   Mouvement : les lattes s'accrochent au rail, la jauge se remplit,
+   le signal « prêt » respire. Rien si le mouvement est réduit.
+   --------------------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  .hero,
+  .slats li {
+    animation: wallet-hook var(--dur-4) var(--ease-slat) both;
+    animation-delay: calc(var(--i, 0) * 90ms + 60ms);
+  }
+  .slats li:nth-child(1) { animation-delay: calc(var(--i, 0) * 90ms + 60ms + var(--stagger) * 2); }
+  .slats li:nth-child(2) { animation-delay: calc(var(--i, 0) * 90ms + 60ms + var(--stagger) * 4); }
+  .gaugeFill { animation: wallet-fill var(--dur-5) var(--ease-out) 200ms both; }
+  .state[data-state='ready'] i::after { animation: wallet-ping 2.4s var(--ease-out) infinite; }
+}
+
+@keyframes wallet-hook {
+  from { transform: translateX(-10px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+@keyframes wallet-fill {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(var(--ratio)); }
+}
+@keyframes wallet-ping {
+  0%   { transform: scale(1); opacity: .55; }
+  70%  { transform: scale(2.6); opacity: 0; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+
+/* ---------------------------------------------------------------------
+   Téléphone
+   --------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .head { flex-direction: column; gap: 10px; }
+  /* L'état reste à droite du nom tant qu'il tient, passe dessous sinon. */
+  .stub { flex-wrap: wrap; gap: 10px; padding: 16px 16px 12px; }
+  .body { padding: 12px 16px 16px; }
+  .perforation::before { left: 14px; right: 14px; }
+}

@@ -26,6 +26,10 @@ const CHANNEL_LABEL: Record<string, string> = {
   apns_appclip: 'App Clip iPhone',
   apns_app: 'Application iPhone',
   fcm: 'Firebase',
+  // Alertes portées par un pass Wallet (« Bientôt votre tour »…) : une
+  // ligne n'est écrite que quand Apple ou Google a accepté l'envoi.
+  apple_wallet: 'Apple Wallet',
+  google_wallet: 'Google Wallet',
 };
 
 const STATUS_LABEL: Record<string, string> = {
