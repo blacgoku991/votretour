@@ -1,0 +1,229 @@
+/* =====================================================================
+   Cartons du montage — « Le Rang en relief »
+   ---------------------------------------------------------------------
+   Chargé APRÈS la feuille globale compilée du site (jetons, Archivo à
+   axes, typographie) : les cartons parlent la même langue que les pages,
+   sans rien recopier. Thème sombre forcé, comme la vitrine.
+   Règles du système : pas de dégradé, pas de verre dépoli, vermillon
+   réservé à « vous » et à la touche d'action.
+   ===================================================================== */
+
+html, body { background: transparent !important; min-height: 0 !important; }
+body { overflow: hidden; }
+.k-frame { position: relative; overflow: hidden; }
+.k-opaque { background: var(--floor); }
+
+/* ---- Écrans : corps d'appareil, derrière les images filmées ---------- */
+.k-device {
+  position: absolute;
+  background: var(--ink-800);
+  box-shadow: var(--shadow-lift), 0 40px 90px -40px rgba(0, 0, 0, 0.9);
+}
+/* Bague d'appareil PAR-DESSUS l'image : couvre les angles droits de la
+   capture et dessine l'arête lumineuse du système. */
+.k-bezel {
+  position: absolute;
+  box-shadow: 0 0 0 var(--ring) var(--ink-800), inset 0 0 0 1px color-mix(in oklab, var(--bone-100) 7%, transparent);
+}
+.k-bezel::after {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--ring));
+  border-radius: inherit;
+  border-radius: calc(var(--radius) + var(--ring));
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--bone-100) 10%, transparent),
+              inset 0 0 0 1px color-mix(in oklab, var(--bone-100) 8%, transparent);
+}
+.k-lens {
+  position: absolute;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ink-600);
+  box-shadow: inset 0 0 0 1.5px var(--ink-700);
+}
+
+/* ---- Mention permanente ------------------------------------------- */
+.k-honest {
+  position: absolute;
+  display: flex; align-items: center; gap: 10px;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 14px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--bone-300);
+  white-space: nowrap;
+}
+.k-honest i {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--copper-500);
+}
+.k-honest span { color: #69737F; letter-spacing: 0.12em; }
+
+/* ---- Légende d'un plan ---------------------------------------------- */
+.k-caption { display: flex; align-items: flex-start; gap: 22px; color: var(--bone-100); }
+.k-step {
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 34px; padding: 0 12px; margin-top: 4px;
+  border-radius: var(--r-pill);
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--bone-100) 22%, transparent);
+  font-variation-settings: 'wdth' 100, 'wght' 760;
+  font-size: 15px; letter-spacing: 0.06em;
+  font-feature-settings: 'tnum' 1;
+  color: var(--bone-200);
+}
+.k-step b { color: var(--bone-100); font-weight: inherit; }
+.k-step small { color: #69737F; font-size: inherit; margin-left: 5px; }
+.k-captionTitle {
+  font-variation-settings: 'wdth' 112, 'wght' 780;
+  font-size: 38px; line-height: 1.05; letter-spacing: -0.02em;
+}
+.k-captionBody {
+  margin-top: 8px;
+  font-variation-settings: 'wdth' 100, 'wght' 480;
+  font-size: 22px; line-height: 1.3;
+  color: #9AA3AF;
+}
+
+/* ---- Carton « notification » : un texte cité, pas une bannière ------- */
+/* Posé par le bas : sa hauteur suit le texte, son bord bas reste fixe. */
+.k-bottom { display: flex; flex-direction: column; justify-content: flex-end; }
+.k-quote {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 26px 30px 24px;
+  border-radius: var(--r-card);
+  background: var(--ink-700);
+  box-shadow: var(--shadow-lift), inset 0 0 0 1px color-mix(in oklab, var(--bone-100) 12%, transparent),
+              inset 0 1px 0 color-mix(in oklab, var(--bone-100) 10%, transparent);
+  color: var(--bone-100);
+  display: flex; flex-direction: column;
+}
+.k-kicker {
+  display: flex; align-items: center; gap: 10px;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: #9AA3AF;
+}
+.k-kicker svg { flex: none; color: var(--bone-200); }
+.k-quoteText {
+  margin-top: 16px;
+  padding-left: 18px;
+  border-left: 3px solid color-mix(in oklab, var(--bone-100) 24%, transparent);
+}
+.k-quoteTitle { font-variation-settings: 'wdth' 100, 'wght' 740; font-size: 22px; line-height: 1.25; }
+.k-quoteBody { margin-top: 4px; font-variation-settings: 'wdth' 100, 'wght' 500; font-size: 24px; line-height: 1.3; }
+.k-quoteNote { padding-top: 14px; font-size: 16px; line-height: 1.35; color: #69737F; }
+
+/* ---- Carton « page non filmée » (sur l'écran du téléphone) ----------- */
+.k-offscreen {
+  box-sizing: border-box;
+  width: 100%; height: 100%;
+  padding: 0 44px;
+  background: var(--ink-900);
+  display: flex; flex-direction: column; justify-content: center;
+  color: var(--bone-100);
+}
+.k-offscreen .k-kicker { margin-bottom: 22px; }
+.k-offTitle {
+  font-variation-settings: 'wdth' 112, 'wght' 780;
+  font-size: 40px; line-height: 1.04; letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.k-offBody { margin-top: 18px; font-size: 21px; line-height: 1.4; color: #9AA3AF; text-wrap: pretty; }
+.k-offRail {
+  margin-top: 40px; height: 2px; width: 72px;
+  background: color-mix(in oklab, var(--bone-100) 26%, transparent);
+}
+
+/* ---- Cartons plein écran (ouverture, fin) ---------------------------- */
+.k-full {
+  position: absolute; inset: 0;
+  display: grid;
+  grid-template-columns: 1fr 560px;
+  align-items: center;
+  padding: 0 160px;
+  gap: 80px;
+}
+.k-fullKicker {
+  display: flex; align-items: center; gap: 14px;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  font-size: 18px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: #9AA3AF;
+}
+.k-fullKicker i { width: 36px; height: 2px; background: color-mix(in oklab, var(--bone-100) 30%, transparent); }
+.k-fullTitle {
+  margin-top: 30px;
+  font-variation-settings: 'wdth' 125, 'wght' 820;
+  font-size: 112px; line-height: 0.94; letter-spacing: -0.04em;
+  color: var(--bone-100);
+  text-wrap: balance;
+}
+.k-fullBody {
+  margin-top: 34px; max-width: 32ch;
+  font-variation-settings: 'wdth' 100, 'wght' 480;
+  font-size: 30px; line-height: 1.35;
+  color: #9AA3AF;
+  text-wrap: pretty;
+}
+.k-fullBody b { color: var(--bone-100); font-weight: inherit; font-variation-settings: 'wdth' 100, 'wght' 650; }
+.k-cta {
+  margin-top: 46px;
+  display: inline-flex; align-items: center; gap: 16px;
+  height: 76px; padding: 0 34px;
+  border-radius: var(--r-key);
+  background: var(--signal-500);
+  color: var(--ink-1000);
+  font-variation-settings: 'wdth' 110, 'wght' 780;
+  font-size: 30px; letter-spacing: -0.01em;
+  box-shadow: 0 8px 0 -2px var(--signal-600);
+}
+.k-brand {
+  position: absolute; left: 160px; bottom: 72px;
+  display: flex; align-items: center; gap: 14px;
+  color: var(--bone-100);
+}
+.k-brand b { font-variation-settings: 'wdth' 112, 'wght' 760; font-size: 30px; letter-spacing: -0.022em; font-weight: inherit; }
+.k-brand b span { font-variation-settings: 'wdth' 88, 'wght' 760; opacity: 0.68; }
+.k-fullFoot {
+  position: absolute; right: 160px; bottom: 78px;
+  font-size: 18px; color: #69737F;
+}
+
+/* Le Rang, dessiné : le comptoir, trois personnes, et « vous ». */
+.k-rang { position: relative; width: 560px; }
+.k-rangCounter {
+  font-variation-settings: 'wdth' 125, 'wght' 800;
+  font-size: 18px; letter-spacing: 0.32em; text-transform: uppercase;
+  color: var(--signal-500);
+  padding-left: 46px;
+}
+.k-rangLine { margin-top: 12px; height: 3px; background: var(--signal-500); border-radius: 2px; }
+.k-rangTrack { position: relative; margin-top: 18px; padding-left: 46px; }
+.k-rangTrack::before {
+  content: ''; position: absolute; left: 0; top: -18px; bottom: 10px; width: 2px;
+  background: color-mix(in oklab, var(--bone-100) 26%, transparent);
+}
+.k-slat {
+  position: relative;
+  height: 64px; margin-bottom: 14px;
+  border-radius: var(--r-slat);
+  background: var(--ink-600);
+  box-shadow: 0 5px 0 var(--ink-700), var(--edge-light);
+}
+.k-slat::before {
+  content: ''; position: absolute; left: -46px; top: 31px; width: 40px; height: 2px;
+  background: color-mix(in oklab, var(--bone-100) 26%, transparent);
+}
+.k-slat.k-you {
+  background: var(--signal-500);
+  box-shadow: 0 5px 0 var(--signal-600), 0 24px 60px -24px color-mix(in oklab, var(--signal-500) 70%, transparent);
+  display: flex; flex-direction: column; justify-content: center; align-items: flex-start; text-align: left; padding-left: 70px;
+  color: var(--ink-1000);
+}
+.k-slat.k-you::before { background: var(--signal-500); }
+.k-slat.k-you::after {
+  content: ''; position: absolute; left: 26px; top: 22px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--ink-1000); box-shadow: 0 0 0 6px color-mix(in oklab, var(--ink-1000) 22%, transparent);
+}
+.k-slat.k-you b { font-variation-settings: 'wdth' 110, 'wght' 780; font-size: 26px; line-height: 1; font-weight: inherit; }
+.k-slat.k-you small { margin-top: 5px; font-variation-settings: 'wdth' 125, 'wght' 760; font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase; }
+.k-slat.k-dim { opacity: 0.55; }
+.k-slat.k-dimmer { opacity: 0.3; }

@@ -1,1 +1,86 @@
-[]
+[
+  {
+    "id": "barbiers-2026-09",
+    "metier": "barbiers",
+    "duration": 51,
+    "width": 1920,
+    "height": 1080,
+    "uploadDate": "2026-09-24",
+    "files": {
+      "mp4": "/videos/barbiers/demo-16x9.ae378fb6.mp4",
+      "webm": "/videos/barbiers/demo-16x9.d99f56eb.webm",
+      "poster": {
+        "jpg": "/videos/barbiers/poster.8bb45d51.jpg",
+        "webp": "/videos/barbiers/poster.02219809.webp",
+        "avif": "/videos/barbiers/poster.6b12c042.avif"
+      },
+      "teaser": {
+        "mp4": "/videos/barbiers/teaser.d354b955.mp4",
+        "webm": "/videos/barbiers/teaser.ac6ab652.webm"
+      }
+    },
+    "bytes": {
+      "mp4": 3853872,
+      "webm": 2437104,
+      "poster": {
+        "jpg": 56800,
+        "webp": 35354,
+        "avif": 21411
+      },
+      "teaser": {
+        "mp4": 288056,
+        "webm": 233163
+      }
+    },
+    "chapters": [
+      "Après le scan de la plaque, le client voit la file : trois personnes.",
+      "Il tape son prénom, choisit Sofia et rejoint la file, sans rien installer.",
+      "Sofia termine ses coupes : le chiffre tombe en direct, jusqu’à « plus qu’une personne ».",
+      "Il touche « Je suis de retour » : le poste affiche « Revient ».",
+      "Son tour arrive : l’écran passe au rideau « C’est votre tour ».",
+      "Fin de visite : le lien vers l’avis Google s’affiche."
+    ]
+  },
+  {
+    "id": "evenements-et-drops-2026-09",
+    "metier": "evenements-et-drops",
+    "duration": 40.7,
+    "width": 1920,
+    "height": 1080,
+    "uploadDate": "2026-09-24",
+    "files": {
+      "mp4": "/videos/evenements-et-drops/demo-16x9.931a5b86.mp4",
+      "webm": "/videos/evenements-et-drops/demo-16x9.ab857a5d.webm",
+      "poster": {
+        "jpg": "/videos/evenements-et-drops/poster.dc24abdf.jpg",
+        "webp": "/videos/evenements-et-drops/poster.0ce4f9b7.webp",
+        "avif": "/videos/evenements-et-drops/poster.5691d90c.avif"
+      },
+      "teaser": {
+        "mp4": "/videos/evenements-et-drops/teaser.1356e3b1.mp4",
+        "webm": "/videos/evenements-et-drops/teaser.6cb2b4ca.webm"
+      }
+    },
+    "bytes": {
+      "mp4": 2924261,
+      "webm": 2132313,
+      "poster": {
+        "jpg": 58076,
+        "webp": 38088,
+        "avif": 25172
+      },
+      "teaser": {
+        "mp4": 281706,
+        "webm": 243411
+      }
+    },
+    "chapters": [
+      "Après le scan du QR de l’événement, le public voit la file : trois personnes.",
+      "Camille s’inscrit avec son prénom, sans application.",
+      "Le pro ouvre la vague suivante : quatre accès, dans l’ordre d’arrivée.",
+      "Son laisser-passer s’ouvre : un QR tournant, valable 20 minutes.",
+      "À l’entrée, le personnel scanne et valide : « Accès validé ».",
+      "Le même QR présenté une seconde fois est refusé."
+    ]
+  }
+]
