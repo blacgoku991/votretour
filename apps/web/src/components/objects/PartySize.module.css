@@ -1,10 +1,15 @@
 /* LE CHEVALET — couverts d'un groupe, posé sur la table.
 
-   Vu de trois quarts, sans perspective ni dégradé : la face avant, la
-   tranche en haut (le pli, là où les deux faces se rejoignent), le flanc
-   droit en triangle (on voit l'intérieur du chevalet, dans l'ombre), et
-   l'ombre de contact statique. Mesures en unités de conteneur : le
-   chevalet est son propre conteneur. */
+   Une tente en A vue de trois quarts avant droit, sans perspective CSS :
+   - la face avant, éclairée d'en haut ;
+   - le pli au sommet, une arête CLAIRE (la carte pliée accroche la
+     lumière), là où les deux pans se rejoignent ;
+   - par l'ouverture de droite, le pan arrière : sa tranche (la matière de
+     la carte) puis son revers, dans l'ombre, plus sombre vers le pli ;
+     son pied recule, donc remonte un peu sur la table ;
+   - une ombre au sol qui suit les DEUX pieds (avant et arrière).
+   Tout est statique. Mesures en unités de conteneur : le chevalet est son
+   propre conteneur. */
 
 .tent {
   --tent-w: 128px;
@@ -14,6 +19,7 @@
   --tent-ink: var(--text);
   --tent-fold: color-mix(in oklab, var(--slat) 78%, var(--ink-1000));
   --tent-inside: color-mix(in oklab, var(--slat) 45%, var(--ink-1000));
+  --tent-ridge: color-mix(in oklab, var(--tent-face) 55%, #FFFFFF);
   container-type: inline-size;
   position: relative;
   display: inline-block;
@@ -30,20 +36,22 @@
   --tent-ink: var(--ink-1000);
   --tent-fold: #B7772E;
   --tent-inside: #7A4C18;
+  --tent-ridge: #F3C98F;
 }
 .tent[data-state='ready'] {
   --tent-face: var(--signal-500);
   --tent-ink: var(--ink-1000);
   --tent-fold: var(--signal-600);
   --tent-inside: #8E2408;
+  --tent-ridge: #FF9E7A;
 }
 
 .body {
   position: relative;
   display: flex;
   align-items: stretch;
-  /* Le flanc déborde à droite : on lui réserve sa place. */
-  padding-right: 13cqw;
+  /* Le pan arrière déborde à droite : on lui réserve sa place. */
+  padding-right: 15cqw;
 }
 
 .face {
@@ -58,33 +66,49 @@
   min-height: 70cqw;
   padding: 12cqw 5cqw 8cqw;
   border-radius: 3cqw 3cqw 2cqw 2cqw;
-  background: var(--tent-face);
+  /* Éclairée d'en haut : un voile clair sous le pli, une ombre au pied. */
+  background:
+    linear-gradient(to bottom, rgb(255 255 255 / 0.12), transparent 38%, rgb(0 0 0 / 0.07)),
+    var(--tent-face);
   color: var(--tent-ink);
   /* Pied du chevalet : une tranche dure, comme sous les lattes. */
   box-shadow: 0 1.8cqw 0 var(--tent-fold);
 }
-/* La tranche en haut : le pli, bande sombre sur toute la largeur. */
+/* Le pli : une arête claire sur toute la largeur, puis un filet sombre
+   dessous (le début du pan qui bascule vers l'arrière). */
 .face::before {
   content: '';
   position: absolute;
   left: 0;
   right: 0;
   top: 0;
-  height: 4.6cqw;
+  height: 3.6cqw;
   border-radius: 3cqw 3cqw 0 0;
-  background: var(--tent-fold);
+  background: linear-gradient(to bottom, var(--tent-ridge) 0 45%, var(--tent-fold) 45% 100%);
 }
 
-/* Le flanc droit : triangle de l'intérieur du chevalet, du pli au pied. */
+/* Le pan arrière, vu par l'ouverture de droite : du pli (en haut à
+   gauche) à son pied, qui recule et remonte un peu. D'abord sa tranche,
+   dans la matière de la carte… */
 .side {
   position: absolute;
   z-index: 0;
-  top: 1cqw;
+  top: 0.6cqw;
   bottom: -1.8cqw;
-  right: 1cqw;
-  width: 14cqw;
-  background: var(--tent-inside);
-  clip-path: polygon(0 0, 100% 100%, 0 100%);
+  right: 0;
+  width: 17cqw;
+  /* La tranche accroche un peu de lumière : entre le pied et l'arête. */
+  background: color-mix(in oklab, var(--tent-fold) 60%, var(--tent-ridge));
+  clip-path: polygon(0 0, 100% 90%, 0 100%);
+}
+/* … puis son revers, dans l'ombre : plus sombre au fond, contre le pli,
+   un peu éclairé près de la table. */
+.side::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, color-mix(in oklab, var(--tent-inside) 70%, var(--ink-1000)) 10%, var(--tent-inside) 88%);
+  clip-path: polygon(0 5%, 88% 88.5%, 0 97%);
 }
 
 .number {
@@ -118,11 +142,15 @@
   line-height: 1;
 }
 
-/* Ombre de contact : statique, sous le pied. */
+/* Ombre au sol : elle suit les deux pieds, du pied avant (sous la face)
+   au pied arrière (sous le pan, plus loin, donc un peu plus haut), avec
+   un contact plus dense sous le pied avant. */
 .shadow {
   display: block;
   height: 9cqw;
-  margin: 0 8cqw 0 2cqw;
-  background: radial-gradient(closest-side, rgb(0 0 0 / 0.38), transparent);
+  margin: -2.4cqw 0 0 1cqw;
+  background:
+    radial-gradient(38% 42% at 42% 38%, rgb(0 0 0 / 0.30), transparent),
+    radial-gradient(50% 50% at 52% 45%, rgb(0 0 0 / 0.22), transparent 92%);
   pointer-events: none;
 }

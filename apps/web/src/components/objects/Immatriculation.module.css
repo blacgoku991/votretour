@@ -58,6 +58,14 @@
   height: 6.4cqw;
   fill: var(--registration-star);
 }
+.starDots { display: none; }
+/* Sous 260 px de plaque (tailles md et sm, bande de moins de 40 px de
+   haut) : douze points pleins au lieu d'étoiles d'un pixel. */
+@container (width < 260px) {
+  .stars { width: 7.6cqw; height: 7.6cqw; }
+  .starShapes { display: none; }
+  .starDots { display: inline; }
+}
 .bandLetter {
   color: var(--bone-000);
   font-size: 6.2cqw;

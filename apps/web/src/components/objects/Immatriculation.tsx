@@ -1,4 +1,4 @@
-import { MASK_CHAR, displayRegistration, maskRegistration, maskedTail } from '@/lib/profiles/registration';
+import { MASK_CHAR, displayRegistration, maskedTail, type MaskedRegistration } from '@/lib/profiles/registration';
 import type { RegistrationCountry } from '@/lib/profiles/types';
 import styles from './Immatriculation.module.css';
 
@@ -16,10 +16,15 @@ import styles from './Immatriculation.module.css';
  *
  * Masquage : seuls les trois derniers caractères restent lisibles. Les
  * autres deviennent des pastilles creusées qui gardent la place exacte du
- * caractère : la plaque garde sa silhouette, mais ne se lit plus. Une
- * valeur déjà masquée par le serveur (`display_snapshot`, pour la TV) est
- * reconnue et affichée telle quelle : l'immatriculation complète n'a
- * jamais à quitter le serveur.
+ * caractère : la plaque garde sa silhouette, mais ne se lit plus.
+ *
+ * Le composant ne masque PAS lui-même : il reçoit soit `value` (forme
+ * complète, poste du pro seulement), soit `maskedValue`, déjà masquée, de
+ * type `MaskedRegistration`. Ainsi, rendu dans un composant client (écran
+ * TV, P5), il ne peut pas recevoir la forme complète « pour la masquer au
+ * rendu » : elle partirait dans les props sérialisées vers le navigateur.
+ * La TV ne reçoit que `display_snapshot`, masqué en SQL
+ * (`internal.mask_registration`), qu'elle passe par `asMaskedRegistration`.
  *
  * Plaque étrangère (`country="other"`) : unie, sans bande, texte brut.
  *
@@ -27,19 +32,29 @@ import styles from './Immatriculation.module.css';
  * métier, étiquette imprimable) comme dans un écran client.
  */
 
-export interface ImmatriculationProps {
-  /** Saisie, forme d'affichage (`AB-123-CD`) ou forme déjà masquée (`••-••3-CD`). */
-  value: string;
+interface ImmatriculationBase {
   /** Défaut 'FR'. */
   country?: RegistrationCountry;
-  /** Ne laisse lisibles que les trois derniers caractères. */
-  masked?: boolean;
   /** lg : client et TV ; md : fiche du pro ; sm : listes. Défaut 'md'. */
   size?: 'sm' | 'md' | 'lg';
   /** Largeur en px, à la place de `size` (la hauteur suit : 110/520). */
   width?: number;
   className?: string;
 }
+
+export type ImmatriculationProps = ImmatriculationBase &
+  (
+    | {
+        /** Saisie ou forme d'affichage (`AB-123-CD`) : poste du pro seulement. */
+        value: string;
+        maskedValue?: never;
+      }
+    | {
+        /** Forme déjà masquée (`••-••3-CD`) : `maskRegistration` ou `display_snapshot`. */
+        maskedValue: MaskedRegistration;
+        value?: never;
+      }
+  );
 
 const STAR_COUNT = 12;
 
@@ -61,11 +76,27 @@ const STARS = Array.from({ length: STAR_COUNT }, (_, i) => {
   return starPath(10 + 6.4 * Math.sin(a), 10 - 6.4 * Math.cos(a), 1.45);
 }).join('');
 
+/**
+ * Petites tailles (fiche du pro, listes) : sous ~13 px de cercle, une
+ * étoile à cinq branches fait moins d'un pixel et le cercle se lit comme
+ * un pointillé flou. On dessine alors douze points pleins, plus gros, sur
+ * un cercle un peu plus large : net sur un écran 1x, et toujours lu comme
+ * le cercle d'étoiles. Le CSS choisit l'un ou l'autre selon la largeur
+ * réelle de la plaque.
+ */
+const DOTS = Array.from({ length: STAR_COUNT }, (_, i) => {
+  const a = (i * 2 * Math.PI) / STAR_COUNT;
+  const cx = (10 + 7.1 * Math.sin(a)).toFixed(2);
+  const cy = (10 - 7.1 * Math.cos(a)).toFixed(2);
+  return `M${cx} ${cy}m-1.5 0a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0 -3 0`;
+}).join('');
+
 function EuroBand() {
   return (
     <span className={styles.band} aria-hidden="true">
       <svg className={styles.stars} viewBox="0 0 20 20" focusable="false">
-        <path d={STARS} />
+        <path className={styles.starShapes} d={STARS} />
+        <path className={styles.starDots} d={DOTS} />
       </svg>
       <span className={styles.bandLetter}>F</span>
     </span>
@@ -82,21 +113,18 @@ function glyphsOf(text: string): Glyph[] {
   });
 }
 
-export function Immatriculation({
-  value,
-  country = 'FR',
-  masked = false,
-  size = 'md',
-  width,
-  className,
-}: ImmatriculationProps): React.JSX.Element {
-  const alreadyMasked = value.includes(MASK_CHAR);
-  const display = alreadyMasked ? value : displayRegistration(value, country);
-  const shown = masked && !alreadyMasked ? maskRegistration(display) : display;
-  const isMasked = shown.includes(MASK_CHAR);
-  const label = isMasked
-    ? `Immatriculation masquée, se terminant par ${maskedTail(shown)}`
-    : `Immatriculation ${display}`;
+export function Immatriculation(props: ImmatriculationProps): React.JSX.Element {
+  const { country = 'FR', size = 'md', width, className } = props;
+  // Une forme masquée n'est jamais « remise en forme » : on l'affiche telle
+  // quelle. Une chaîne masquée passée par erreur dans `value` l'est aussi.
+  const masked = props.maskedValue !== undefined || props.value.includes(MASK_CHAR);
+  const shown = props.maskedValue ?? (masked ? props.value : displayRegistration(props.value, country));
+  const tail = masked ? maskedTail(shown) : '';
+  const label = masked
+    ? tail
+      ? `Immatriculation masquée, se terminant par ${tail}`
+      : 'Immatriculation masquée'
+    : `Immatriculation ${shown}`;
   const foreign = country === 'other';
   const glyphs = glyphsOf(shown);
 

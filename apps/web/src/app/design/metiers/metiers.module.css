@@ -69,6 +69,8 @@
 .stillTicket { display: flex; justify-content: center; }
 .stillTent { display: flex; justify-content: center; }
 .stillRail {
+  /* Le halo des stations prend la couleur du fond de la boîte. */
+  --surface: var(--ink-800);
   width: 100%;
   max-width: 420px;
   padding: 18px 18px 16px;
@@ -232,19 +234,24 @@
 }
 
 /* -------------------------------------------------- Tableau des saisies */
+/* Le bloc mesure sa propre largeur : tableau à partir de 600 px, cartes
+   empilées en dessous. Jamais de défilement horizontal : la colonne
+   « Masqué » est toujours visible. */
+.regDemo { container: regdemo / inline-size; }
+
 .tableWrap {
-  overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-card);
+  overflow: hidden;
 }
 .table {
   width: 100%;
-  min-width: 560px;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.875rem;
 }
-.table caption { text-align: left; padding: 14px 16px 6px; }
+/* La légende va à la ligne plutôt que d'être coupée. */
+.table caption { text-align: left; padding: 14px 16px 6px; white-space: normal; text-wrap: balance; }
 .table th {
   text-align: left;
   padding: 10px 16px;
@@ -255,10 +262,57 @@
   color: var(--text-muted);
   border-bottom: 1px solid var(--line);
 }
-.table th:nth-child(1), .table th:nth-child(2) { width: 22%; }
-.table th:nth-child(4) { width: 20%; }
+.table th:nth-child(1) { width: 19%; }
+.table th:nth-child(2) { width: 21%; }
+.table th:nth-child(4) { width: 164px; }
 .table td { padding: 10px 16px; border-top: 1px solid var(--line); vertical-align: middle; }
-.refusal { color: var(--danger-text, var(--brique-500)); }
+.refusal { color: var(--danger-text, var(--brique-500)); text-wrap: pretty; }
+
+.regCards { display: none; }
+@container regdemo (width < 600px) {
+  .tableWrap { display: none; }
+  .regCards { display: flex; flex-direction: column; gap: 12px; }
+}
+.regTitle { text-wrap: balance; }
+.regList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* Chaque saisie : une latte, lue de haut en bas comme le tableau de gauche
+   à droite. Une saisie refusée porte un filet brique. */
+.regCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--r-card);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: 0 2px 0 var(--slat-edge);
+}
+.regCard[data-ok='false'] { box-shadow: inset 3px 0 0 var(--danger-text, var(--brique-500)), 0 2px 0 var(--slat-edge); }
+.regFlow,
+.regResult {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+.regStep { display: inline-flex; flex-direction: column; gap: 4px; min-width: 0; }
+.regKey {
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-variation-settings: 'wdth' 88, 'wght' 700;
+  color: var(--text-muted);
+}
+.regArrow { color: var(--text-muted); padding-bottom: 1px; }
+.regResult { align-items: center; }
+.regResult .regStep { align-items: flex-start; }
 
 /* --------------------------------------------------------- Rail et fiche */
 .railStack { display: flex; flex-direction: column; gap: 22px; }
@@ -506,9 +560,13 @@
 .vocabKeys {
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  align-items: start;
+  align-items: stretch;
   gap: 10px;
 }
+.vocabKey { display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-width: 0; }
+/* Les deux rôles sur la même ligne, quelle que soit la hauteur des touches. */
+.vocabRole { margin-top: auto; }
+.vocabRole { letter-spacing: 0.12em; text-transform: uppercase; text-align: center; }
 .vocabKeys :global(.btn) { text-wrap: balance; }
 .vocabKeys :global(.btn--key) {
   font-size: clamp(1rem, 0.9rem + 0.5vw, 1.25rem);

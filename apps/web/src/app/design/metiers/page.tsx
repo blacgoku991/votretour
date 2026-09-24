@@ -5,7 +5,7 @@ import { Immatriculation } from '@/components/objects/Immatriculation';
 import { PartySize } from '@/components/objects/PartySize';
 import { StageRail } from '@/components/objects/StageRail';
 import { TicketNumber } from '@/components/objects/TicketNumber';
-import { PROFILES } from '@/lib/profiles';
+import { PROFILES, QUEUE_PROFILES } from '@/lib/profiles';
 import { profileNotificationCopy, type ProfileCopyContext } from '@/lib/profiles/copy';
 import { DEVICE_KINDS } from '@/lib/profiles/details';
 import { formatRegistrationInput, maskRegistration, parseRegistration } from '@/lib/profiles/registration';
@@ -167,6 +167,91 @@ function Fig({ caption, children, wide = false }: { caption: string; children: R
 /* Compositions                                                         */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Saisie → mise en forme → validation → forme masquée. Un tableau quand la
+ * place le permet ; sous 600 px, une carte par saisie, dans le même ordre
+ * de lecture (le tableau serait sinon rogné, colonne « Masqué » comprise,
+ * qui est justement celle qui démontre la règle). Les deux sont rendus, le
+ * CSS n'en montre qu'un : `display: none` retire aussi l'autre de
+ * l'arbre d'accessibilité.
+ */
+function RegistrationRules() {
+  const rows = REGISTRATION_INPUTS.map((input) => ({ input, typed: formatRegistrationInput(input), parsed: parseRegistration(input) }));
+  const title = 'Saisie → mise en forme pendant la frappe → forme masquée';
+  return (
+    <div className={styles.regDemo}>
+      <div className={styles.tableWrap}>
+        <table className={styles.table}>
+          <caption className="t-label">{title}</caption>
+          <thead>
+            <tr>
+              <th scope="col">Saisi</th>
+              <th scope="col">Pendant la frappe</th>
+              <th scope="col">Validé</th>
+              <th scope="col">Masqué</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ input, typed, parsed }) => (
+              <tr key={input}>
+                <td><code className={styles.code}>{input}</code></td>
+                <td><code className={styles.code}>{typed}</code></td>
+                <td>
+                  {parsed.ok ? (
+                    <span className="chip chip--jade">{parsed.format.toUpperCase()}</span>
+                  ) : (
+                    <span className={`t-small ${styles.refusal}`}>{parsed.reason}</span>
+                  )}
+                </td>
+                <td>
+                  {parsed.ok ? (
+                    <Immatriculation maskedValue={maskRegistration(parsed.display)} size="sm" />
+                  ) : (
+                    <span className="t-muted" aria-label="Aucune forme masquée">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className={styles.regCards}>
+        <p className={`t-label ${styles.regTitle}`}>{title}</p>
+        <ol className={styles.regList}>
+          {rows.map(({ input, typed, parsed }) => (
+            <li key={input} className={styles.regCard} data-ok={parsed.ok ? 'true' : 'false'}>
+              <p className={styles.regFlow}>
+                <span className={styles.regStep}>
+                  <span className={styles.regKey}>Saisi</span>
+                  <code className={styles.code}>{input}</code>
+                </span>
+                <span className={styles.regArrow} aria-hidden="true">→</span>
+                <span className={styles.regStep}>
+                  <span className={styles.regKey}>Pendant la frappe</span>
+                  <code className={styles.code}>{typed}</code>
+                </span>
+              </p>
+              {parsed.ok ? (
+                <div className={styles.regResult}>
+                  <span className="chip chip--jade">{parsed.format.toUpperCase()}</span>
+                  <span className={styles.regArrow} aria-hidden="true">→</span>
+                  <span className={styles.regStep}>
+                    <span className={styles.regKey}>Masqué</span>
+                    <Immatriculation maskedValue={maskRegistration(parsed.display)} size="sm" />
+                  </span>
+                </div>
+              ) : (
+                <p className={`t-small ${styles.refusal}`}>{parsed.reason}</p>
+              )}
+            </li>
+          ))}
+        </ol>
+      </div>
+    </div>
+  );
+}
+
 /** La fiche d'atelier du pro : une latte dont l'encoche devient l'œillet d'une étiquette de clé. */
 function WorkshopCard() {
   return (
@@ -299,7 +384,7 @@ export default function MetiersDesignPage() {
             </div>
             <div className={styles.figRow}>
               <Fig caption="masquée · écran TV" wide>
-                <Immatriculation value="AB-123-CD" size="lg" masked />
+                <Immatriculation maskedValue={maskRegistration('AB-123-CD')} size="lg" />
               </Fig>
               <Fig caption="ancien format · 1234 AB 75">
                 <Immatriculation value="1234ab75" size="md" />
@@ -316,7 +401,7 @@ export default function MetiersDesignPage() {
                   ['Clio V', 'FX-482-KL', '15:05'],
                 ].map(([model, reg, at]) => (
                   <li key={reg}>
-                    <Immatriculation value={maskRegistration(reg as string)} size="sm" />
+                    <Immatriculation maskedValue={maskRegistration(reg as string)} size="sm" />
                     <span className={styles.tvModel}>{model}</span>
                     <span className={styles.tvAt}>prêt depuis {at}</span>
                   </li>
@@ -325,38 +410,7 @@ export default function MetiersDesignPage() {
             </div>
           </ThemePair>
 
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <caption className="t-label">Saisie → mise en forme pendant la frappe → forme masquée</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Saisi</th>
-                  <th scope="col">Pendant la frappe</th>
-                  <th scope="col">Validé</th>
-                  <th scope="col">Masqué</th>
-                </tr>
-              </thead>
-              <tbody>
-                {REGISTRATION_INPUTS.map((input) => {
-                  const parsed = parseRegistration(input);
-                  return (
-                    <tr key={input}>
-                      <td><code className={styles.code}>{input}</code></td>
-                      <td><code className={styles.code}>{formatRegistrationInput(input)}</code></td>
-                      <td>
-                        {parsed.ok ? (
-                          <span className="chip chip--jade">{parsed.format.toUpperCase()}</span>
-                        ) : (
-                          <span className={`t-small ${styles.refusal}`}>{parsed.reason}</span>
-                        )}
-                      </td>
-                      <td>{parsed.ok ? <code className={styles.code}>{maskRegistration(parsed.display)}</code> : '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <RegistrationRules />
         </Sec>
 
         {/* ------------------------------------------------ 02 Étapes */}
@@ -501,10 +555,10 @@ export default function MetiersDesignPage() {
           n={6}
           id="touches"
           title="Chaque métier parle sa langue"
-          note="Le vocabulaire vient du registre (lib/profiles) : c’est lui que citent les pages métier, vérifié par test. La touche principale reste la touche TERMINER, en vermillon."
+          note="Le vocabulaire vient du registre (lib/profiles) : c’est lui que citent les pages métier, vérifié par test. La touche vermillon prévient le client (Appeler, Prêt · prévenir, Table prête · appeler) ; la touche claire est TERMINER, sous le nom du métier (Rendu au client, Installer)."
         >
           <ul className={styles.vocab}>
-            {(['walkin', 'vehicle', 'device', 'table', 'desk', 'retail'] as const).map((id) => {
+            {QUEUE_PROFILES.map((id) => {
               const p = PROFILES[id];
               return (
                 <li key={id} className={styles.vocabRow}>
@@ -513,12 +567,18 @@ export default function MetiersDesignPage() {
                     <p className="t-small t-muted">{p.tagline}</p>
                   </div>
                   <div className={styles.vocabKeys}>
-                    <button type="button" className="btn btn--signal btn--key">
-                      {p.vocab.call}
-                    </button>
-                    <button type="button" className="btn btn--ghost btn--lg">
-                      {p.vocab.complete}
-                    </button>
+                    <div className={styles.vocabKey}>
+                      <button type="button" className="btn btn--signal btn--key">
+                        {p.vocab.call}
+                      </button>
+                      <span className={`t-micro t-muted ${styles.vocabRole}`}>prévient</span>
+                    </div>
+                    <div className={styles.vocabKey}>
+                      <button type="button" className="btn btn--ghost btn--lg">
+                        {p.vocab.complete}
+                      </button>
+                      <span className={`t-micro t-muted ${styles.vocabRole}`}>TERMINER</span>
+                    </div>
                   </div>
                   <p className={`t-micro t-muted ${styles.vocabCounter}`}>
                     {p.vocab.queue} · {p.vocab.subjectPlural} · {p.vocab.todayCounter}

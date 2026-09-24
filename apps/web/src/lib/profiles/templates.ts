@@ -62,8 +62,35 @@ const URL_PATTERNS: readonly RegExp[] = [
   /\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:[a-z]{2,24})(?:\/|\b)(?![a-zà-ÿ])/i,
 ];
 
+/** Mots qui, épelés entre deux mots, valent un point : « exemple point fr ». */
+const SPELLED_DOT_TLDS = 'fr|com|net|org|eu|io|co|ly|me|be|ch|ca|app|info|biz|xyz|link|site|online|shop|store';
+
+/**
+ * Ramène les points déguisés à un vrai point avant de chercher une adresse :
+ *  - NFKC : lettres et points pleine chasse (`ｅｘａｍｐｌｅ．ｆｒ`) ;
+ *  - points exotiques : `。`, `｡`, `․`, `∙`, `⋅`… et le point médian collé
+ *    à ses voisins (`bit·ly`) — pas « Table prête · appeler », où il est
+ *    entouré d'espaces, comme partout dans nos textes ;
+ *  - crochets et parenthèses : `[.]`, `(dot)`, `［point］` ;
+ *  - « point » ou « dot » épelé devant un suffixe de domaine connu
+ *    (`exemple point fr`), mais pas « au point de retrait » ;
+ *  - espaces AVANT un point (`exemple . fr`, `exemple .fr`). Un point
+ *    suivi d'une espace reste une fin de phrase : « Merci. Ouvert » ne
+ *    devient pas un domaine.
+ */
+function revealDots(text: string): string {
+  return text
+    .normalize('NFKC')
+    .replace(/[。｡︒﹒․‧∙⋅]/g, '.')
+    .replace(/(?<=\S)[·・](?=\S)/g, '.')
+    .replace(/[\[(［（【]\s*(?:\.|dot|point)\s*[\])］）】]/gi, '.')
+    .replace(new RegExp(`\\s+(?:point|dot)\\s+(?=(?:${SPELLED_DOT_TLDS})\\b)`, 'gi'), '.')
+    .replace(/\s+\.\s*/g, '.');
+}
+
 export function containsUrl(text: string): boolean {
-  return URL_PATTERNS.some((re) => re.test(text));
+  const revealed = revealDots(text);
+  return URL_PATTERNS.some((re) => re.test(text) || re.test(revealed));
 }
 
 /** Rétablit l'apostrophe typographique et resserre les espaces. */

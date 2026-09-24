@@ -357,8 +357,10 @@ function scrubRegistration(text: NotificationText, details: EntryDetails | null 
   const key = normalizeRegistration(raw);
   if (key.length < 4) return text;
   const masked = maskRegistration(displayRegistration(raw, details?.country ?? 'FR'));
-  // Motif souple : les caractères de la clé, séparés ou non par espaces et tirets.
-  const pattern = new RegExp(Array.from(key).join('[\\s-]*'), 'gi');
+  // Motif souple : les caractères de la clé, séparés ou non par trois
+  // caractères au plus hors lettres et chiffres : espaces et tirets, mais
+  // aussi « AB.123.CD », « AB_123_CD », « AB/123/CD » ou « AB - 123 - CD ».
+  const pattern = new RegExp(Array.from(key).join('[^A-Z0-9]{0,3}'), 'gi');
   return { title: text.title.replace(pattern, masked), body: text.body.replace(pattern, masked) };
 }
 

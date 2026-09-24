@@ -32,7 +32,7 @@ export const table: ProfileDefinition = {
     openQueue: 'Ouvrir la liste',
     complete: 'Installer',
     start: null,
-    call: 'Table prête · appeler',
+    call: 'Table prête\u00a0· appeler',
     todayCounter: 'couverts installés',
     clientWaiting: 'N groupes avant vous',
     clientTurn: 'Votre table est prête',

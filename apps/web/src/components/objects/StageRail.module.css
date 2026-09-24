@@ -22,9 +22,20 @@
 /* ================================================================ */
 /* HORIZONTAL — la rampe de la fiche du pro                          */
 /* ================================================================ */
+
+/* Le rail mesure sa propre largeur : c'est elle, pas celle de l'écran,
+   qui décide s'il y a la place d'écrire chaque étape. */
+.hwrap {
+  container: stagerail / inline-size;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Large : `--cols` (posé par le composant) réserve à l'étape en cours la
+   largeur de son libellé ; les autres colonnes se partagent le reste. */
 .hrail {
   display: grid;
-  grid-template-columns: repeat(var(--steps, 6), minmax(0, 1fr));
+  grid-template-columns: var(--cols, repeat(var(--steps, 6), minmax(0, 1fr)));
   width: 100%;
   min-width: 0;
 }
@@ -38,26 +49,34 @@
   min-width: 0;
 }
 
-/* Le rail : chaque station trace le segment qui la relie à la précédente.
-   Passé = trait plein ; à venir = pointillé. */
-.hstep + .hstep::before {
+/* Le rail, tracé en demi-segments : chaque station trace la moitié gauche
+   (depuis le bord de sa colonne) et la moitié droite (jusqu'au bord). Les
+   colonnes peuvent donc être inégales, les segments se rejoignent quand
+   même. Un segment prend l'état de l'étape où il ARRIVE : à venir =
+   pointillé, sautée = estompé, sinon trait plein. */
+.hstep::before,
+.hstep::after {
   content: '';
   position: absolute;
   top: 5.5px;
-  right: 50%;
-  width: 100%;
   height: 2px;
   translate: 0 -50%;
-  border-radius: 2px;
   background: color-mix(in oklab, var(--text) 38%, transparent);
 }
-.hstep:is([data-state='upcoming'])::before {
-  background: none;
-  border-top: 2px dotted var(--rail);
-  height: 0;
-  translate: 0 -1px;
+.hstep::before { left: 0; right: 50%; }
+.hstep::after { left: 50%; right: 0; }
+.hstep:first-child::before,
+.hstep:last-child::after { content: none; }
+/* Pointillé en tuiles de 4 px ancrées sur la frontière des colonnes :
+   les deux moitiés d'un segment gardent le même rythme à la jointure
+   (deux bordures pointillées y doubleraient un point). */
+.hstep[data-state='upcoming']::before,
+.hstep[data-next='upcoming']::after {
+  background: linear-gradient(to right, var(--rail) 50%, transparent 50%) left center / 4px 2px repeat-x;
 }
-.hstep[data-state='skipped']::before { background: color-mix(in oklab, var(--text) 22%, transparent); }
+.hstep[data-next='upcoming']::after { background-position: right center; }
+.hstep[data-state='skipped']::before,
+.hstep[data-next='skipped']::after { background: color-mix(in oklab, var(--text) 22%, transparent); }
 
 /* Chaque station occupe la même boîte de 24 × 11 px, quelle que soit sa
    forme : les libellés restent alignés sur une seule ligne. */
@@ -97,28 +116,123 @@
   box-shadow: 0 2px 0 var(--tone-edge), 0 0 0 3px var(--surface);
 }
 
+/* 12 px au moins, et jamais la teinte « faint » : ces libellés se lisent
+   de loin, sur un poste d'atelier (4,5:1 dans les deux thèmes). */
 .hlabel {
   max-width: 100%;
+  padding-inline: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   line-height: 1.2;
   letter-spacing: 0.01em;
   font-variation-settings: 'wdth' 84, 'wght' 560;
   color: var(--text-muted);
 }
-.hstep[data-state='upcoming'] .hlabel,
-.hstep[data-state='skipped'] .hlabel { color: var(--text-faint); }
-.hstep[data-state='skipped'] .hlabel { text-decoration: line-through; text-decoration-thickness: 1px; }
+.hstep[data-state='upcoming'] .hlabel { font-variation-settings: 'wdth' 84, 'wght' 460; }
+.hstep[data-state='skipped'] .hlabel {
+  font-variation-settings: 'wdth' 84, 'wght' 460;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+/* L'étape en cours : sa colonne a réservé sa largeur, elle ne se coupe pas. */
 .hstep[data-state='current'] .hlabel {
-  /* L'étape en cours ne se coupe jamais : elle peut déborder un peu sur
-     les colonnes voisines, dont les libellés sont courts. */
-  max-width: none;
   overflow: visible;
   color: var(--text);
   font-variation-settings: 'wdth' 88, 'wght' 760;
 }
+
+/* Étroit : une seule légende, sous la latte courante. */
+.hnow {
+  display: none;
+  grid-template-columns: repeat(var(--steps, 6), minmax(0, 1fr));
+  margin: 8px 0 0;
+}
+.hnowLabel {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  line-height: 1.2;
+}
+.hnowLabel[data-align='start'] { justify-self: start; }
+.hnowLabel[data-align='center'] { justify-self: center; }
+.hnowLabel[data-align='end'] { justify-self: end; }
+.hnowName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  font-variation-settings: 'wdth' 88, 'wght' 760;
+}
+.hnowCount {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-variation-settings: 'wdth' 88, 'wght' 600;
+  color: var(--text-muted);
+}
+
+/* Paliers : le composant pose dans `data-need` la largeur qu'il lui faut
+   pour tout écrire (RAIL_TIERS dans StageRail.tsx) ; sous ce palier, le
+   rail passe en régime étroit. Les libellés masqués restent lus
+   (même technique que .sr-only). */
+@container stagerail (width < 280px) {
+  .hwrap[data-need='280'] .hrail { grid-template-columns: repeat(var(--steps, 6), minmax(0, 1fr)); }
+  .hwrap[data-need='280'] .hlabel { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hwrap[data-need='280'] .hnow { display: grid; }
+}
+@container stagerail (width < 320px) {
+  .hwrap[data-need='320'] .hrail { grid-template-columns: repeat(var(--steps, 6), minmax(0, 1fr)); }
+  .hwrap[data-need='320'] .hlabel { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hwrap[data-need='320'] .hnow { display: grid; }
+}
+@container stagerail (width < 360px) {
+  .hwrap[data-need='360'] .hrail { grid-template-columns: repeat(var(--steps, 6), minmax(0, 1fr)); }
+  .hwrap[data-need='360'] .hlabel { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hwrap[data-need='360'] .hnow { display: grid; }
+}
+@container stagerail (width < 400px) {
+  .hwrap[data-need='400'] .hrail { grid-template-columns: repeat(var(--steps, 6), minmax(0, 1fr)); }
+  .hwrap[data-need='400'] .hlabel { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hwrap[data-need='400'] .hnow { display: grid; }
+}
+@container stagerail (width < 440px) {
+  .hwrap[data-need='440'] .hrail { grid-template-columns: repeat(var(--steps, 6), minmax(0, 1fr)); }
+  .hwrap[data-need='440'] .hlabel { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hwrap[data-need='440'] .hnow { display: grid; }
+}
+@container stagerail (width < 480px) {
+  .hwrap[data-need='480'] .hrail { grid-template-columns: repeat(var(--steps, 6), minmax(0, 1fr)); }
+  .hwrap[data-need='480'] .hlabel { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hwrap[data-need='480'] .hnow { display: grid; }
+}
+@container stagerail (width < 520px) {
+  .hwrap[data-need='520'] .hrail { grid-template-columns: repeat(var(--steps, 6), minmax(0, 1fr)); }
+  .hwrap[data-need='520'] .hlabel { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hwrap[data-need='520'] .hnow { display: grid; }
+}
+@container stagerail (width < 560px) {
+  .hwrap[data-need='560'] .hrail { grid-template-columns: repeat(var(--steps, 6), minmax(0, 1fr)); }
+  .hwrap[data-need='560'] .hlabel { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hwrap[data-need='560'] .hnow { display: grid; }
+}
+@container stagerail (width < 620px) {
+  .hwrap[data-need='620'] .hrail { grid-template-columns: repeat(var(--steps, 6), minmax(0, 1fr)); }
+  .hwrap[data-need='620'] .hlabel { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hwrap[data-need='620'] .hnow { display: grid; }
+}
+@container stagerail (width < 680px) {
+  .hwrap[data-need='680'] .hrail { grid-template-columns: repeat(var(--steps, 6), minmax(0, 1fr)); }
+  .hwrap[data-need='680'] .hlabel { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hwrap[data-need='680'] .hnow { display: grid; }
+}
+.hwrap[data-need='max'] .hrail { grid-template-columns: repeat(var(--steps, 6), minmax(0, 1fr)); }
+.hwrap[data-need='max'] .hlabel { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.hwrap[data-need='max'] .hnow { display: grid; }
 
 /* ================================================================ */
 /* VERTICAL — le Rang dont les lattes sont les étapes                 */

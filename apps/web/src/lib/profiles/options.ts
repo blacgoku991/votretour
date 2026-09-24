@@ -86,27 +86,34 @@ export function profileOptionsSchema(profile: QueueProfile) {
 }
 
 /**
- * Options posées au passage dans le profil (miroir des défauts de
- * `internal.apply_profile_defaults`). L'activité ne compte qu'au guichet :
- * santé → `sensitive`, santé et administration → pas d'avis Google.
+ * Options posées au passage dans le profil : les littéraux mêmes de
+ * `internal.apply_profile_defaults` (0034), comparés profil par profil et
+ * activité par activité par `profile-parity.test.ts`.
+ *
+ * L'activité ne compte QU'AU GUICHET, comme en SQL : santé → `sensitive`,
+ * santé et administration → pas d'avis Google (décision du propriétaire :
+ * aucune demande d'avis par défaut en santé). Les autres profils demandent
+ * l'avis quelle que soit l'activité : c'est `sensitive`, propre au guichet,
+ * qui porte la règle de santé, et une activité de santé est rangée au
+ * guichet par `ACTIVITY_PROFILE`.
  */
 export function defaultProfileOptions(profile: QueueProfile, activity?: string | null): ProfileOptions {
-  const known = isActivityType(activity) ? activity : null;
-  const review = known ? !NO_REVIEW_ACTIVITIES.has(known) : true;
   switch (profile) {
     case 'vehicle':
-      return { stayChoice: true, registrationRequired: true, tvRegistration: 'masked', quotes: true, review };
+      return { stayChoice: true, registrationRequired: true, tvRegistration: 'masked', quotes: true, review: true };
     case 'device':
-      return { quotes: true, numbering: true, review };
+      return { quotes: true, numbering: true, review: true };
     case 'table':
-      return { partyMax: 12, tableSizes: [2, 4, 6, 8], reviewDelayMinutes: 75, review };
+      return { partyMax: 12, tableSizes: [2, 4, 6, 8], reviewDelayMinutes: 75, review: true };
     case 'desk': {
+      const known = isActivityType(activity) ? activity : null;
       const sensitive = known ? SENSITIVE_ACTIVITIES.has(known) : false;
+      const review = known ? !NO_REVIEW_ACTIVITIES.has(known) : true;
       // Santé : ni demande d'avis ni message de fin de visite (null = jamais).
       return sensitive ? { numbering: true, sensitive, review, reviewDelayMinutes: null } : { numbering: true, sensitive, review };
     }
     case 'retail':
-      return { numbering: false, review };
+      return { numbering: false, review: true };
     case 'walkin':
     case 'event':
       // Rien : `profile_options = '{}'` est la garantie « barbier inchangé ».

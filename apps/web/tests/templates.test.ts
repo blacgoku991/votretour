@@ -77,8 +77,35 @@ describe('adresses web', () => {
     }
   });
 
+  it('voit les points déguisés : espaces, pleine chasse, point médian collé, « point » épelé', () => {
+    for (const body of [
+      'Payez sur exemple . fr',
+      'Payez sur exemple .fr',
+      'bit·ly/x',
+      'exemple。fr',
+      'ｅｘｅｍｐｌｅ．ｆｒ',
+      'exemple[.]fr',
+      'exemple (dot) com',
+      'exemple ［point］ fr',
+      'exemple point fr',
+      'exemple dot com/payer',
+    ]) {
+      expect(containsUrl(body), body).toBe(true);
+    }
+  });
+
   it('laisse passer heures, montants et ponctuation ordinaire', () => {
-    for (const body of ['Nous fermons à 19 h 00.', 'Devis de 184,00 €', 'Prêt. Merci !', 'Retard de 12.5 min', 'n° 1234']) {
+    for (const body of [
+      'Nous fermons à 19 h 00.',
+      'Devis de 184,00 €',
+      'Prêt. Merci !',
+      'Retard de 12.5 min',
+      'n° 1234',
+      'Merci. Ouvert demain.',
+      'Table prête · appeler',
+      'Votre commande est au point de retrait.',
+      'Nous faisons le point demain matin.',
+    ]) {
       expect(containsUrl(body), body).toBe(false);
     }
   });

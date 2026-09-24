@@ -155,6 +155,13 @@ describe('atelier véhicule', () => {
     // Le message libre du pro est lui aussi masqué.
     expect(profileNotificationCopy('custom', ctx).body).toBe('Votre ••-••3-CD est prête');
   });
+
+  it('masque aussi une immatriculation écrite avec d’autres séparateurs', () => {
+    for (const written of ['AB.123.CD', 'AB_123_CD', 'AB/123/CD', 'ab - 123 - cd', 'AB123CD']) {
+      const t = profileNotificationCopy('custom', { ...GARAGE, body: `Votre ${written} est prête` });
+      expect(t.body, written).toBe('Votre ••-••3-CD est prête');
+    }
+  });
 });
 
 describe('atelier appareil', () => {

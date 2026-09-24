@@ -83,9 +83,14 @@ describe('registre', () => {
   });
 
   it('les touches citées par la conception existent', () => {
-    expect(PROFILES.vehicle.vocab.call).toBe('Prêt · prévenir');
+    // Espace insécable avant le point médian : « · appeler » ne commence
+    // jamais une ligne quand la touche passe sur deux lignes.
+    expect(PROFILES.vehicle.vocab.call).toBe('Prêt\u00a0· prévenir');
     expect(PROFILES.vehicle.vocab.complete).toBe('Rendu au client');
-    expect(PROFILES.table.vocab.call).toBe('Table prête · appeler');
+    expect(PROFILES.table.vocab.call).toBe('Table prête\u00a0· appeler');
+    for (const p of QUEUE_PROFILES) {
+      expect(PROFILES[p].vocab.call, p).not.toMatch(/ ·/);
+    }
     expect(PROFILES.table.vocab.complete).toBe('Installer');
     expect(PROFILES.desk.vocab.call).toBe('Appeler au guichet');
   });
@@ -139,6 +144,18 @@ describe('options', () => {
     expect(defaultProfileOptions('desk', 'admin_service').review).toBe(false);
     expect(defaultProfileOptions('desk', 'counter').review).toBe(true);
     expect(defaultProfileOptions('desk', 'counter').sensitive).toBe(false);
+  });
+
+  it('l’activité ne compte qu’au guichet, comme dans internal.apply_profile_defaults', () => {
+    // La règle de santé est portée par `sensitive`, propre au guichet ; une
+    // activité de santé y est rangée par défaut (ACTIVITY_PROFILE).
+    expect(defaultProfileOptions('vehicle', 'health').review).toBe(true);
+    expect(defaultProfileOptions('table', 'admin_service').review).toBe(true);
+    expect(defaultProfileOptions('vehicle', 'health')).toEqual(defaultProfileOptions('vehicle', 'garage'));
+  });
+
+  it('guichet : prénom non demandé par défaut (on y appelle un numéro)', () => {
+    expect(PROFILES.desk.queueDefaults.askClientName).toBe(false);
   });
 
   it('restaurant : avis 75 min après « Installer »', () => {
@@ -238,16 +255,18 @@ describe('numéros de ticket', () => {
 });
 
 describe('erreurs des profils', () => {
-  it('traduit les codes du moteur sans confondre avec les plaques', () => {
-    expect(toAppError({ code: 'VT011', message: 'Informations invalides : stay' }).code).toBe('invalid_details');
-    expect(toAppError({ code: 'VT011', message: 'Plaque de stock introuvable' }).code).toBe('plate_not_found');
-    expect(toAppError({ code: 'VT012', message: 'Trop de messages pour ce ticket (10 au plus)' }).code).toBe('too_many_messages');
-    expect(toAppError({ code: 'VT012', message: 'Ce tag a été verrouillé' }).code).toBe('plate_locked');
-    const busy = toAppError({ code: 'VT013', message: 'Terminez ou videz la file avant de changer de profil' });
+  it('VT015 à VT017 sont propres aux profils ; VT011 à VT013 restent aux plaques', () => {
+    expect(toAppError({ code: 'VT015', message: 'Informations invalides : stay' }).code).toBe('invalid_details');
+    expect(toAppError({ code: 'VT015', message: 'x' }).status).toBe(422);
+    expect(toAppError({ code: 'VT016', message: 'Trop de messages pour ce ticket (10 au plus)' }).code).toBe('too_many_messages');
+    expect(toAppError({ code: 'VT016', message: 'x' }).status).toBe(429);
+    const busy = toAppError({ code: 'VT017', message: 'Terminez ou videz la file avant de changer de profil' });
     expect(busy.code).toBe('queue_not_empty');
     expect(busy.message).toBe('Terminez ou videz la file avant de changer de profil.');
     expect(busy.status).toBe(409);
-    expect(toAppError({ code: 'VT013', message: 'Cette plaque est déjà attribuée' }).code).toBe('plate_unavailable');
-    expect(toAppError({ code: 'VT016', message: 'x' }).status).toBe(429);
+    // Le message SQL ne départage plus rien : le code suffit.
+    expect(toAppError({ code: 'VT011', message: 'Informations invalides : stay' }).code).toBe('plate_not_found');
+    expect(toAppError({ code: 'VT012', message: 'Trop de messages' }).code).toBe('plate_locked');
+    expect(toAppError({ code: 'VT013', message: 'Terminez ou videz la file' }).code).toBe('plate_unavailable');
   });
 });

@@ -42,9 +42,32 @@ et les messages en étapes.
 | `preparing` | retail | `serving` | non |
 
 `walkin`, `table`, `desk` et `event` n'ont pas d'étape (`stage` reste null).
-Le test `profile-parity` lit la migration 0034 et vérifie que ce tableau,
-les profils à position, les profils parallèles et l'avance automatique sont
-identiques en TypeScript et en SQL.
+
+**Une seule source de vérité, vérifiée des deux côtés.** Le test
+`profile-parity` lit la migration 0034 et vérifie que sont identiques en
+TypeScript et en SQL :
+
+- ce tableau, les profils à position, les profils parallèles et l'avance
+  automatique ;
+- les défauts posés au passage dans un profil : `internal.apply_profile_defaults`
+  est **évaluée** (un mini-évaluateur SQL rejoue ses `case`, sa logique à
+  trois valeurs et ses `jsonb_build_object`) pour chaque profil et chaque
+  activité, puis comparée à `defaultProfileOptions` et à `queueDefaults`
+  complété des défauts de colonnes de `queues` (0003) ;
+- les prestations par défaut (`internal.default_services`) ;
+- la règle d'immatriculation. Les vecteurs de
+  `lib/profiles/registration-vectors.json` (accents, formes courtes, FNI,
+  étrangères) sont rejoués par vitest sur `normalizeRegistration` et
+  `maskRegistration`, et par le test SQL du moteur sur
+  `internal.normalize_registration` et `internal.mask_registration`.
+
+Règles communes : la clé ne garde que `[A-Za-z0-9]`, filtrés **avant** le
+passage en majuscules, **sans repli des accents** (`ÉB-123-CD` donne `B123CD`
+des deux côtés) ; le masquage laisse lisibles `min(3, n − 1)` caractères,
+jamais la plaque entière. L'activité ne change les options qu'au guichet
+(santé : `sensitive`, pas d'avis ni de message de fin ; administration : pas
+d'avis). Au guichet, le prénom n'est pas demandé par défaut
+(`ask_client_name = false`).
 
 **Les barbiers ne voient rien changer.** En `walkin`, `details = {}`,
 `stage = null` et `profile_options = {}` : aucune branche nouvelle du moteur
@@ -72,7 +95,10 @@ Objets visuels (`components/objects/`) : `Immatriculation`, `StageRail`,
 `TicketNumber`, `PartySize` et `DeviceGlyph` sont des composants **purs**,
 sans hook ni `'use client'`, pour que les pages métier (composants serveur)
 les rendent. Seul `TicketNumberFlap` est un composant client : il ajoute la
-chute du volet. Tous sont montrés sur la planche `/design/metiers`, jamais
+chute du volet. `StageRail` horizontal mesure sa propre largeur (requête de
+conteneur) : s'il ne peut pas écrire toutes les étapes sans les couper, il
+ne garde que les jalons et nomme l'étape en cours sous sa latte
+(« Réparation 5/6 ») ; les autres noms restent lus par les lecteurs d'écran. Tous sont montrés sur la planche `/design/metiers`, jamais
 indexée et introuvable en production.
 
 ## 3. Codes d'erreur VT
@@ -80,27 +106,32 @@ indexée et introuvable en production.
 | Code | Sens | Traduction (`lib/errors.ts`) |
 |---|---|---|
 | VT001 à VT010 | file, ticket, professionnel (0007) | inchangés |
-| VT011 | plaque introuvable (0013, 0017) **ou** informations invalides (0034) | `plate_not_found` / `invalid_details` |
-| VT012 | tag verrouillé (0013) **ou** trop de messages (0034) | `plate_locked` / `too_many_messages` |
-| VT013 | plaque indisponible (0017) **ou** file non vide au changement de profil (0034) | `plate_unavailable` / `queue_not_empty` |
+| VT011 | plaque introuvable (0013, 0017) | `plate_not_found` |
+| VT012 | tag verrouillé (0013) | `plate_locked` |
+| VT013 | plaque indisponible (0017) | `plate_unavailable` |
 | VT014 | quantité hors limites (0017) | `invalid_quantity` |
-| VT015 à VT017 | réservés aux profils, si 0034 quitte les codes partagés | `invalid_details`, `too_many_messages`, `queue_not_empty` |
+| VT015 | informations métier invalides (0034) | `invalid_details` (422) |
+| VT016 | trop de messages pour un ticket (0034) | `too_many_messages` (429) |
+| VT017 | file non vide au changement de profil (0034) | `queue_not_empty` (409) |
 
-**VT011 à VT013 sont partagés** avec les plaques, qui les employaient déjà.
-Le code seul ne suffit donc pas : `toAppError` départage par le début du
-message SQL (« Informations invalides », « Trop de messages », « Terminez ou
-videz la file »). Tout autre message garde le sens « plaque » d'aujourd'hui.
-Le test `profile-parity` vérifie que chaque erreur levée par 0034 est
-traduite sans être prise pour une erreur de plaque.
+Un code ne veut dire qu'une chose : `toAppError` ne lit jamais le message
+SQL. Le test `profile-parity` vérifie que chaque erreur levée par 0034 est
+traduite, et jamais prise pour une erreur de plaque.
 
 ## 4. Confidentialité
 
 - **Immatriculation** : donnée personnelle selon la CNIL. Hors du poste du pro
   (historique compris, réservé aux membres), elle n'apparaît que **masquée** :
   les trois derniers caractères restent lisibles (`AB-123-CD` devient
-  `••-••3-CD`). L'écran TV la reçoit déjà masquée par le serveur
+  `••-••3-CD` ; une plaque étrangère courte garde au moins un caractère
+  masqué). L'écran TV la reçoit déjà masquée par le serveur
   (`display_snapshot`) : la forme complète ne quitte jamais la base vers le
-  téléviseur. Elle est purgée en même temps que les prénoms.
+  téléviseur. Côté interface, `Immatriculation` ne masque pas au rendu : un
+  écran qui n'a droit qu'à la forme masquée lui passe `maskedValue`, de type
+  `MaskedRegistration` (fabriqué par `maskRegistration`, ou par
+  `asMaskedRegistration` pour une valeur venue du serveur, qui refuse une
+  forme non masquée). La forme complète ne peut donc pas partir dans les
+  props d'un composant client. Elle est purgée en même temps que les prénoms.
 - **Écran verrouillé** : jamais d'immatriculation complète (un garde-fou la
   remplace même dans un message libre du pro), jamais de prénom, jamais de
   motif au guichet.
@@ -112,6 +143,12 @@ traduite sans être prise pour une erreur de plaque.
   `send_quote`.
 - **Messages du pro** : 180 caractères, variables sur liste blanche, **aucune
   adresse web** (contre l'hameçonnage par un compte compromis).
+- **Écarts assumés aux textes de la conception** : au guichet, `ahead_two`
+  et `ahead_one` ne citent pas le lieu dans le corps (« … avant vous au
+  Service Urbanisme ») : il est déjà le TITRE de la notification, et la
+  préposition (« au », « à la », « chez ») ne se déduit pas d'un nom libre.
+  Les modèles de messages n'accordent aucun participe au client (« votre
+  numéro sera appelé », pas « vous serez appelé »).
 - **Numéro de ticket** : exception assumée à la règle « pas de numéro »
   (`ARCHITECTURE.md`, § 4). Au guichet, il protège la vie privée : on appelle
   un numéro, jamais un nom.

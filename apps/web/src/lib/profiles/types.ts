@@ -119,7 +119,11 @@ export interface ProfileVocab {
   complete: string;
   /** L'équivalent de Démarrer (« Prendre en charge ») ; null si le profil n'en a pas. */
   start: string | null;
-  /** L'équivalent d'Appeler (« Prêt · prévenir », « Table prête · appeler »). */
+  /**
+   * L'équivalent d'Appeler (« Prêt · prévenir », « Table prête · appeler »).
+   * Espace INSÉCABLE avant « · » : une touche étroite coupe après le point,
+   * jamais avant.
+   */
   call: string;
   /** Compteur du jour (« rendus aujourd'hui »). */
   todayCounter: string;

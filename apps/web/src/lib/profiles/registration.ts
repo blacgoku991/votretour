@@ -8,7 +8,8 @@
  * La CNIL tient l'immatriculation pour une donnée personnelle (elle
  * identifie indirectement le propriétaire). D'où trois règles :
  *  - la clé de recherche (`registration_key`) est normalisée ici ET en SQL
- *    (`internal.normalize_registration`), à l'identique ;
+ *    (`internal.normalize_registration`), à l'identique : mêmes vecteurs
+ *    (`registration-vectors.json`) des deux côtés ;
  *  - hors du poste du pro, elle n'apparaît que MASQUÉE : les trois derniers
  *    caractères restent lisibles (`AB-123-CD` → `••-••3-CD`) ;
  *  - elle est purgée avec les prénoms, à la même échéance.
@@ -50,17 +51,20 @@ export type RegistrationParse =
   | { ok: false; key: string; reason: string };
 
 /**
- * Majuscules, lettres et chiffres seulement : `ab 123-cd` → `AB123CD`.
- * Les accents tombent avec leur lettre de base (`é` → `E`) : un clavier
- * de téléphone en français en glisse parfois un.
+ * Majuscules, lettres et chiffres ASCII seulement : `ab 123-cd` → `AB123CD`.
+ *
+ * Même règle, caractère pour caractère, que `internal.normalize_registration`
+ * (0034) : on RETIRE d'abord tout ce qui n'est pas `[A-Za-z0-9]`, puis on
+ * passe en majuscules. Pas de repli des accents : « ÉB-123-CD » donne
+ * `B123CD` des deux côtés, refusé comme plaque française, et le client
+ * voit la lettre disparaître pendant la frappe (aucune plaque n'en porte).
+ * L'ordre compte : en JavaScript, `'ß'.toUpperCase()` vaut `SS`, qu'un
+ * passage en majuscules AVANT le filtre ferait entrer dans la clé.
+ * Vecteurs partagés avec le test SQL : `registration-vectors.json`.
  */
 export function normalizeRegistration(raw: string | null | undefined): string {
   if (!raw) return '';
-  return raw
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '');
+  return raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 }
 
 function formatFni(match: RegExpMatchArray): string {
@@ -77,10 +81,8 @@ export function parseRegistration(raw: string, country: RegistrationCountry = 'F
     }
     // Forme libre : on garde les séparateurs du client, en les simplifiant.
     const display = raw
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Za-z0-9 -]/g, '')
       .toUpperCase()
-      .replace(/[^A-Z0-9 -]/g, '')
       .replace(/\s*-\s*/g, '-')
       .replace(/\s+/g, ' ')
       .trim();
@@ -145,32 +147,60 @@ export function formatRegistrationInput(raw: string): string {
 /** Caractère de masquage, identique à celui de `internal.mask_registration`. */
 export const MASK_CHAR = '•';
 
+declare const maskedBrand: unique symbol;
+
+/**
+ * Une immatriculation DÉJÀ masquée. Type distinct d'une simple chaîne :
+ * seul `maskRegistration` (ou `asMaskedRegistration`, pour une valeur
+ * masquée par le serveur, `display_snapshot`) en fabrique une. Un écran
+ * qui n'a droit qu'à la forme masquée (TV, aperçu de rattachement) prend
+ * ce type : la forme complète ne peut pas lui arriver par erreur, ni
+ * partir dans les props sérialisées d'un composant client.
+ */
+export type MaskedRegistration = string & { readonly [maskedBrand]: true };
+
+const ALNUM_RE = /[A-Za-z0-9]/;
+
 /**
  * Masque une immatriculation AFFICHÉE en gardant ses séparateurs : seuls
  * les trois derniers caractères alphanumériques restent lisibles.
  *
  *   AB-123-CD  → ••-••3-CD
  *   1234 AB 75 → •••• •B 75
+ *   AB1        → •B1   (étrangère courte : au moins un caractère masqué)
  *
- * Une immatriculation très courte (étrangère) garde au moins un caractère
- * masqué : sinon, « masquée », elle serait lue en entier.
+ * Règle commune avec `internal.mask_registration` (vecteurs partagés,
+ * `registration-vectors.json`) : lisibles = min(3, n − 1) où n compte les
+ * caractères `[A-Za-z0-9]`, passés en majuscules ; tout autre caractère
+ * (séparateur, lettre accentuée) reste à sa place ; sans caractère
+ * alphanumérique, rien (null en SQL, chaîne vide ici).
  */
-export function maskRegistration(display: string): string {
+export function maskRegistration(display: string): MaskedRegistration {
   const chars = Array.from(display);
-  const alnum = chars.filter((c) => /[A-Za-z0-9]/.test(c)).length;
-  const visible = Math.min(3, Math.max(0, alnum - 1));
+  const alnum = chars.filter((c) => ALNUM_RE.test(c)).length;
+  if (alnum === 0) return '' as MaskedRegistration;
+  const visible = Math.min(3, alnum - 1);
   let seen = 0;
   const out: string[] = [];
   for (let i = chars.length - 1; i >= 0; i -= 1) {
     const c = chars[i] ?? '';
-    if (/[A-Za-z0-9]/.test(c)) {
-      out.push(seen < visible ? c : MASK_CHAR);
+    if (ALNUM_RE.test(c)) {
+      out.push(seen < visible ? c.toUpperCase() : MASK_CHAR);
       seen += 1;
     } else {
       out.push(c);
     }
   }
-  return out.reverse().join('');
+  return out.reverse().join('') as MaskedRegistration;
+}
+
+/**
+ * Reconnaît une forme masquée reçue du serveur (`display_snapshot`). Une
+ * valeur sans caractère masqué est REFUSÉE (null) : on n'affiche pas en
+ * clair ce qui aurait dû arriver masqué.
+ */
+export function asMaskedRegistration(value: string | null | undefined): MaskedRegistration | null {
+  return value && value.includes(MASK_CHAR) ? (value as MaskedRegistration) : null;
 }
 
 /** Les caractères restés visibles d'une forme masquée (« 3-CD »), pour les lecteurs d'écran. */

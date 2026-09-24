@@ -97,27 +97,102 @@ export function StageRail({
     );
   }
 
+  // ---- Horizontal -------------------------------------------------
+  // Deux régimes, choisis par une requête de conteneur (le rail mesure sa
+  // PROPRE largeur, pas celle de l'écran : une fiche étroite sur un grand
+  // écran est traitée comme un téléphone) :
+  //  - large : chaque étape écrit son nom ; la colonne de l'étape en cours
+  //    réserve la largeur de son libellé (jamais de débordement sur les
+  //    voisines), les autres se partagent le reste et s'abrègent au besoin ;
+  //  - étroit : seuls les jalons restent sur le rail, et une ligne unique
+  //    dessous nomme l'étape en cours (« Réparation 5/6 »), sous sa latte,
+  //    bornée au rail. Les noms des autres étapes restent lus par les
+  //    lecteurs d'écran.
+  const index = currentStep ? position - 1 : -1;
+  const need = railWidthNeeded(steps, index);
+  const tier = RAIL_TIERS.find((t) => t >= need) ?? 'max';
+  const columns = steps
+    .map((s) => (s.state === 'current' ? 'minmax(max-content, 1fr)' : 'minmax(0, 1fr)'))
+    .join(' ');
+  // La légende de l'étroit couvre la colonne courante et ses deux voisines ;
+  // aux extrémités, elle s'aligne sur le bord pour ne jamais sortir du rail.
+  const from = Math.max(1, index);
+  const to = Math.min(steps.length, index + 2) + 1;
+  const align = index <= 0 ? 'start' : index >= steps.length - 1 ? 'end' : 'center';
+
   return (
-    <ol
-      className={[styles.hrail, className].filter(Boolean).join(' ')}
-      aria-label={summary}
-      style={{ ['--steps' as string]: steps.length } as React.CSSProperties}
+    <div
+      className={[styles.hwrap, className].filter(Boolean).join(' ')}
+      data-need={tier}
+      style={
+        {
+          ['--steps' as string]: steps.length,
+          ['--cols' as string]: columns,
+        } as React.CSSProperties
+      }
     >
-      {steps.map((step) => (
-        <li
-          key={step.def.key}
-          className={styles.hstep}
-          data-state={step.state}
-          data-tone={step.def.tone}
-          aria-current={step.state === 'current' ? 'step' : undefined}
-        >
-          <span className={styles.station} aria-hidden="true" />
-          <span className={styles.hlabel}>
-            {step.def.short}
-            <span className="sr-only">, {STATE_WORD[step.state]}</span>
+      <ol className={styles.hrail} aria-label={summary}>
+        {steps.map((step, i) => (
+          <li
+            key={step.def.key}
+            className={styles.hstep}
+            data-state={step.state}
+            data-next={steps[i + 1]?.state}
+            data-tone={step.def.tone}
+            aria-current={step.state === 'current' ? 'step' : undefined}
+          >
+            <span className={styles.station} aria-hidden="true" />
+            <span className={styles.hlabel}>
+              {step.def.short}
+              <span className="sr-only">, {STATE_WORD[step.state]}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+      {/* Doublon visuel de l'étape en cours, pour le régime étroit : caché
+          aux lecteurs d'écran, qui ont déjà la liste. */}
+      <p className={styles.hnow} aria-hidden="true">
+        {currentStep ? (
+          <span
+            className={styles.hnowLabel}
+            data-align={align}
+            style={{ gridColumn: `${from} / ${to}` }}
+          >
+            <span className={styles.hnowName}>{currentStep.def.short}</span>
+            <span className={styles.hnowCount}>
+              {position}/{steps.length}
+            </span>
           </span>
-        </li>
-      ))}
-    </ol>
+        ) : (
+          <span className={styles.hnowLabel} data-align="start" style={{ gridColumn: '1 / -1' }}>
+            <span className={styles.hnowName}>{steps.length} étapes</span>
+          </span>
+        )}
+      </p>
+    </div>
   );
+}
+
+/**
+ * Paliers de largeur (px) des requêtes de conteneur de `StageRail.module.css`.
+ * Le rail choisit le premier palier qui loge tous ses libellés ; sous ce
+ * palier, il passe en régime étroit. À tenir en phase avec le CSS.
+ */
+export const RAIL_TIERS = [280, 320, 360, 400, 440, 480, 520, 560, 620, 680] as const;
+
+/**
+ * Largeur estimée pour écrire toutes les étapes sans en couper une : la
+ * colonne courante réserve son libellé (plus gras), les autres colonnes,
+ * égales, doivent loger le plus long des autres libellés, plus 7 px au
+ * moins d'air entre deux noms. Mesuré à 12 px en Archivo étroite : ~5,2 px
+ * par caractère (5,9 en gras) ; on compte 5,4 et 6,2. Se tromper coûte au
+ * pire une abréviation (points de suspension), jamais un chevauchement.
+ */
+function railWidthNeeded(steps: readonly RailStep[], currentIndex: number): number {
+  const label = (s: RailStep) => Array.from(s.def.short).length;
+  const others = steps.filter((_, i) => i !== currentIndex);
+  const widestOther = Math.max(0, ...others.map(label)) * 5.4 + 10;
+  const current = currentIndex >= 0 ? label(steps[currentIndex] as RailStep) * 6.2 + 6 : 0;
+  // Une station (24 px) et son halo tiennent toujours dans une colonne.
+  return Math.ceil(current + others.length * Math.max(36, widestOther));
 }

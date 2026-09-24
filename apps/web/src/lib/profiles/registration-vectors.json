@@ -1,0 +1,34 @@
+{
+  "$comment": "Vecteurs partagés TS ↔ SQL. Lus par apps/web/tests/registration.test.ts (normalizeRegistration, maskRegistration) ET par le test SQL du moteur (internal.normalize_registration, internal.mask_registration). Chaîne vide attendue = null côté SQL. Toute règle changée d’un côté casse l’autre.",
+  "normalize": [
+    ["ab 123-cd", "AB123CD"],
+    ["AB-123-CD", "AB123CD"],
+    [" Ab.123_cD ", "AB123CD"],
+    ["AB/123/CD", "AB123CD"],
+    ["1234 ab 75", "1234AB75"],
+    ["56 xz 2a", "56XZ2A"],
+    ["M-AB 1234", "MAB1234"],
+    ["ÉB-123-CD", "B123CD"],
+    ["éb-123-çd", "B123D"],
+    ["straße 12", "STRAE12"],
+    ["ＡＢ１２３ＣＤ", ""],
+    ["•••-3CD", "3CD"],
+    ["", ""],
+    ["   ", ""],
+    ["--", ""]
+  ],
+  "mask": [
+    ["AB-123-CD", "••-••3-CD"],
+    ["ab-123-cd", "••-••3-CD"],
+    ["1234 AB 75", "•••• •B 75"],
+    ["56 XZ 2A", "•• •Z 2A"],
+    ["M-AB 1234", "•-•• •234"],
+    ["ABCD", "•BCD"],
+    ["AB1", "•B1"],
+    ["AB", "•B"],
+    ["A", "•"],
+    ["É1234", "É•234"],
+    ["--", ""],
+    ["", ""]
+  ]
+}

@@ -50,7 +50,7 @@ export const desk: ProfileDefinition = {
     {
       key: 'changement_guichet',
       label: 'Changement de guichet',
-      body: 'Le guichet 2 ferme : vous serez appelé au guichet 4.',
+      body: 'Le guichet 2 ferme : votre numéro sera appelé au guichet 4.',
     },
     { key: 'patienter', label: 'Patienter', body: 'Merci de patienter, un agent arrive.' },
   ],

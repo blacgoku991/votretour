@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  asMaskedRegistration,
   displayRegistration,
   formatRegistrationInput,
   maskRegistration,
@@ -23,8 +26,38 @@ describe('normalisation', () => {
     expect(normalizeRegistration(null)).toBe('');
   });
 
-  it('fait tomber les accents avec leur lettre de base', () => {
-    expect(normalizeRegistration('éb-123-çd')).toBe('EB123CD');
+  it('retire les lettres accentuées, comme internal.normalize_registration', () => {
+    // Pas de repli É → E : la clé serait différente de celle du SQL.
+    expect(normalizeRegistration('ÉB-123-CD')).toBe('B123CD');
+    expect(parseRegistration('ÉB-123-CD').ok).toBe(false);
+  });
+
+  it('filtre AVANT de passer en majuscules (ß ne devient pas SS)', () => {
+    expect(normalizeRegistration('ß1')).toBe('1');
+  });
+});
+
+/**
+ * Vecteurs partagés avec le test SQL du moteur : les mêmes entrées, les
+ * mêmes sorties attendues des deux côtés (chaîne vide = null en SQL).
+ */
+const VECTORS = JSON.parse(
+  readFileSync(fileURLToPath(new URL('../src/lib/profiles/registration-vectors.json', import.meta.url)), 'utf8'),
+) as { normalize: [string, string][]; mask: [string, string][] };
+
+describe('vecteurs partagés TS ↔ SQL', () => {
+  it('couvrent accents, formes courtes, FNI et étrangères', () => {
+    const inputs = [...VECTORS.normalize, ...VECTORS.mask].map(([input]) => input);
+    expect(inputs.some((x) => /[À-ÿ]/.test(x))).toBe(true);
+    expect(inputs).toEqual(expect.arrayContaining(['AB1', '1234 AB 75', 'M-AB 1234', '']));
+  });
+
+  it.each(VECTORS.normalize)('normalise « %s » en « %s »', (input, expected) => {
+    expect(normalizeRegistration(input)).toBe(expected);
+  });
+
+  it.each(VECTORS.mask)('masque « %s » en « %s »', (input, expected) => {
+    expect(maskRegistration(input)).toBe(expected);
   });
 });
 
@@ -126,6 +159,12 @@ describe('masquage', () => {
       expect(normalizeRegistration(masked)).not.toBe(normalizeRegistration(reg));
       expect(masked).not.toContain(reg);
     }
+  });
+
+  it('n’accepte comme « déjà masquée » qu’une forme qui l’est vraiment', () => {
+    expect(asMaskedRegistration('••-••3-CD')).toBe('••-••3-CD');
+    expect(asMaskedRegistration('AB-123-CD')).toBeNull();
+    expect(asMaskedRegistration(null)).toBeNull();
   });
 
   it('donne la fin lisible aux lecteurs d’écran', () => {

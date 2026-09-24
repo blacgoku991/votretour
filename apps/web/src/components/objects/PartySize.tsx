@@ -30,6 +30,12 @@ export interface PartySizeProps {
   className?: string;
 }
 
+const STATE_LABEL: Record<NonNullable<PartySizeProps['state']>, string> = {
+  waiting: 'en attente',
+  called: 'appelé à l’accueil',
+  ready: 'table prête',
+};
+
 export function PartySize({
   count,
   plus = false,
@@ -41,7 +47,8 @@ export function PartySize({
   const n = Math.max(1, Math.round(Number.isFinite(count) ? count : 1));
   const digits = `${n}${plus ? '+' : ''}`;
   const unit = n > 1 || plus ? 'couverts' : 'couvert';
-  const label = `${plus ? `${n} couverts ou plus` : `${n} ${unit}`}${name ? `, ${name}` : ''}`;
+  // L'état n'est jamais porté par la seule couleur : il est dit en toutes lettres.
+  const label = `${plus ? `${n} couverts ou plus` : `${n} ${unit}`}${name ? `, ${name}` : ''}, ${STATE_LABEL[state]}`;
 
   return (
     <span

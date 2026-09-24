@@ -32,7 +32,7 @@ export const vehicle: ProfileDefinition = {
     openQueue: 'Ouvrir les dépôts',
     complete: 'Rendu au client',
     start: 'Prendre en charge',
-    call: 'Prêt · prévenir',
+    call: 'Prêt\u00a0· prévenir',
     todayCounter: 'rendus aujourd’hui',
     clientWaiting: 'étape en cours',
     clientTurn: 'Votre véhicule est prêt',
