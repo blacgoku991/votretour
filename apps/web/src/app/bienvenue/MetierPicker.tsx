@@ -23,14 +23,22 @@ import styles from './onboarding.module.css';
  * les familles se suivant en paires ; leur nom reste lu par les lecteurs
  * d'écran. À partir de 720 px, une famille par ligne, son nom à gauche,
  * comme un rayon de métiers.
+ *
+ * `cue` : sur téléphone, l'aperçu du métier est sous TOUTE la grille, bien
+ * plus bas que la tuile touchée. Le parcours passe donc ici, sous la
+ * famille du métier choisi, le bouton qui y mène (masqué à partir de
+ * 1024 px, où l'aperçu est déjà sous les yeux).
  */
 
 export function MetierPicker({
   value,
   onChange,
+  cue,
 }: {
   value: ActivityType;
   onChange: (activity: ActivityType) => void;
+  /** Rendu sous la famille du métier choisi (voir plus haut). */
+  cue?: React.ReactNode;
 }) {
   return (
     <fieldset className={styles.metiers}>
@@ -43,7 +51,9 @@ export function MetierPicker({
           className={styles.family}
           style={{ ['--n' as string]: family.activities.length } as React.CSSProperties}
         >
-          <span id={`famille-${family.id}`} className={styles.familyLabel}>{family.label}</span>
+          <span id={`famille-${family.id}`} className={styles.familyLabel}>
+            <span className={styles.familyText}>{family.label}</span>
+          </span>
           <div className={styles.tiles}>
             {family.activities.map((activity) => {
               const checked = activity === value;
@@ -61,16 +71,26 @@ export function MetierPicker({
                     <span className={styles.tileGlyph} aria-hidden="true">
                       <MetierGlyph activity={activity} />
                     </span>
-                    <span className={styles.tileLabel}>{metierLabel(activity)}</span>
+                    <span className={styles.tileLabel}>{tileLabel(activity)}</span>
                   </span>
                 </label>
               );
             })}
           </div>
+          {cue && family.activities.includes(value) ? cue : null}
         </div>
       ))}
     </fieldset>
   );
+}
+
+/**
+ * Nom affiché sur la tuile : celui de `ACTIVITY_LABEL`, la barre collée au
+ * mot qui la précède (« Guichet / comptoir » ne laisse jamais « / comptoir »
+ * seul sur sa ligne, ni « Événement / » sans « Drop »).
+ */
+function tileLabel(activity: ActivityType): string {
+  return metierLabel(activity).replace(/ \/ /g, '\u00a0/ ');
 }
 
 /**

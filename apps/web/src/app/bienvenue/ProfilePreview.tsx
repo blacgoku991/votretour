@@ -18,19 +18,38 @@ import styles from './onboarding.module.css';
  * métier, avant même d'avoir créé quoi que ce soit.
  *
  * Trois objets posés sur le sol (--floor), comme sur l'accueil :
+ *   - la touche du poste du pro, dans son vocabulaire (« Prêt · prévenir ») ;
  *   - le téléphone du client (thème sombre, celui de l'expérience client),
  *     avec les vrais objets du produit : l'immatriculation, le rail
  *     d'étapes, le numéro en volets, le chevalet de table ;
- *   - la touche du poste du pro, dans son vocabulaire (« Prêt · prévenir ») ;
  *   - l'écran de la salle, qui ne montre jamais une plaque en clair (trois
  *     derniers caractères seulement) ni un nom au guichet.
  *
+ * Deux places, un seul composant (`variant`) :
+ *   - « side » : à partir de 1280 px, l'aperçu tient sa propre colonne,
+ *     collée à droite du formulaire. Il est sous les yeux dès l'arrivée,
+ *     et se réhabille à l'instant où l'on touche une tuile ;
+ *   - « inline » : sous la grille de métiers. Replié sur téléphone derrière
+ *     « Voir ce que verront vos clients » (ouverture pilotée par le parcours,
+ *     qui propose aussi ce bouton près de la tuile touchée), ouvert d'office
+ *     de 1024 à 1279 px.
+ *
+ * Les maquettes sont dessinées à leur taille d'affichage : aucun texte ne
+ * descend sous 11 px. Seul l'écran de la salle est réduit (zoom) quand la
+ * place manque, et ses plus petits textes sont dessinés assez grands pour
+ * rester lisibles.
+ *
  * L'histoire se joue UNE fois à chaque choix de métier, puis s'arrête :
- * la touche s'enfonce, le téléphone passe à « prêt » (le rideau tombe),
- * la ligne arrive sur l'écran. Elle attend que la scène soit à l'écran
- * (IntersectionObserver) : sur ordinateur, l'aperçu est sous la grille,
- * et une histoire jouée hors de la vue serait une histoire perdue. Seuls transform et opacity bougent ; en
- * mouvement réduit, l'état final s'affiche d'emblée.
+ * la touche s'enfonce, le rideau du téléphone tombe (« prêt »), la ligne
+ * arrive sur l'écran. Elle attend que la scène soit à l'écran
+ * (IntersectionObserver) : une histoire jouée hors de la vue serait perdue.
+ * Seuls transform et opacity bougent ; en mouvement réduit, l'état final
+ * s'affiche d'emblée.
+ *
+ * L'état final est propre, puisqu'il reste affiché : le rideau descend
+ * jusqu'à une frontière de la mise en page (l'identité du client, ou tout
+ * l'écran au guichet), et ce qu'il recouvre s'efface (`data-under`), sans
+ * jamais laisser dépasser une moitié de latte ou de numéro.
  *
  * Libellé « Aperçu » et « Données d'exemple » : rien ici n'est simulé
  * dans la base, et ces images ne servent ni aux pages métier ni à la
@@ -56,55 +75,60 @@ interface Scene {
   phoneFoot: string;
 }
 
+/** « Guichet 3 » ne se coupe jamais entre le mot et son numéro. */
+const desk = (n: number) => `Guichet ${n}`;
+
 function sceneFor(profile: PreviewProfile, activity: ActivityType): Scene {
   const vocab = getProfile(profile).vocab;
   switch (profile) {
     case 'vehicle':
       return {
         summary:
-          'Aperçu avec des données d’exemple. Sur le téléphone du client : l’immatriculation AB-123-CD, une Peugeot 208, et les étapes du suivi, « En réparation ». '
-          + `Au poste, la touche « ${vocab.call} ». Le téléphone affiche alors « ${vocab.clientTurn} ». `
+          'Aperçu avec des données d’exemple. Au poste, la touche « ' + vocab.call + ' ». '
+          + 'Sur le téléphone du client : l’immatriculation AB-123-CD, une Peugeot 208, et les étapes du suivi ; '
+          + `il passe de « En réparation » à « ${vocab.clientTurn} ». `
           + 'L’écran de l’accueil liste les véhicules prêts, plaque masquée : seuls les trois derniers caractères restent visibles.',
         phoneCaption: 'Le téléphone de votre client',
         screenCaption: 'L’écran de l’accueil',
-        phoneFoot: 'Prévenu à chaque étape, même demain.',
+        phoneFoot: 'Prévenu à chaque étape.',
       };
     case 'device':
       return {
         summary:
-          'Aperçu avec des données d’exemple. Sur le téléphone du client : le dossier 0042, un iPhone 13, et les étapes du suivi, « En réparation ». '
-          + `Au poste, la touche « ${vocab.call} ». Le téléphone affiche alors « ${vocab.clientTurn} ». `
-          + 'L’écran de l’accueil liste les dossiers prêts, par numéro.',
+          'Aperçu avec des données d’exemple. Au poste, la touche « ' + vocab.call + ' ». '
+          + 'Sur le téléphone du client : le dossier 0042, un iPhone 13, et les étapes du suivi ; '
+          + `il passe de « En réparation » à « ${vocab.clientTurn} ». `
+          + 'L’écran de l’accueil liste les appareils prêts, par numéro de dossier.',
         phoneCaption: 'Le téléphone de votre client',
         screenCaption: 'L’écran de l’accueil',
-        phoneFoot: 'Prévenu à chaque étape, même demain.',
+        phoneFoot: 'Prévenu à chaque étape.',
       };
     case 'table':
       return {
         summary:
-          'Aperçu avec des données d’exemple. Sur le téléphone du client : 4 couverts, 2 groupes avant lui. '
-          + `Au poste, la touche « ${vocab.call} ». Le téléphone affiche alors « ${vocab.clientTurn} ». `
+          'Aperçu avec des données d’exemple. Au poste, la touche « ' + vocab.call + ' ». '
+          + 'Sur le téléphone du client : 4 couverts, 2 groupes avant lui, puis « ' + vocab.clientTurn + ' ». '
           + 'L’écran de l’entrée annonce le prénom et le nombre de couverts.',
         phoneCaption: 'Le téléphone de votre client',
         screenCaption: 'L’écran de l’entrée',
-        phoneFoot: 'Restez dans les parages : on vous prévient.',
+        phoneFoot: 'On vous prévient ici.',
       };
     case 'desk':
       return {
         summary:
-          'Aperçu avec des données d’exemple. Sur le téléphone du visiteur : le ticket A-042, 12 personnes devant lui. '
-          + `Au poste, la touche « ${vocab.call} ». Le téléphone affiche alors « Guichet 3 ». `
+          'Aperçu avec des données d’exemple. Au poste, la touche « ' + vocab.call + ' ». '
+          + 'Sur le téléphone du visiteur : le ticket A-042, 12 personnes devant lui, puis « Guichet 3 ». '
           + 'L’écran de la salle affiche le numéro et le guichet, jamais un nom.'
           + (activity === 'health' ? ' Aucun motif de visite n’y apparaît.' : ''),
         phoneCaption: activity === 'health' ? 'Le téléphone du patient' : 'Le téléphone du visiteur',
         screenCaption: 'L’écran de la salle d’attente',
-        phoneFoot: 'Asseyez-vous : votre téléphone vous appellera.',
+        phoneFoot: 'Votre téléphone vous appellera.',
       };
     case 'retail':
       return {
         summary:
-          'Aperçu avec des données d’exemple. Sur le téléphone du client : la commande n° 1234, « En préparation ». '
-          + `Au poste, la touche « ${vocab.call} ». Le téléphone affiche alors « ${vocab.clientTurn} ». `
+          'Aperçu avec des données d’exemple. Au poste, la touche « ' + vocab.call + ' ». '
+          + 'Sur le téléphone du client : la commande n° 1234, qui passe de « En préparation » à « ' + vocab.clientTurn + ' ». '
           + 'L’écran de la caisse liste les commandes prêtes.',
         phoneCaption: 'Le téléphone de votre client',
         screenCaption: 'L’écran de la caisse',
@@ -126,32 +150,42 @@ const TZ = 'Europe/Paris';
 
 const PLATE = 'AB-123-CD';
 
+export type PreviewVariant = 'inline' | 'side';
+
 export function ProfilePreview({
   profile,
   activity,
   placeName,
+  variant,
+  open = true,
+  onToggle,
+  run = 0,
 }: {
   profile: PreviewProfile;
   activity: ActivityType;
   /** Nom saisi (établissement, sinon commerce), ou l'exemple du métier. */
   placeName: string;
+  variant: PreviewVariant;
+  /** Inline, sur téléphone : l'aperçu est-il déplié ? (Ignoré ailleurs.) */
+  open?: boolean;
+  onToggle?: () => void;
+  /** Incrémenté à chaque ouverture : l'histoire se rejoue. */
+  run?: number;
 }) {
   const reduced = useReducedMotion();
-  const [open, setOpen] = useState(false);
-  // Sur téléphone, l'aperçu est replié : l'histoire se rejoue quand on l'ouvre.
-  const [opened, setOpened] = useState(0);
-  const sceneKey = `${profile}:${activity}:${opened}`;
+  const sceneKey = `${profile}:${activity}:${run}`;
   // La phase est rattachée à la scène qui l'a produite : au changement de
   // métier, la nouvelle scène part de « avant » dès son premier rendu,
   // sans jamais montrer un instant l'état final de la précédente.
   const [played, setPlayed] = useState<{ key: string; phase: Phase }>({ key: sceneKey, phase: 'before' });
   const phase: Phase = reduced ? 'after' : played.key === sceneKey ? played.phase : 'before';
   const bodyId = useId();
-  const summaryId = useId();
+  const titleId = useId();
   const stageRef = useRef<HTMLDivElement>(null);
   const [inView, setInView] = useState(false);
 
-  // La scène est-elle vraiment sous les yeux ? (Repliée, elle ne l'est pas.)
+  // La scène est-elle vraiment sous les yeux ? (Repliée ou masquée par la
+  // mise en page, elle ne l'est pas : `display: none` ne croise jamais.)
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
@@ -177,51 +211,58 @@ export function ProfilePreview({
 
   const scene = sceneFor(profile, activity);
   const vocab = getProfile(profile).vocab;
+  const collapsible = variant === 'inline';
+  const parts = phoneParts(profile, activity);
 
   return (
     <section
       className={styles.preview}
-      aria-labelledby={`${summaryId}-titre`}
-      data-open={open ? '1' : undefined}
+      aria-labelledby={titleId}
+      data-variant={variant}
+      data-open={!collapsible || open ? '1' : undefined}
       data-theme="dark"
     >
       <div className={styles.previewHead}>
         <span className={styles.previewTag}>Aperçu</span>
-        <h2 id={`${summaryId}-titre`} className={styles.previewTitle}>Ce que verront vos clients</h2>
-        <button
-          type="button"
-          className={styles.previewToggle}
-          aria-expanded={open}
-          aria-controls={bodyId}
-          onClick={() => {
-            if (!open) setOpened((n) => n + 1);
-            setOpen(!open);
-          }}
-        >
-          {open ? 'Masquer l’aperçu' : 'Voir ce que verront vos clients'}
-        </button>
+        <h2 id={titleId} className={styles.previewTitle}>Ce que verront vos clients</h2>
+        {collapsible && (
+          <button
+            type="button"
+            className={styles.previewToggle}
+            aria-expanded={open}
+            aria-controls={bodyId}
+            onClick={onToggle}
+          >
+            {open ? 'Masquer l’aperçu' : 'Voir ce que verront vos clients'}
+          </button>
+        )}
       </div>
 
       <div id={bodyId} className={styles.previewBody} data-phase={phase} key={sceneKey}>
         <p className="sr-only">{scene.summary}</p>
         <div className={styles.stage} aria-hidden="true" ref={stageRef}>
           <span className={styles.stageNote}>Données d’exemple</span>
+          <figure className={styles.keyFig}>
+            <span className={styles.previewKey}>{vocab.call}</span>
+            <figcaption className={styles.figCaption}>Votre poste, en un geste</figcaption>
+          </figure>
 
           <figure className={styles.phoneFig}>
-            <div className={styles.phone} data-theme="dark">
-              <div className={styles.phoneScreen}>
+            <div className={styles.phone}>
+              <div className={styles.phoneScreen} data-reach={profile === 'desk' ? 'full' : 'head'}>
                 <div className={styles.phoneStatus}>
                   <span>14:32</span>
                   <span className={styles.phoneIsland} />
                   <span className={styles.phoneBars} />
                 </div>
-                <div className={styles.phoneHeader}>
+                <div className={styles.phoneHeader} data-under="">
                   <span className={styles.phonePlace}>{placeName}</span>
                   <span className={styles.phoneLive}><span className="pip pip--live" />En direct</span>
                 </div>
-                <PhoneBody profile={profile} activity={activity} />
+                <div className={styles.phoneHead} data-under="">{parts.head}</div>
+                <div className={styles.phoneRest} data-under={profile === 'desk' ? '' : undefined}>{parts.rest}</div>
                 <div className={styles.phoneFoot}>
-                  <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor"
+                  <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor"
                     strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" focusable="false">
                     <path d="M5 13.5V9a5 5 0 0 1 10 0v4.5l1.5 1.8h-13z" />
                     <path d="M8.3 17.2a1.9 1.9 0 0 0 3.4 0" />
@@ -238,21 +279,37 @@ export function ProfilePreview({
             <figcaption className={styles.figCaption}>{scene.phoneCaption}</figcaption>
           </figure>
 
-          <div className={styles.stageSide}>
-            <figure className={styles.keyFig}>
-              <span className={styles.previewKey}>{vocab.call}</span>
-              <figcaption className={styles.figCaption}>Votre poste, en un geste</figcaption>
-            </figure>
-            <figure className={styles.screenFig}>
-              <div className={styles.screenFrame}>
-                <div className={styles.tvScreen} data-theme="dark">
-                  <ScreenBody profile={profile} />
-                </div>
+          <figure className={styles.screenFig}>
+            <div className={styles.screenFrame}>
+              <div className={styles.tvScreen} data-theme="dark">
+                <ScreenBody profile={profile} />
               </div>
-              <figcaption className={styles.figCaption}>{scene.screenCaption}</figcaption>
-            </figure>
-          </div>
+            </div>
+            <figcaption className={styles.figCaption}>{scene.screenCaption}</figcaption>
+          </figure>
         </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * À la place de l'aperçu, dans la colonne de droite, quand le métier choisi
+ * n'en a pas (barbier, événement…) : une invitation, avec la silhouette
+ * des deux écrans. Elle ne cite que des métiers dont le profil est ouvert.
+ */
+export function PreviewInvitation({ text }: { text: string }) {
+  const titleId = useId();
+  return (
+    <section className={styles.invite} aria-labelledby={titleId} data-theme="dark">
+      <div className={styles.previewHead}>
+        <span className={styles.previewTag}>Aperçu</span>
+        <h2 id={titleId} className={styles.previewTitle}>Ce que verront vos clients</h2>
+      </div>
+      <div className={styles.inviteStage}>
+        <span className={styles.inviteTv} aria-hidden="true" />
+        <span className={styles.invitePhone} aria-hidden="true" />
+        <p className={styles.inviteText}>{text}</p>
       </div>
     </section>
   );
@@ -262,14 +319,14 @@ function curtainKicker(profile: PreviewProfile): string {
   return profile === 'desk' ? 'Ticket A-042' : 'Maintenant';
 }
 function curtainTitle(profile: PreviewProfile): string {
-  return profile === 'desk' ? 'Guichet 3' : getProfile(profile).vocab.clientTurn;
+  return profile === 'desk' ? desk(3) : getProfile(profile).vocab.clientTurn;
 }
 function curtainText(profile: PreviewProfile): string {
   switch (profile) {
-    case 'vehicle': return 'Il vous attend. Ouvert jusqu’à 19\u00a0h\u00a000.';
-    case 'device': return 'Venez le récupérer. Ouvert jusqu’à 19\u00a0h\u00a000.';
-    case 'table': return 'Présentez-vous à l’accueil dans les 5 minutes.';
-    case 'desk': return 'Présentez-vous maintenant au guichet 3.';
+    case 'vehicle': return 'Il vous attend. Ouvert jusqu’à 19 h 00.';
+    case 'device': return 'Venez le récupérer. Ouvert jusqu’à 19 h 00.';
+    case 'table': return 'Présentez-vous à l’accueil dans les 5 minutes.';
+    case 'desk': return 'Présentez-vous maintenant au guichet 3.';
     case 'retail': return 'Elle vous attend à la caisse.';
   }
 }
@@ -278,78 +335,100 @@ function curtainText(profile: PreviewProfile): string {
 /* Le téléphone                                                         */
 /* ------------------------------------------------------------------ */
 
-function PhoneBody({ profile, activity }: { profile: PreviewProfile; activity: ActivityType }) {
+/**
+ * Deux étages : `head`, l'identité du client, que le rideau recouvre
+ * exactement quand il tombe ; `rest`, ce qui reste à lire sous le rideau
+ * (le suivi passé à « prêt », le chevalet). Au guichet, le rideau couvre
+ * tout l'écran : il porte lui-même le numéro et le guichet.
+ */
+function phoneParts(profile: PreviewProfile, activity: ActivityType): { head: React.ReactNode; rest: React.ReactNode } {
   switch (profile) {
     case 'vehicle':
-      return (
-        <div className={styles.phoneBody}>
-          <span className={styles.phoneKicker}>Votre véhicule</span>
-          <Immatriculation value={PLATE} width={236} />
-          <span className={styles.phoneMeta}>Peugeot 208 · Karim</span>
+      return {
+        head: (
+          <>
+            <span className={styles.phoneKicker}>Votre véhicule</span>
+            <Immatriculation value={PLATE} width={184} />
+            <span className={styles.phoneMeta}>Peugeot 208 · Karim</span>
+          </>
+        ),
+        rest: (
           <Swap
-            before={<StageRail profile="vehicle" current="in_repair" history={WORKSHOP_BEFORE} orientation="vertical" timeZone={TZ} />}
-            after={<StageRail profile="vehicle" current="ready" history={WORKSHOP_AFTER} orientation="vertical" timeZone={TZ} />}
+            before={<StageRail profile="vehicle" current="in_repair" history={WORKSHOP_BEFORE} orientation="vertical" timeZone={TZ} className={styles.phoneRail} />}
+            after={<StageRail profile="vehicle" current="ready" history={WORKSHOP_AFTER} orientation="vertical" timeZone={TZ} className={styles.phoneRail} />}
           />
-        </div>
-      );
+        ),
+      };
     case 'device':
-      return (
-        <div className={styles.phoneBody}>
-          <span className={styles.phoneKicker}>Votre dossier</span>
-          <span className={styles.phoneTicketRow}>
-            <TicketNumber value="0042" kind="dossier" size="2.6rem" />
-            <span className={styles.phoneDevice}>
-              <DeviceGlyph kind="phone" size={22} />
-              iPhone 13
+      return {
+        head: (
+          <>
+            <span className={styles.phoneKicker}>Votre dossier</span>
+            <span className={styles.phoneTicketRow}>
+              <TicketNumber value="0042" kind="dossier" size="2.1rem" />
+              <span className={styles.phoneDevice}>
+                <DeviceGlyph kind="phone" size={18} />
+                iPhone 13
+              </span>
             </span>
-          </span>
+          </>
+        ),
+        rest: (
           <Swap
-            before={<StageRail profile="device" current="in_repair" history={WORKSHOP_BEFORE} orientation="vertical" timeZone={TZ} />}
-            after={<StageRail profile="device" current="ready" history={WORKSHOP_AFTER} orientation="vertical" timeZone={TZ} />}
+            before={<StageRail profile="device" current="in_repair" history={WORKSHOP_BEFORE} orientation="vertical" timeZone={TZ} className={styles.phoneRail} />}
+            after={<StageRail profile="device" current="ready" history={WORKSHOP_AFTER} orientation="vertical" timeZone={TZ} className={styles.phoneRail} />}
           />
-        </div>
-      );
+        ),
+      };
+    case 'retail':
+      return {
+        head: (
+          <>
+            <span className={styles.phoneKicker}>Votre commande</span>
+            <span className={styles.phoneOrder}>n°&nbsp;1234</span>
+            <span className={styles.phoneMeta}>Retirer une commande</span>
+          </>
+        ),
+        rest: (
+          <Swap
+            before={<StageRail profile="retail" current="preparing" history={RETAIL_BEFORE} orientation="vertical" timeZone={TZ} className={styles.phoneRail} />}
+            after={<StageRail profile="retail" current="ready" history={RETAIL_AFTER} orientation="vertical" timeZone={TZ} className={styles.phoneRail} />}
+          />
+        ),
+      };
     case 'table':
-      return (
-        <div className={`${styles.phoneBody} ${styles.phoneCenter}`}>
-          <span className={styles.phoneKicker}>Liste d’attente</span>
+      return {
+        head: (
           <span className={styles.phoneAhead}>
-            <TicketNumber value="2" size="5.5rem" />
+            <span className={styles.phoneKicker}>Liste d’attente</span>
+            <TicketNumber value="2" size="3.4rem" />
             <span className={styles.phoneAheadText}>groupes avant vous</span>
           </span>
-          <Swap
-            before={<PartySize count={4} state="waiting" size="md" />}
-            after={<PartySize count={4} state="ready" size="md" />}
-          />
-          <span className={styles.phoneMeta}>Karim · salle ou terrasse</span>
-        </div>
-      );
+        ),
+        rest: (
+          <span className={styles.phoneCenter}>
+            <Swap
+              before={<PartySize count={4} state="waiting" size="lg" />}
+              after={<PartySize count={4} state="ready" size="lg" />}
+            />
+            <span className={styles.phoneMeta}>Karim · salle ou terrasse</span>
+          </span>
+        ),
+      };
     case 'desk':
-      return (
-        <div className={`${styles.phoneBody} ${styles.phoneCenter}`}>
-          <span className={styles.phoneKicker}>Votre numéro</span>
-          <Swap
-            before={<TicketNumber value="A-042" size="4.25rem" />}
-            after={<TicketNumber value="A-042" size="3.25rem" destination="Guichet 3" />}
-          />
-          <span className={styles.phoneAheadText}>12 personnes devant vous</span>
-          {activity !== 'health' && (
-            <span className={styles.phoneChip}>{activity === 'admin_service' ? 'Carte grise' : 'Retrait de colis'}</span>
-          )}
-        </div>
-      );
-    case 'retail':
-      return (
-        <div className={styles.phoneBody}>
-          <span className={styles.phoneKicker}>Votre commande</span>
-          <span className={styles.phoneOrder}>n° 1234</span>
-          <span className={styles.phoneMeta}>Retirer une commande</span>
-          <Swap
-            before={<StageRail profile="retail" current="preparing" history={RETAIL_BEFORE} orientation="vertical" timeZone={TZ} />}
-            after={<StageRail profile="retail" current="ready" history={RETAIL_AFTER} orientation="vertical" timeZone={TZ} />}
-          />
-        </div>
-      );
+      return {
+        head: null,
+        rest: (
+          <span className={styles.phoneCenter}>
+            <span className={styles.phoneKicker}>Votre numéro</span>
+            <TicketNumber value="A-042" size="3rem" />
+            <span className={styles.phoneAheadText}>12 personnes devant vous</span>
+            {activity !== 'health' && (
+              <span className={styles.phoneChip}>{activity === 'admin_service' ? 'Carte grise' : 'Retrait de colis'}</span>
+            )}
+          </span>
+        ),
+      };
   }
 }
 
@@ -364,7 +443,7 @@ function Swap({ before, after }: { before: React.ReactNode; after: React.ReactNo
 }
 
 /* ------------------------------------------------------------------ */
-/* L'écran de la salle                                                  */
+/* L'écran de la salle (dessiné à 384 × 216)                            */
 /* ------------------------------------------------------------------ */
 
 function ScreenBody({ profile }: { profile: PreviewProfile }) {
@@ -373,27 +452,33 @@ function ScreenBody({ profile }: { profile: PreviewProfile }) {
       return (
         <ScreenBoard
           title="Véhicules prêts"
-          side={[['À l’atelier', '7'], ['Pris en charge aujourd’hui', '12']]}
+          side={[['À l’atelier', '7'], ['Aujourd’hui', '12']]}
           fresh={<ReadyRow label="208" plate={maskRegistration(PLATE)} since="14:32" />}
-          rows={[<ReadyRow key="a" label="Clio" plate={maskRegistration('FX-482-KL')} since="14:05" />]}
+          rows={[
+            <ReadyRow key="a" label="Clio" plate={maskRegistration('FX-482-KL')} since="14:05" />,
+            <ReadyRow key="b" label="Golf" plate={maskRegistration('GH-915-TR')} since="13:40" />,
+          ]}
         />
       );
     case 'device':
       return (
         <ScreenBoard
           title="Appareils prêts"
-          side={[['À l’atelier', '9'], ['Rendus aujourd’hui', '6']]}
+          side={[['À l’atelier', '9'], ['Aujourd’hui', '6']]}
           fresh={<DossierRow no="0042" kind="phone" label="iPhone" since="14:32" />}
-          rows={[<DossierRow key="a" no="0039" kind="tablet" label="Tablette" since="13:50" />]}
+          rows={[
+            <DossierRow key="a" no="0039" kind="tablet" label="iPad" since="13:50" />,
+            <DossierRow key="b" no="0035" kind="phone" label="Galaxy" since="13:12" />,
+          ]}
         />
       );
     case 'table':
       return (
         <ScreenBoard
           title="Tables prêtes"
-          side={[['Groupes en attente', '6'], ['Couverts', '18']]}
+          side={[['En attente', '6'], ['Couverts', '18']]}
           fresh={<TableRow name="Karim" count={4} />}
-          rows={[<TableRow key="a" name="Léa" count={2} />]}
+          rows={[<TableRow key="a" name="Léa" count={2} />, <TableRow key="b" name="Tom" count={6} />]}
         />
       );
     case 'desk':
@@ -402,15 +487,20 @@ function ScreenBody({ profile }: { profile: PreviewProfile }) {
           <span className={styles.screenTitle}>Appel en cours</span>
           <span className={styles.callNow}>
             <span className={styles.swap}>
-              <span className={styles.swapBefore}><TicketNumber value="A-041" size="4.6rem" destination="Guichet 1" /></span>
-              <span className={styles.swapAfter}><TicketNumber value="A-042" size="4.6rem" destination="Guichet 3" /></span>
+              <span className={styles.swapBefore}><TicketNumber value="A-041" size="2.5rem" destination={desk(1)} /></span>
+              <span className={styles.swapAfter}><TicketNumber value="A-042" size="2.5rem" destination={desk(3)} /></span>
             </span>
           </span>
           <span className={styles.callPast}>
             <span className={styles.screenSideLabel}>Derniers appels</span>
-            <span className={styles.callPastRows}>
-              <span>A-041 · Guichet 1</span>
-              <span>A-040 · Guichet 2</span>
+            {/* Avant l'appel, A-041 est à l'écran : la liste commence à A-040. */}
+            <span className={styles.swap}>
+              <span className={styles.swapBefore}>
+                <PastCalls calls={[['A-040', 2], ['A-039', 1]]} />
+              </span>
+              <span className={styles.swapAfter}>
+                <PastCalls calls={[['A-041', 1], ['A-040', 2]]} />
+              </span>
             </span>
           </span>
         </div>
@@ -419,12 +509,26 @@ function ScreenBody({ profile }: { profile: PreviewProfile }) {
       return (
         <ScreenBoard
           title="Commandes prêtes"
-          side={[['En préparation', '4'], ['Remises aujourd’hui', '23']]}
+          side={[['En cours', '4'], ['Aujourd’hui', '23']]}
           fresh={<OrderRow no="1234" since="14:32" />}
-          rows={[<OrderRow key="a" no="0871" since="14:10" />]}
+          rows={[<OrderRow key="a" no="0871" since="14:10" />, <OrderRow key="b" no="0866" since="13:58" />]}
         />
       );
   }
+}
+
+function PastCalls({ calls }: { calls: [string, number][] }) {
+  return (
+    <span className={styles.callPastRows}>
+      {calls.map(([no, n]) => (
+        <span key={no} className={styles.callPastRow}>
+          <span>{no}</span>
+          <span className={styles.callPastArrow}>→</span>
+          <span>{desk(n)}</span>
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function ScreenBoard({
@@ -442,7 +546,7 @@ function ScreenBoard({
       <div className={styles.boardSide}>
         {side.map(([label, value]) => (
           <span key={label} className={styles.boardStat}>
-            <span className={styles.screenSideLabel}>{label}</span>
+            <span className={styles.boardStatLabel}>{label}</span>
             <span className={styles.boardValue}>{value}</span>
           </span>
         ))}
@@ -455,8 +559,8 @@ function ReadyRow({ label, plate, since }: { label: string; plate: ReturnType<ty
   return (
     <span className={styles.boardRow}>
       <span className={styles.boardLabel}>{label}</span>
-      <Immatriculation maskedValue={plate} width={150} />
-      <span className={styles.boardSince}>prêt depuis {since}</span>
+      <Immatriculation maskedValue={plate} width={104} />
+      <span className={styles.boardSince}>{since}</span>
     </span>
   );
 }
@@ -464,9 +568,9 @@ function ReadyRow({ label, plate, since }: { label: string; plate: ReturnType<ty
 function DossierRow({ no, kind, label, since }: { no: string; kind: 'phone' | 'tablet'; label: string; since: string }) {
   return (
     <span className={styles.boardRow}>
-      <TicketNumber value={no} kind="dossier" size="1.9rem" />
-      <span className={styles.boardDevice}><DeviceGlyph kind={kind} size={20} />{label}</span>
-      <span className={styles.boardSince}>prêt depuis {since}</span>
+      <TicketNumber value={no} kind="dossier" size="1.3rem" />
+      <span className={styles.boardDevice}><DeviceGlyph kind={kind} size={16} />{label}</span>
+      <span className={styles.boardSince}>{since}</span>
     </span>
   );
 }
@@ -475,7 +579,7 @@ function TableRow({ name, count }: { name: string; count: number }) {
   return (
     <span className={styles.boardRow}>
       <span className={styles.boardName}>{name}</span>
-      <PartySize count={count} size="sm" state="ready" />
+      <span className={styles.boardCount}>{count}&nbsp;couverts</span>
     </span>
   );
 }
@@ -484,8 +588,8 @@ function OrderRow({ no, since }: { no: string; since: string }) {
   return (
     <span className={styles.boardRow}>
       <span className={styles.boardLabel}>n°</span>
-      <TicketNumber value={no} size="1.9rem" />
-      <span className={styles.boardSince}>prête depuis {since}</span>
+      <TicketNumber value={no} size="1.3rem" />
+      <span className={styles.boardSince}>{since}</span>
     </span>
   );
 }

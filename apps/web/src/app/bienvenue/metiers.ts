@@ -57,16 +57,22 @@ export interface OnboardingProfileChoice {
   /** Le profil du métier est-il ouvert à tout nouveau compte ? */
   open: boolean;
   /**
-   * L'activité passée à `provision_organization`. Pour un métier dont le
-   * profil n'est pas encore ouvert, c'est `other` : la base suit alors
-   * EXACTEMENT le chemin d'un barbier (file walkin, réglages par défaut
-   * des colonnes, aucune prestation créée, mode de file choisi conservé),
-   * et l'activité réelle est inscrite juste après sur l'organisation. Le
-   * poste pourra ainsi proposer le bon profil le jour de son ouverture.
+   * L'activité passée à `provision_organization`, et gardée ensuite par
+   * l'organisation. Pour un métier dont le profil n'est pas encore ouvert,
+   * c'est `other` : la base suit alors EXACTEMENT le chemin d'un barbier
+   * (file walkin, réglages par défaut des colonnes, aucune prestation
+   * créée, mode de file choisi conservé).
+   *
+   * L'activité réelle n'est PAS inscrite sur l'organisation dans ce cas :
+   * `create_location` (0037) la relit pour chaque nouvel établissement
+   * (« Ajouter un établissement » l'appelle avec `p_activity: null`), et un
+   * garage non ouvert verrait son deuxième établissement naître en
+   * `vehicle`, avec ses motifs — l'exposition prématurée que la garantie
+   * n° 12 du plan interdit. Le métier choisi reste lisible dans le journal
+   * (`onboarding.completed`, `metadata.activity`), et l'exploitant peut
+   * l'inscrire depuis l'administration.
    */
   provisionActivity: ActivityType;
-  /** Faut-il inscrire l'activité réelle après le provisionnement ? */
-  restoreActivity: boolean;
 }
 
 export function onboardingProfile(
@@ -78,7 +84,7 @@ export function onboardingProfile(
   const profile: QueueProfile = open ? target : 'walkin';
   // `other` est lui-même walkin : c'est le seul code neutre de l'enum.
   const provisionActivity: ActivityType = open ? activity : 'other';
-  return { target, profile, open, provisionActivity, restoreActivity: provisionActivity !== activity };
+  return { target, profile, open, provisionActivity };
 }
 
 /**
@@ -92,6 +98,29 @@ export function hasProfilePreview(profile: QueueProfile): profile is PreviewProf
 }
 
 export type PreviewProfile = Exclude<QueueProfile, 'walkin' | 'event'>;
+
+/** Un métier représentatif de chaque profil à aperçu, pour l'invitation ci-dessous. */
+const PREVIEW_EXAMPLE: Readonly<Record<PreviewProfile, string>> = {
+  vehicle: 'garage',
+  device: 'réparation',
+  table: 'restaurant',
+  desk: 'guichet',
+  retail: 'boutique',
+};
+const PREVIEW_ORDER: readonly PreviewProfile[] = ['vehicle', 'device', 'table', 'desk', 'retail'];
+
+/**
+ * L'invitation affichée à la place de l'aperçu quand le métier choisi n'en
+ * a pas (barbier, événement…). Elle ne cite QUE des métiers dont le profil
+ * est ouvert : aucune promesse d'un écran qu'on ne trouverait pas en
+ * s'inscrivant. `null` si aucun profil à aperçu n'est ouvert.
+ */
+export function previewInvitation(openProfiles: ReadonlySet<QueueProfile> = OPEN_PROFILES): string | null {
+  const examples = PREVIEW_ORDER.filter((p) => openProfiles.has(p)).map((p) => PREVIEW_EXAMPLE[p]);
+  if (examples.length === 0) return null;
+  const list = examples.join(', ');
+  return `${list.charAt(0).toUpperCase()}${list.slice(1)}\u00a0: choisissez votre métier, et voyez ici le téléphone de vos clients et l’écran de la salle.`;
+}
 
 /** Pas de demande d'avis par défaut (santé, service administratif). */
 export function reviewOffByDefault(activity: ActivityType): boolean {
@@ -210,6 +239,13 @@ export interface OnboardingCopy {
   openedBanner: string;
   /** Scénario d'essai propre au métier ; vide en walkin et en event. */
   trial: readonly string[];
+  /** Étape Avis : quand le remerciement part, dans les mots du métier. */
+  reviewLead: string;
+}
+
+/** Le texte de l'étape Avis, dont seul le moment change selon le métier. */
+function reviewLead(moment: string): string {
+  return `${moment}, le client reçoit un remerciement avec un bouton qui ouvre directement ce lien. C’est proposé à tout le monde, sans filtrage.`;
 }
 
 const LEGACY_COPY: OnboardingCopy = {
@@ -231,10 +267,16 @@ const LEGACY_COPY: OnboardingCopy = {
   openPending: 'Ouverture…',
   openedBanner: 'La file est ouverte. Vos clients peuvent scanner.',
   trial: [],
+  reviewLead: reviewLead('À la fin de chaque passage'),
 };
 
-/** « Prêt · prévenir » : les touches citées sont celles du vocabulaire du profil (§ 0.8 du plan). */
-const quoted = (label: string) => `«\u00a0${label}\u00a0»`;
+/**
+ * « Prêt · prévenir » : les touches citées sont celles du vocabulaire du
+ * profil (§ 0.8 du plan). Une touche citée ne se coupe jamais : toutes ses
+ * espaces deviennent insécables, guillemets compris, pour ne laisser ni
+ * « Prêt · » en fin de ligne ni « » » seul au début de la suivante.
+ */
+export const quoted = (label: string) => `«\u00a0${label.replace(/ /g, '\u00a0')}\u00a0»`;
 
 export function onboardingCopy(profile: QueueProfile): OnboardingCopy {
   const vocab = getProfile(profile).vocab;
@@ -261,6 +303,7 @@ export function onboardingCopy(profile: QueueProfile): OnboardingCopy {
           `Sur le poste, passez-le en réparation, puis ${quoted(vocab.call)}.`,
           'Regardez votre téléphone.',
         ],
+        reviewLead: reviewLead('À la remise du véhicule'),
       };
     case 'device':
       return {
@@ -284,6 +327,7 @@ export function onboardingCopy(profile: QueueProfile): OnboardingCopy {
           `Sur le poste, passez-le en réparation, puis ${quoted(vocab.call)}.`,
           'Regardez votre téléphone.',
         ],
+        reviewLead: reviewLead('À la remise de l’appareil'),
       };
     case 'table':
       return {
@@ -308,6 +352,7 @@ export function onboardingCopy(profile: QueueProfile): OnboardingCopy {
           `Sur le poste, touchez ${quoted(vocab.call)}.`,
           `Regardez votre téléphone, puis ${quoted(vocab.complete)} sur le poste.`,
         ],
+        reviewLead: reviewLead('Un peu après le repas'),
       };
     case 'desk':
       return {
@@ -333,6 +378,7 @@ export function onboardingCopy(profile: QueueProfile): OnboardingCopy {
           `Sur le poste, touchez ${quoted(vocab.call)}.`,
           'Regardez votre téléphone : votre numéro, puis votre guichet.',
         ],
+        reviewLead: reviewLead('À la fin de chaque passage au guichet'),
       };
     case 'retail':
       return {
@@ -355,6 +401,7 @@ export function onboardingCopy(profile: QueueProfile): OnboardingCopy {
           `Sur le poste, touchez ${quoted(vocab.call)}.`,
           'Regardez votre téléphone.',
         ],
+        reviewLead: reviewLead('Une fois la commande retirée'),
       };
     default:
       // walkin, event : le parcours d'aujourd'hui, mot pour mot.

@@ -79,9 +79,9 @@ export interface OnboardingResult {
  * Profil métier : l'activité choisie donne le profil (`ACTIVITY_PROFILE`).
  * S'il est ouvert à tout nouveau compte (`OPEN_PROFILES`), la file naît
  * directement dans ce profil (`create_location`, 0037). Sinon, le métier
- * s'inscrit en walkin, exactement comme avant les profils, et son
- * activité réelle est inscrite ensuite (voir `onboardingProfile`). La
- * décision est prise ICI, jamais d'après le navigateur.
+ * s'inscrit en walkin, sous l'activité neutre `other`, exactement comme
+ * avant les profils (voir `onboardingProfile`). La décision est prise ICI,
+ * jamais d'après le navigateur.
  */
 export async function completeOnboarding(
   input: z.input<typeof schema>,
@@ -122,26 +122,30 @@ export async function completeOnboarding(
     const profile: QueueProfile = result.queue.profile ?? 'walkin';
 
     // Profil pas encore ouvert : la file est née en walkin, sous l'activité
-    // neutre `other`. On inscrit maintenant la vraie activité du métier.
-    // L'organisation existe déjà : un échec ici ne doit pas faire recommencer
-    // l'inscription (elle serait créée deux fois). On le journalise ; la
-    // file fonctionne de toute façon, en walkin.
-    if (choice.restoreActivity) {
-      const { error: activityError } = await db.from('organizations')
-        .update({ activity: parsed.activity }).eq('id', organizationId);
-      if (activityError) console.error('[onboarding] activité non inscrite', activityError.message);
-    }
+    // neutre `other`, et l'organisation la GARDE (voir `provisionActivity`) :
+    // ses établissements suivants naîtront en walkin eux aussi. Le métier
+    // choisi est conservé dans le journal ci-dessous (`metadata.activity`).
 
     // Avis demandé explicitement dans un métier où il est coupé par défaut
     // (guichet de santé ou d'administration déjà ouvert) : le choix du
-    // professionnel l'emporte sur le défaut du profil.
+    // professionnel l'emporte sur le défaut du profil. L'organisation existe
+    // déjà : un échec ici ne doit pas faire recommencer l'inscription (elle
+    // serait créée deux fois). On le journalise ; la file fonctionne, sans
+    // avis, et le réglage reste modifiable dans Réglages.
     if (requestReviews && profile === 'desk' && reviewOffByDefault(parsed.activity)) {
-      const { data: queueRow } = await db.from('queues')
-        .select('profile_options').eq('id', result.queue.id).maybeSingle();
-      const stored = (queueRow?.profile_options ?? {}) as Record<string, unknown>;
-      const { reviewDelayMinutes: _never, ...rest } = stored;
-      const options = profileOptionsSchema('desk').parse({ ...rest, review: true });
-      await db.from('queues').update({ profile_options: options }).eq('id', result.queue.id);
+      try {
+        const { data: queueRow, error: readError } = await db.from('queues')
+          .select('profile_options').eq('id', result.queue.id).maybeSingle();
+        if (readError) throw readError;
+        const stored = (queueRow?.profile_options ?? {}) as Record<string, unknown>;
+        const { reviewDelayMinutes: _never, ...rest } = stored;
+        const options = profileOptionsSchema('desk').parse({ ...rest, review: true });
+        const { error: updateError } = await db.from('queues')
+          .update({ profile_options: options }).eq('id', result.queue.id);
+        if (updateError) throw updateError;
+      } catch (reviewError) {
+        console.error('[onboarding] avis non activé sur la file', toAppError(reviewError).message);
+      }
     }
 
     // Coordonnées et lien d'avis.
@@ -195,7 +199,9 @@ export async function completeOnboarding(
     await audit({
       organizationId, actorUserId: user.id, action: 'onboarding.completed',
       targetType: 'organization', targetId: organizationId,
-      metadata: { activity: parsed.activity, queueMode: parsed.queueMode, profile },
+      // `activity` : le métier choisi, même quand l'organisation garde
+      // `other` faute de profil ouvert ; `targetProfile` : celui qu'il aura.
+      metadata: { activity: parsed.activity, queueMode: parsed.queueMode, profile, targetProfile: choice.target },
     });
 
     return {

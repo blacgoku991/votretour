@@ -8,11 +8,12 @@ import { WEEKDAYS } from '@/lib/format';
 import type { ActivityType, QueueProfile } from '@/lib/profiles/types';
 import { completeOnboarding, type OnboardingResult } from '@/server/actions/onboarding';
 import { MetierPicker } from './MetierPicker';
-import { ProfilePreview } from './ProfilePreview';
+import { PreviewInvitation, ProfilePreview } from './ProfilePreview';
 import {
   hasProfilePreview,
   onboardingCopy,
   onboardingProfile,
+  previewInvitation,
   reviewOffByDefault,
   samplePlaceholders,
 } from './metiers';
@@ -39,6 +40,18 @@ import styles from './onboarding.module.css';
  *    pas de choix « file commune ou par professionnel », qui ne concerne
  *    que le passage au fauteuil.
  * L'action serveur refait la même décision : le navigateur n'impose rien.
+ *
+ * Où est l'aperçu ? Il doit être SOUS LES YEUX quand on touche la tuile :
+ *  - à partir de 1280 px, dans sa propre colonne, collée à droite du
+ *    formulaire (`data-split`, seulement si un profil à aperçu est ouvert :
+ *    sinon la page reste celle d'avant) ;
+ *  - de 1024 à 1279 px, sous la grille, ouvert, et la page y descend au
+ *    premier métier choisi qui en a un ;
+ *  - sur téléphone, replié sous la grille, avec un bouton qui y mène juste
+ *    sous la famille du métier touché.
+ * Les deux exemplaires (colonne et sous la grille) sont rendus ; la mise en
+ * page n'en montre qu'un (CSS), l'autre reste en `display: none`, hors de
+ * l'arbre d'accessibilité, et son histoire ne se joue pas.
  *
  * Habillage « Le Rang en relief » : la progression est un rail de lattes
  * (StepRail), les étapes glissent de 16 px en 240 ms, les horaires sont en
@@ -108,6 +121,20 @@ export function OnboardingFlow({
   const choice = onboardingProfile(form.activity, open);
   const copy = onboardingCopy(choice.profile);
   const placeholders = samplePlaceholders(form.activity);
+  // Au moins un profil à aperçu ouvert : la colonne de l'aperçu existe.
+  const invitation = useMemo(() => previewInvitation(open), [open]);
+  const split = invitation !== null;
+  const previewProfile = hasProfilePreview(choice.profile) ? choice.profile : null;
+  const placeName =
+    form.locationName.trim() || form.organizationName.trim() || placeholders.organization;
+
+  // Aperçu sous la grille : replié sur téléphone. `previewRun` rejoue
+  // l'histoire à chaque ouverture.
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewRun, setPreviewRun] = useState(0);
+  const inlinePreviewRef = useRef<HTMLDivElement>(null);
+  const [reveal, setReveal] = useState<{ n: number; block: ScrollLogicalPosition }>({ n: 0, block: 'nearest' });
+  const revealedOnce = useRef(false);
   const reviewOptIn = reviewOffByDefault(form.activity);
   const requestReviews = reviewOptIn ? reviewChoice === true : true;
 
@@ -154,10 +181,41 @@ export function OnboardingFlow({
     }, LEAVE_MS);
   };
 
+  // Amène l'aperçu sous la grille à l'écran (après le rendu qui l'affiche).
+  useEffect(() => {
+    if (reveal.n === 0) return;
+    inlinePreviewRef.current?.scrollIntoView({ block: reveal.block, behavior: reduced ? 'instant' : 'smooth' });
+  }, [reveal, reduced]);
+
   const chooseActivity = (activity: ActivityType) => {
     setForm((current) => ({ ...current, activity }));
     // Un autre métier, un autre défaut pour l'avis : le choix précédent ne suit pas.
     setReviewChoice(null);
+    // De 1024 à 1279 px, l'aperçu est ouvert mais sous la grille, hors de
+    // la vue : au premier métier qui en a un, la page descend juste assez
+    // pour le montrer. Une seule fois, pour ne pas balader la page à
+    // chaque tuile touchée. (Au-delà, il est à droite ; en deçà, replié.)
+    if (
+      !revealedOnce.current
+      && hasProfilePreview(onboardingProfile(activity, open).profile)
+      && window.matchMedia('(min-width: 1024px) and (max-width: 1279.98px)').matches
+    ) {
+      revealedOnce.current = true;
+      setReveal((r) => ({ n: r.n + 1, block: 'nearest' }));
+    }
+  };
+
+  const togglePreview = () => {
+    if (!previewOpen) setPreviewRun((n) => n + 1);
+    setPreviewOpen(!previewOpen);
+  };
+  // Téléphone : le bouton posé sous la famille touchée déplie l'aperçu et y descend.
+  const showPreview = () => {
+    if (!previewOpen) {
+      setPreviewRun((n) => n + 1);
+      setPreviewOpen(true);
+    }
+    setReveal((r) => ({ n: r.n + 1, block: 'start' }));
   };
 
   const submit = () => {
@@ -210,7 +268,7 @@ export function OnboardingFlow({
   );
 
   return (
-    <main className={styles.screen}>
+    <main className={styles.screen} data-split={split ? '1' : undefined}>
       <aside className={styles.aside}>
         <div className={styles.asideInner}>
           <Wordmark />
@@ -223,7 +281,7 @@ export function OnboardingFlow({
         <StepBand steps={steps} index={index} target={copy.remainingTarget} />
       </header>
 
-      <div className={styles.main}>
+      <div className={styles.main} data-split={split ? '1' : undefined}>
         <div
           key={step}
           className={styles.pane}
@@ -247,15 +305,28 @@ export function OnboardingFlow({
                     onChange={(e) => setForm({ ...form, organizationName: e.target.value })} />
                 </div>
                 <div className={`field ${styles.metierField}`}>
-                  <MetierPicker value={form.activity} onChange={chooseActivity} />
-                  {hasProfilePreview(choice.profile) && (
-                    <ProfilePreview
-                      profile={choice.profile}
-                      activity={form.activity}
-                      placeName={
-                        form.locationName.trim() || form.organizationName.trim() || placeholders.organization
-                      }
-                    />
+                  <MetierPicker
+                    value={form.activity}
+                    onChange={chooseActivity}
+                    cue={previewProfile && (
+                      <button type="button" className={styles.cue} onClick={showPreview}>
+                        <span className={styles.cueTag}>Aperçu</span>
+                        Voir ce que verront vos clients
+                      </button>
+                    )}
+                  />
+                  {previewProfile && (
+                    <div className={styles.inlinePreview} ref={inlinePreviewRef}>
+                      <ProfilePreview
+                        variant="inline"
+                        profile={previewProfile}
+                        activity={form.activity}
+                        placeName={placeName}
+                        open={previewOpen}
+                        onToggle={togglePreview}
+                        run={previewRun}
+                      />
+                    </div>
                   )}
                 </div>
                 <div className="field">
@@ -369,7 +440,7 @@ export function OnboardingFlow({
             <div className={styles.stepBody}>
               <div className={styles.stepHead}>
                 {kicker}
-                {title('Votre lien d’avis Google')}
+                {title(reviewOptIn ? 'Avis Google\u00a0: désactivé par défaut' : 'Votre lien d’avis Google')}
                 {reviewOptIn ? (
                   <p className={styles.lead}>
                     {form.activity === 'health'
@@ -378,11 +449,7 @@ export function OnboardingFlow({
                     {' '}Vous pouvez l’activer ici, ou plus tard dans Réglages.
                   </p>
                 ) : (
-                  <p className={styles.lead}>
-                    À la fin de chaque passage, le client reçoit un remerciement avec un bouton
-                    qui ouvre directement ce lien. C’est proposé à tout le monde, sans
-                    filtrage.
-                  </p>
+                  <p className={styles.lead}>{copy.reviewLead}</p>
                 )}
               </div>
               {reviewOptIn && (
@@ -513,6 +580,22 @@ export function OnboardingFlow({
             )}
           </div>
         </div>
+
+        {/* À partir de 1280 px : l'aperçu dans sa colonne, sous les yeux. */}
+        {step === 'place' && split && (
+          <div className={styles.sideCol} data-leaving={leaving ? '1' : undefined}>
+            {previewProfile ? (
+              <ProfilePreview
+                variant="side"
+                profile={previewProfile}
+                activity={form.activity}
+                placeName={placeName}
+              />
+            ) : (
+              <PreviewInvitation text={invitation} />
+            )}
+          </div>
+        )}
       </div>
     </main>
   );
