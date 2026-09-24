@@ -12,36 +12,70 @@
    utilisé ici. Seuls transform et opacity sont animés.
    ===================================================================== */
 
+/* Le conteneur, sa tête et son sur-titre sont ceux des autres cartes
+   (admin.module.css : adminCard, adminCardHead, cardKicker) ; on n'ajoute
+   ici que les tons de texte propres à la carte. Les deux teintes
+   claires, lisibles sur l'encre, n'existent pas encore dans globals.css :
+   elles sont lues sous leur futur nom de token, avec la valeur actuelle
+   en repli, et redéfinies pour un éventuel thème clair. */
 .card {
-  border: 1px solid var(--line);
-  border-radius: 22px;
-  background: var(--surface-raised);
-  padding: 22px;
+  --w-jade-text: var(--jade-text, #49D7A5);
+  --w-copper-text: var(--copper-text, #E3AA66);
   min-width: 0;
 }
+:global([data-theme='light']) .card {
+  --w-jade-text: var(--jade-text, #137A57);
+  --w-copper-text: var(--copper-text, #9A5A16);
+}
 
-.head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  padding-bottom: 18px;
-  margin-bottom: 18px;
-  border-bottom: 1px solid var(--line);
-}
-.head h2 { font-size: 20px; margin-top: 4px; }
-.kicker {
-  font-size: .6875rem;
-  font-weight: 850;
-  letter-spacing: .16em;
-  color: var(--text-muted);
-}
 .lead {
   margin-top: 6px;
   max-width: 60ch;
   color: var(--text-muted);
   font-size: .8125rem;
   line-height: 1.45;
+}
+
+/* ---------------------------------------------------------------------
+   Repliée : rien d'entrepris, une seule ligne
+   --------------------------------------------------------------------- */
+/* Double classe : l'emporte sur le padding d'adminCard quel que soit
+   l'ordre de chargement des deux feuilles. */
+.card.folded { padding: 0; }
+.summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 14px 18px 14px 22px;
+  border-radius: 21px;
+  list-style: none;
+  cursor: pointer;
+}
+.summary::-webkit-details-marker { display: none; }
+.summary:focus-visible { outline-offset: -2px; border-radius: 21px; }
+.summaryText {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  min-width: 0;
+}
+.summaryText strong { font-size: .9375rem; font-variation-settings: 'wdth' 100, 'wght' 700; }
+.summaryText span { color: var(--text-muted); font-size: .75rem; }
+.chevron {
+  width: 9px;
+  height: 9px;
+  margin: 0 4px 4px 0;
+  border-right: 1.5px solid var(--text-muted);
+  border-bottom: 1.5px solid var(--text-muted);
+  transform: rotate(45deg);
+}
+.folded[open] .chevron { transform: translateY(3px) rotate(-135deg); }
+.summary:hover .chevron { border-color: var(--text); }
+.foldedBody {
+  padding: 18px 22px 22px;
+  border-top: 1px solid var(--line);
 }
 
 .grid {
@@ -53,31 +87,36 @@
 /* ---------------------------------------------------------------------
    Le billet
    --------------------------------------------------------------------- */
+/* Le trait du bord est porté par deux variables, --edge et --edge-style,
+   pour que les encoches de la perforation le reprennent à l'identique. */
 .ticket {
   --tone: var(--ardoise-500);
   --tone-text: var(--text-muted);
+  --edge: var(--line);
+  --edge-style: solid;
   position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
   border-radius: 18px;
-  border: 1px solid var(--line);
+  border: 1px var(--edge-style) var(--edge);
   background: var(--surface-sunken);
-  /* Les demi-cercles de la perforation mordent le bord : on rogne. */
-  overflow: hidden;
+  /* Sous le trait, le fond de la carte : même assise que les encoches,
+     donc même teinte pour un trait semi-transparent. */
+  background-clip: padding-box;
 }
 .ticket[data-state='ready'] {
   --tone: var(--jade-500);
-  --tone-text: #49D7A5;
-  border-color: color-mix(in oklab, var(--jade-500) 26%, transparent);
+  --tone-text: var(--w-jade-text);
+  --edge: color-mix(in oklab, var(--jade-500) 26%, var(--surface-raised));
 }
 .ticket[data-state='error'] {
   --tone: var(--brique-500);
   --tone-text: var(--danger-text);
-  border-color: color-mix(in oklab, var(--brique-500) 42%, transparent);
+  --edge: color-mix(in oklab, var(--brique-500) 42%, var(--surface-raised));
 }
 /* Non configuré : un billet « en pointillés », présent mais pas émis. */
-.ticket[data-state='unconfigured'] { border-style: dashed; border-color: var(--line-strong); }
+.ticket[data-state='unconfigured'] { --edge: var(--line-strong); --edge-style: dashed; }
 
 .stub {
   display: flex;
@@ -136,20 +175,49 @@
   opacity: 0;
 }
 
-/* Perforation : un pointillé entre deux demi-cercles à la couleur de la
-   carte, qui découpent le billet sans une seule image. */
+/* Perforation : un pointillé entre deux encoches. Chaque encoche est un
+   disque de 18 px centré sur le bord du billet, rempli à la couleur de
+   la carte (il efface le fond et le trait du billet) et cerclé du même
+   trait que le bord (couleur ET style : pointillé si non configuré). On
+   n'en garde que la moitié intérieure (clip-path) : vue de dehors, le
+   bord plonge dans le billet et en ressort, c'est une vraie morsure.
+   Elle est dans le flux, entre souche et corps : sa hauteur suit donc
+   le contenu de la souche, ce qu'un masque en coordonnées fixes ne
+   saurait pas faire. Le billet ne rogne rien (pas d'overflow: hidden) :
+   le disque doit recouvrir le trait, qui est hors de la boîte de
+   remplissage. */
 .perforation {
+  --notch: 9px;
   position: relative;
-  height: 18px;
-  background:
-    radial-gradient(circle at 0 50%, var(--surface-raised) 8.5px, transparent 9px),
-    radial-gradient(circle at 100% 50%, var(--surface-raised) 8.5px, transparent 9px);
+  height: calc(var(--notch) * 2);
 }
-.perforation::before {
+.perforation::before,
+.perforation::after {
   content: '';
   position: absolute;
-  left: 18px;
-  right: 18px;
+  top: 0;
+  box-sizing: border-box;
+  width: calc(var(--notch) * 2);
+  height: calc(var(--notch) * 2);
+  border-radius: 50%;
+  border: 1px var(--edge-style) var(--edge);
+  background: var(--surface-raised);
+}
+/* Centre sur l'arête extérieure du bord (1 px hors de la boîte de
+   remplissage), moitié extérieure coupée. */
+.perforation::before {
+  left: calc(-1px - var(--notch));
+  clip-path: inset(0 0 0 var(--notch));
+}
+.perforation::after {
+  right: calc(-1px - var(--notch));
+  clip-path: inset(0 var(--notch) 0 0);
+}
+/* Le pointillé de découpe, d'une encoche à l'autre. */
+.perforation > i {
+  position: absolute;
+  left: calc(var(--notch) + 8px);
+  right: calc(var(--notch) + 8px);
   top: 50%;
   border-top: 1px dashed var(--line-strong);
 }
@@ -333,7 +401,7 @@
   background: color-mix(in oklab, var(--text) 3%, transparent);
 }
 .cert[data-tone='warn'] {
-  --gauge: #E3AA66;
+  --gauge: var(--w-copper-text);
   border-color: color-mix(in oklab, var(--copper-500) 45%, transparent);
   background: color-mix(in oklab, var(--copper-500) 9%, transparent);
 }
@@ -408,7 +476,7 @@
   font-size: .625rem;
   letter-spacing: .08em;
   font-variation-settings: 'wdth' 92, 'wght' 760;
-  color: #E3AA66;
+  color: var(--w-copper-text);
   white-space: nowrap;
 }
 .certFoot {
@@ -418,7 +486,7 @@
   color: var(--text-muted);
 }
 .certAction { color: var(--text); font-variation-settings: 'wdth' 100, 'wght' 600; }
-.cert[data-tone='warn'] .certFoot > span:first-child { color: #E3AA66; }
+.cert[data-tone='warn'] .certFoot > span:first-child { color: var(--w-copper-text); }
 .cert[data-tone='expired'] .certFoot > span:first-child { color: var(--danger-text); }
 
 /* ---------------------------------------------------------------------
@@ -470,10 +538,19 @@
   letter-spacing: .08em;
   text-transform: uppercase;
   font-variation-settings: 'wdth' 92, 'wght' 650;
-  color: var(--text-faint);
+  /* Case éteinte : en retrait, mais lisible (--text-faint ne l'est pas à 11 px). */
+  color: var(--text-muted);
 }
 .modeTrack > span[data-on='true'] { color: var(--text); font-variation-settings: 'wdth' 92, 'wght' 780; }
 .mode > p { font-size: .75rem; line-height: 1.45; color: var(--text-muted); }
+.mode > p code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .6875rem;
+  color: var(--text);
+}
+/* Mode seulement déclaré (fournisseur pas prêt) : la case active n'est
+   pas colorée, car rien n'est encore en vigueur. */
+.mode:not([data-live]) .modeTrack { --thumb: var(--ardoise-500); }
 
 /* ---------------------------------------------------------------------
    Mouvement : les lattes s'accrochent au rail, la jauge se remplit,
@@ -488,6 +565,7 @@
   .slats li:nth-child(1) { animation-delay: calc(var(--i, 0) * 90ms + 60ms + var(--stagger) * 2); }
   .slats li:nth-child(2) { animation-delay: calc(var(--i, 0) * 90ms + 60ms + var(--stagger) * 4); }
   .gaugeFill { animation: wallet-fill var(--dur-5) var(--ease-out) 200ms both; }
+  .chevron { transition: transform var(--dur-2) var(--ease-out); }
   .state[data-state='ready'] i::after { animation: wallet-ping 2.4s var(--ease-out) infinite; }
 }
 
@@ -512,9 +590,20 @@
   .grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 620px) {
-  .head { flex-direction: column; gap: 10px; }
+  /* Repliée : sur-titre, puce et chevron sur la première ligne, la
+     phrase dessous, sur toute la largeur. */
+  .summary {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: 'kicker chip chevron' 'text text text';
+    gap: 8px 12px;
+    padding: 14px 16px;
+  }
+  .summary > :first-child { grid-area: kicker; }
+  .summaryText { grid-area: text; }
+  .summary > :global(.chip) { grid-area: chip; }
+  .chevron { grid-area: chevron; }
+  .foldedBody { padding: 16px; }
   /* L'état reste à droite du nom tant qu'il tient, passe dessous sinon. */
   .stub { flex-wrap: wrap; gap: 10px; padding: 16px 16px 12px; }
   .body { padding: 12px 16px 16px; }
-  .perforation::before { left: 14px; right: 14px; }
 }

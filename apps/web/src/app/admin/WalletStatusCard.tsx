@@ -2,6 +2,7 @@ import 'server-only';
 import { X509Certificate } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { formatNumber } from '@/lib/format';
+import admin from './admin.module.css';
 import styles from './wallet-status.module.css';
 
 /**
@@ -16,7 +17,8 @@ import styles from './wallet-status.module.css';
  *   - erreur de configuration, avec la raison exacte du fournisseur ;
  * plus ce qui s'use ou se bascule : l'échéance du certificat Apple
  * (alerte à J-30, il se renouvelle chaque année) et le mode Google
- * (démo : testeurs seulement ; production : tout le monde).
+ * (démo : bouton pour les membres connectés, enregistrement réservé aux
+ * comptes de test ; production : tout le monde).
  *
  * Aucune valeur secrète n'est lue pour l'affichage : seulement la
  * présence des variables, et la date de fin du certificat public.
@@ -31,7 +33,7 @@ export interface WalletProviderStatus {
   details?: Record<string, unknown>;
 }
 
-type WalletState = 'unconfigured' | 'ready' | 'error';
+export type WalletState = 'unconfigured' | 'ready' | 'error';
 
 interface ProviderCard {
   id: WalletProviderId;
@@ -47,6 +49,8 @@ interface ProviderCard {
 }
 
 export interface WalletCardData {
+  /** L'exploitant a commencé la configuration (ou des passes existent) : carte dépliée. */
+  engaged: boolean;
   apple: ProviderCard & { cert: { expiresAt: string; daysLeft: number } | null };
   google: ProviderCard & { mode: 'demo' | 'production' | null };
 }
@@ -56,33 +60,48 @@ export interface WalletCardData {
    ==================================================================== */
 
 /**
+ * ╔══════════════════════════════════════════════════════════════════╗
+ * ║ TODO(intégration W1) — REBRANCHER AVANT LA MISE EN PRODUCTION     ║
+ * ╚══════════════════════════════════════════════════════════════════╝
+ *
  * État des fournisseurs, lu dans le registre du lot W1
  * (server/wallet/providers.ts → walletStatuses(), mis en cache 5 min).
+ * Ce module n'existe pas encore dans cette branche. Une fois W1 intégré :
  *
- * REBRANCHEMENT : ce module n'existe pas encore dans cette branche. Une
- * fois le lot W1 intégré, remplacer le corps par :
+ *   1. remplacer le corps de readWalletStatuses() par
+ *        const { walletStatuses } = await import('@/server/wallet/providers');
+ *        return walletStatuses();
+ *   2. passer WALLET_REGISTRY_WIRED à true.
  *
- *   const { walletStatuses } = await import('@/server/wallet/providers');
- *   return walletStatuses();
+ * Tant que ce n'est pas fait, la carte dit « non configuré » MÊME quand
+ * Wallet fonctionne en production. D'où le drapeau exporté : un test
+ * (tests/admin-wallet-card.test.ts) échoue dès que
+ * src/server/wallet/providers.ts existe alors que le drapeau vaut
+ * encore false, pour que l'oubli casse la CI au lieu de passer en silence.
  *
- * (import dynamique : la page d'accueil de /admin ne charge le code
- * Wallet que lorsqu'elle s'affiche). D'ici là, `null` = « non
- * configuré » pour les deux : on n'affiche jamais « prêt » sans que le
- * fournisseur l'ait dit lui-même.
+ * (Import dynamique : la page d'accueil de /admin ne charge le code
+ * Wallet que lorsqu'elle s'affiche.) D'ici là, `null` : on n'affiche
+ * jamais « prêt » sans que le fournisseur l'ait dit lui-même.
  */
+export const WALLET_REGISTRY_WIRED = false;
+
 async function readWalletStatuses(): Promise<Record<WalletProviderId, WalletProviderStatus> | null> {
   return null;
 }
 
 /* ====================================================================
-   Lecture
+   Lecture (fonctions pures : l'environnement est passé en paramètre
+   pour être testées sans toucher à process.env)
    ==================================================================== */
 
+type Env = Readonly<Record<string, string | undefined>>;
+
 /**
- * Variables présentes. Lues directement dans process.env plutôt que dans
- * lib/env.ts : ce dernier appartient au socle Wallet (lot W1) et gagnera
- * `integrationStatus().appleWalletConfigured` / `googleWalletConfigured`,
- * qui disent la même chose. Seule la PRÉSENCE est testée ici.
+ * Variables présentes. Lues directement dans l'environnement plutôt que
+ * dans lib/env.ts : ce dernier appartient au socle Wallet (lot W1) et
+ * gagnera `integrationStatus().appleWalletConfigured` /
+ * `googleWalletConfigured`, qui disent la même chose. Seule la PRÉSENCE
+ * est testée ici.
  */
 const REQUIRED_ENV: Record<WalletProviderId, readonly string[]> = {
   apple: [
@@ -94,27 +113,28 @@ const REQUIRED_ENV: Record<WalletProviderId, readonly string[]> = {
   google: ['GOOGLE_WALLET_ISSUER_ID', 'GOOGLE_WALLET_SERVICE_ACCOUNT_JSON'],
 };
 
-function missingEnv(id: WalletProviderId): string[] {
-  return REQUIRED_ENV[id].filter((name) => !process.env[name]?.trim());
+function missingEnv(id: WalletProviderId, env: Env): string[] {
+  return REQUIRED_ENV[id].filter((name) => !env[name]?.trim());
 }
 
 /** Au moins une variable renseignée : l'exploitant a commencé la configuration. */
-function touched(id: WalletProviderId): boolean {
-  return missingEnv(id).length < REQUIRED_ENV[id].length;
+export function touched(id: WalletProviderId, env: Env = process.env): boolean {
+  return missingEnv(id, env).length < REQUIRED_ENV[id].length;
 }
 
-function classify(
+export function classify(
   id: WalletProviderId,
   status: WalletProviderStatus | undefined,
+  env: Env = process.env,
 ): Pick<ProviderCard, 'state' | 'reason' | 'missing' | 'awaitingCode'> {
-  const missing = missingEnv(id);
+  const missing = missingEnv(id, env);
   if (status?.ready) return { state: 'ready', reason: null, missing: [], awaitingCode: false };
   // Registre absent : « non configuré », même si les variables sont là.
   if (!status) {
     return { state: 'unconfigured', reason: null, missing, awaitingCode: missing.length === 0 };
   }
   // Rien de renseigné : pas une erreur, un choix (Wallet est facultatif).
-  if (!touched(id)) return { state: 'unconfigured', reason: null, missing, awaitingCode: false };
+  if (!touched(id, env)) return { state: 'unconfigured', reason: null, missing, awaitingCode: false };
   return {
     state: 'error',
     reason: status.reason?.trim()
@@ -142,12 +162,17 @@ function detailDate(details: Record<string, unknown> | undefined, keys: string[]
  * donne normalement dans `details` ; à défaut, on la lit dans le
  * certificat PUBLIC (jamais dans la clé), pour que l'alerte à J-30
  * existe même quand le fournisseur est en erreur, par exemple parce
- * que le certificat vient justement d'expirer.
+ * que le certificat vient justement d'expirer. Deux écritures acceptées,
+ * comme côté fournisseur : PEM (éventuellement avec des `\n` littéraux,
+ * forme d'une ligne .env) ou PEM encodé en base64.
  */
-function appleCertExpiry(details: Record<string, unknown> | undefined): Date | null {
+export function appleCertExpiry(
+  details: Record<string, unknown> | undefined,
+  env: Env = process.env,
+): Date | null {
   const fromProvider = detailDate(details, ['certExpiresAt', 'expiresAt', 'notAfter']);
   if (fromProvider) return fromProvider;
-  const raw = process.env.APPLE_WALLET_CERT_PEM?.trim();
+  const raw = env.APPLE_WALLET_CERT_PEM?.trim();
   if (!raw) return null;
   try {
     const pem = raw.includes('BEGIN CERTIFICATE')
@@ -161,9 +186,22 @@ function appleCertExpiry(details: Record<string, unknown> | undefined): Date | n
   }
 }
 
-function googleMode(details: Record<string, unknown> | undefined): 'demo' | 'production' {
-  const value = String(details?.mode ?? process.env.GOOGLE_WALLET_MODE ?? '').trim().toLowerCase();
+/**
+ * Mode de l'émetteur Google. Tout ce qui n'est pas exactement
+ * « production » vaut démo : c'est le mode sans risque (bouton réservé
+ * aux membres, passes « [TEST ONLY] »), jamais l'inverse.
+ */
+export function googleMode(
+  details: Record<string, unknown> | undefined,
+  env: Env = process.env,
+): 'demo' | 'production' {
+  const value = String(details?.mode ?? env.GOOGLE_WALLET_MODE ?? '').trim().toLowerCase();
   return value === 'production' ? 'production' : 'demo';
+}
+
+/** Jours pleins restants avant `expiry` (négatif une fois passée). */
+export function daysUntil(expiry: Date, now: Date): number {
+  return Math.floor((expiry.getTime() - now.getTime()) / 86_400_000);
 }
 
 /** Un compte qui échoue (table absente d'une base pas encore migrée…) vaut « — », pas 0. */
@@ -188,9 +226,14 @@ export async function loadWalletCard(db: SupabaseClient, now = new Date()): Prom
     countOrNull(db.from('wallet_passes').select('id', { count: 'exact', head: true })
       .eq('provider', provider).eq('state', 'active').eq('live', true)),
     // Alertes réellement acceptées par Apple ou Google (plan § 5.7).
+    // Filtre sur created_at, pas sent_at : l'index existant est
+    // (status, created_at desc), et sent_at n'est indexé nulle part —
+    // on éviterait sinon de parcourir 30 jours de lignes « sent » à
+    // chaque affichage. Une alerte Wallet part dans la minute de sa
+    // création (cron) : l'écart entre les deux dates est négligeable.
     countOrNull(db.from('notification_deliveries').select('id', { count: 'exact', head: true })
-      .eq('channel', provider === 'apple' ? 'apple_wallet' : 'google_wallet')
-      .eq('status', 'sent').gte('sent_at', since24h)),
+      .eq('status', 'sent').gte('created_at', since24h)
+      .eq('channel', provider === 'apple' ? 'apple_wallet' : 'google_wallet')),
     // Envois abandonnés ; la purge les efface après 7 jours.
     countOrNull(db.from('wallet_outbox').select('id', { count: 'exact', head: true })
       .eq('provider', provider).eq('status', 'dead')),
@@ -207,18 +250,22 @@ export async function loadWalletCard(db: SupabaseClient, now = new Date()): Prom
   const expiry = apple.state === 'unconfigured' && !apple.awaitingCode ? null : appleCertExpiry(appleStatus?.details);
 
   return {
+    // Replier la carte tant que l'exploitant n'a rien entrepris : Wallet
+    // est facultatif, et une carte « 0/2 » de 800 px sur téléphone
+    // repousserait la vraie exploitation (files, écrans) sans rien dire
+    // d'utile. Dès qu'une variable est posée, ou qu'un pass existe, elle
+    // se déplie d'elle-même : une panne ne doit jamais être repliée.
+    engaged:
+      touched('apple') || touched('google')
+      || apple.state !== 'unconfigured' || google.state !== 'unconfigured'
+      || (appleActive ?? 0) > 0 || (googleActive ?? 0) > 0,
     apple: {
       id: 'apple',
       ...apple,
       activePasses: appleActive,
       alerts24h: appleAlerts,
       dead7d: appleDead,
-      cert: expiry
-        ? {
-            expiresAt: expiry.toISOString(),
-            daysLeft: Math.floor((expiry.getTime() - now.getTime()) / 86_400_000),
-          }
-        : null,
+      cert: expiry ? { expiresAt: expiry.toISOString(), daysLeft: daysUntil(expiry, now) } : null,
     },
     google: {
       id: 'google',
@@ -266,33 +313,55 @@ export function WalletStatusCard({ data }: { data: WalletCardData }) {
   const ready = [data.apple, data.google].filter((p) => p.state === 'ready').length;
   const errors = [data.apple, data.google].filter((p) => p.state === 'error').length;
   const certWarn = data.apple.cert !== null && data.apple.cert.daysLeft <= CERT_WARN_DAYS;
+  const chip = (
+    <span className={errors > 0 || certWarn ? 'chip chip--copper' : ready > 0 ? 'chip chip--jade' : 'chip'}>
+      {ready}/2 {ready > 1 ? 'prêts' : 'prêt'}
+    </span>
+  );
+  const tickets = (
+    <div className={styles.grid}>
+      <ProviderTicket provider={data.apple} index={0}>
+        {data.apple.cert && <CertGauge cert={data.apple.cert} />}
+      </ProviderTicket>
+      <ProviderTicket provider={data.google} index={1}>
+        {data.google.mode && <ModeSwitch mode={data.google.mode} state={data.google.state} />}
+      </ProviderTicket>
+    </div>
+  );
+
+  // Rien d'entrepris : une seule ligne, dépliable (sans JavaScript) pour
+  // lire ce qu'il faudrait renseigner.
+  if (!data.engaged) {
+    return (
+      <details className={`${admin.adminCard} ${styles.card} ${styles.folded}`}>
+        <summary className={styles.summary}>
+          <span className={admin.cardKicker}>PASSES WALLET</span>
+          <span className={styles.summaryText}>
+            <strong>Apple Wallet et Google Wallet</strong>
+            <span>Non configurés · aucun bouton côté client · SETUP.md&nbsp;§&nbsp;18</span>
+          </span>
+          {chip}
+          <span className={styles.chevron} aria-hidden="true" />
+        </summary>
+        <div className={styles.foldedBody}>{tickets}</div>
+      </details>
+    );
+  }
 
   return (
-    <section className={styles.card} aria-labelledby="wallet-titre">
-      <div className={styles.head}>
+    <section className={`${admin.adminCard} ${styles.card}`} aria-labelledby="wallet-titre">
+      <div className={admin.adminCardHead}>
         <div>
-          <span className={styles.kicker}>PASSES WALLET</span>
+          <span className={admin.cardKicker}>PASSES WALLET</span>
           <h2 id="wallet-titre">Apple Wallet et Google Wallet</h2>
           <p className={styles.lead}>
             Un fournisseur qui n’est pas prêt n’affiche aucun bouton côté client.
             La raison exacte n’apparaît qu’ici.
           </p>
         </div>
-        <span
-          className={errors > 0 || certWarn ? 'chip chip--copper' : ready > 0 ? 'chip chip--jade' : 'chip'}
-        >
-          {ready}/2 {ready > 1 ? 'prêts' : 'prêt'}
-        </span>
+        {chip}
       </div>
-
-      <div className={styles.grid}>
-        <ProviderTicket provider={data.apple} index={0}>
-          {data.apple.cert && <CertGauge cert={data.apple.cert} />}
-        </ProviderTicket>
-        <ProviderTicket provider={data.google} index={1}>
-          {data.google.mode && <ModeSwitch mode={data.google.mode} />}
-        </ProviderTicket>
-      </div>
+      {tickets}
     </section>
   );
 }
@@ -325,7 +394,7 @@ function ProviderTicket({
         </span>
       </header>
 
-      <div className={styles.perforation} aria-hidden="true" />
+      <div className={styles.perforation} aria-hidden="true"><i /></div>
 
       <div className={styles.body}>
         {provider.state === 'error' && (
@@ -427,16 +496,23 @@ function CertGauge({ cert }: { cert: { expiresAt: string; daysLeft: number } }) 
   );
 }
 
-function ModeSwitch({ mode }: { mode: 'demo' | 'production' }) {
+/**
+ * Mode Google. Le mode vient d'une variable (.env), pas d'un accord
+ * vérifié auprès de Google : on ne dit donc ce qu'il PRODUIT que lorsque
+ * le fournisseur est prêt. Avant, c'est un mode « déclaré », sans effet.
+ */
+function ModeSwitch({ mode, state }: { mode: 'demo' | 'production'; state: WalletState }) {
+  const live = state === 'ready';
+  const label = mode === 'demo' ? 'démo' : 'production';
   return (
-    <div className={styles.mode}>
+    <div className={styles.mode} data-live={live ? 'true' : undefined}>
       <div className={styles.modeHead}>
-        <span>Mode de l’émetteur</span>
+        <span>{live ? 'Mode de l’émetteur' : 'Mode déclaré'}</span>
         <div
           className={styles.modeTrack}
           data-mode={mode}
           role="img"
-          aria-label={mode === 'demo' ? 'Mode démo' : 'Mode production'}
+          aria-label={live ? `Mode ${label}` : `Mode déclaré : ${label}, sans effet pour l’instant`}
         >
           <span className={styles.modeThumb} aria-hidden="true" />
           <span data-on={mode === 'demo' ? 'true' : undefined}>Démo</span>
@@ -444,9 +520,11 @@ function ModeSwitch({ mode }: { mode: 'demo' | 'production' }) {
         </div>
       </div>
       <p>
-        {mode === 'demo'
-          ? 'Seuls les comptes de test déclarés dans la console Google voient le bouton ; les passes portent « [TEST ONLY] ».'
-          : 'Accès en publication accordé par Google : le bouton est proposé à tous les clients Android.'}
+        {!live
+          ? <>Lu dans <code>GOOGLE_WALLET_MODE</code>, sans effet pour l’instant : aucun bouton tant que Google Wallet n’est pas prêt.</>
+          : mode === 'production'
+            ? 'Le bouton est proposé à tous les clients Android.'
+            : 'Bouton visible par les membres connectés de l’établissement et le super-admin ; seuls les comptes de test déclarés peuvent enregistrer le pass, marqué «\u00a0[TEST\u00a0ONLY]\u00a0».'}
       </p>
     </div>
   );

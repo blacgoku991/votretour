@@ -1363,7 +1363,9 @@ l’écran verrouillé, même page fermée.
 **Sans configuration, rien n’apparaît** : aucun bouton, aucune mention. La
 carte **Passes Wallet** de `/admin` indique pour chaque fournisseur
 *Non configuré*, *Prêt* ou *Erreur de configuration*, avec la raison exacte,
-l’échéance du certificat Apple et le mode Google.
+l’échéance du certificat Apple et le mode Google. Tant qu’aucune variable
+Wallet n’est posée, elle tient sur une ligne repliée, sous le parc d’écrans ;
+elle se déplie et remonte d’elle-même dès la première variable.
 
 **Où coller les valeurs** : dans `deploy/.env`, puis
 `docker compose up -d app` (pas besoin de reconstruire l’image). Sur Vercel :
@@ -1430,7 +1432,7 @@ partager les classes de la production.
 
 ### 18.3 Pièges
 
-| Symptôme dans `/admin` | Cause |
+| Symptôme | Cause |
 |---|---|
 | Le script refuse `pass.p12` | Export du Trousseau en chiffrement ancien : le script passe `-legacy` à OpenSSL 3. Mettez OpenSSL à jour s’il échoue encore. |
 | Identifiant différent du certificat | `APPLE_WALLET_PASS_TYPE_ID` ne correspond pas à l’`UID` du certificat : collez les lignes du script sans les retoucher. |

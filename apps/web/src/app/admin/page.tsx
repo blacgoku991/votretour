@@ -434,7 +434,8 @@ export default async function AdminHomePage({
         </section>
       </div>
 
-      <WalletStatusCard data={wallet} />
+      {/* Wallet configuré (ou en panne) : juste après les intégrations. */}
+      {wallet.engaged && <WalletStatusCard data={wallet} />}
 
       <div className={styles.commandGrid}>
         <section className={styles.adminCard}>
@@ -497,6 +498,10 @@ export default async function AdminHomePage({
           </div>
         </section>
       </div>
+
+      {/* Rien d'entrepris : une ligne repliée, sous le parc d'écrans, pour
+          ne pas repousser l'exploitation courante avec une option facultative. */}
+      {!wallet.engaged && <WalletStatusCard data={wallet} />}
 
       <div className={styles.commandGrid}>
         <section className={styles.adminCard}>
