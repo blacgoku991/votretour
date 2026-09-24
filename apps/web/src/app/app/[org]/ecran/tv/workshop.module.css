@@ -8,6 +8,7 @@
 .list {
   --ws-plate: calc(var(--u) * 500);
   --ws-ticket: calc(var(--u) * 96);
+  --ws-device: calc(var(--u) * 176);
   list-style: none;
   margin: 0;
   padding: 0;
@@ -24,6 +25,7 @@
 .list[data-density='grid'] {
   --ws-plate: calc(var(--u) * 300);
   --ws-ticket: calc(var(--u) * 72);
+  --ws-device: calc(var(--u) * 150);
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: calc(var(--u) * 18);
 }
@@ -31,6 +33,10 @@
    hauteur de la scène (4 rangées au plus, 8 prêts). */
 .list[data-density='grid'][data-rows='2'] { --ws-plate: calc(var(--u) * 440); --ws-ticket: calc(var(--u) * 96); }
 .list[data-density='grid'][data-rows='3'] { --ws-plate: calc(var(--u) * 380); --ws-ticket: calc(var(--u) * 84); }
+/* Atelier appareil en deux colonnes : la colonne appareil (largeur fixe)
+   et le dossier doivent tenir côte à côte dans une demi-scène. */
+.list[data-kind='device'][data-density='grid'][data-rows='2'] { --ws-ticket: calc(var(--u) * 80); }
+.list[data-kind='device'][data-density='grid'][data-rows='3'] { --ws-ticket: calc(var(--u) * 74); }
 
 .card {
   position: relative;
@@ -105,6 +111,11 @@
 }
 .announceDossier > span:last-child { --flap-tile: var(--ink-600); }
 .device {
+  /* Largeur fixe, celle du plus long libellé (« Ordinateur ») : le numéro
+     de dossier, l'information principale, démarre ainsi au même endroit
+     sur toutes les fiches. */
+  flex: none;
+  width: var(--ws-device);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -113,6 +124,10 @@
 }
 .glyph { width: calc(var(--ws-ticket) * 0.72); height: calc(var(--ws-ticket) * 0.72); }
 .deviceLabel {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-variation-settings: 'wdth' 88, 'wght' 700;
   font-size: calc(var(--u) * 18);
   letter-spacing: 0.14em;
@@ -170,24 +185,25 @@
 .seg[data-col='intake'], .legend [data-col='intake'] > i { background: var(--ardoise-500); }
 .seg[data-col='workshop'], .legend [data-col='workshop'] > i { background: var(--cobalt-500); }
 .seg[data-col='waiting'], .legend [data-col='waiting'] > i { background: var(--copper-500); }
-.seg[data-col='ready'], .legend [data-col='ready'] > i { background: var(--accent); }
 
 .legend {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: calc(var(--u) * 16) calc(var(--u) * 24);
+  display: flex;
+  flex-direction: column;
 }
+/* Trois lignes de relevé : pastille, colonne du planning, chiffre à droite. */
 .legend li {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: calc(var(--u) * 12);
-  font-size: calc(var(--u) * 22);
+  gap: calc(var(--u) * 14);
+  padding: calc(var(--u) * 10) 0;
+  font-size: calc(var(--u) * 24);
   color: var(--text-muted);
 }
+.legend li + li { border-top: 1px solid var(--line); }
 .legend i {
   width: calc(var(--u) * 14);
   height: calc(var(--u) * 14);
@@ -196,7 +212,8 @@
 .legend span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .legend strong {
   font-variation-settings: 'wdth' 118, 'wght' 800;
-  font-size: calc(var(--u) * 30);
+  font-size: calc(var(--u) * 32);
+  font-variant-numeric: tabular-nums;
   color: var(--bone-100);
 }
 
@@ -228,13 +245,26 @@
   .list, .list[data-density='hero'], .list[data-density='grid'] {
     --ws-plate: calc(var(--u) * 300);
     --ws-ticket: calc(var(--u) * 70);
+    --ws-device: calc(var(--u) * 128);
     grid-template-columns: minmax(0, 1fr);
   }
+  .list[data-kind='device'][data-density='grid'][data-rows] { --ws-ticket: calc(var(--u) * 70); }
+  .deviceLabel { font-size: calc(var(--u) * 16); letter-spacing: 0.12em; }
   .card, .list[data-density='hero'] .card, .list[data-density='grid'] .card {
     flex-direction: column;
     align-items: flex-start;
     gap: calc(var(--u) * 14);
-    padding: calc(var(--u) * 20) calc(var(--u) * 22) calc(var(--u) * 20) calc(var(--u) * 66);
+    /* L'œillet a sa propre gouttière : 22 u de marge, 22 u de trou, 5 u de
+       renfort, puis 25 u d'air avant le contenu. Il ne touche jamais le
+       libellé de l'appareil. */
+    padding: calc(var(--u) * 20) calc(var(--u) * 22) calc(var(--u) * 20) calc(var(--u) * 74);
+  }
+  .eyelet, .list[data-density='hero'] .eyelet, .list[data-density='grid'] .eyelet {
+    left: calc(var(--u) * 22);
+    top: calc(var(--u) * 40);
+    translate: none;
+    width: calc(var(--u) * 22);
+    height: calc(var(--u) * 22);
   }
   .list .meta { flex-direction: row; align-items: center; }
   .list .since { font-size: calc(var(--u) * 20); }
@@ -246,13 +276,26 @@
   .list, .list[data-density='hero'], .list[data-density='grid'] {
     --ws-plate: calc(var(--u) * 300);
     --ws-ticket: calc(var(--u) * 70);
+    --ws-device: calc(var(--u) * 128);
     grid-template-columns: minmax(0, 1fr);
   }
+  .list[data-kind='device'][data-density='grid'][data-rows] { --ws-ticket: calc(var(--u) * 70); }
+  .deviceLabel { font-size: calc(var(--u) * 16); letter-spacing: 0.12em; }
   .card, .list[data-density='hero'] .card, .list[data-density='grid'] .card {
     flex-direction: column;
     align-items: flex-start;
     gap: calc(var(--u) * 14);
-    padding: calc(var(--u) * 20) calc(var(--u) * 22) calc(var(--u) * 20) calc(var(--u) * 66);
+    /* L'œillet a sa propre gouttière : 22 u de marge, 22 u de trou, 5 u de
+       renfort, puis 25 u d'air avant le contenu. Il ne touche jamais le
+       libellé de l'appareil. */
+    padding: calc(var(--u) * 20) calc(var(--u) * 22) calc(var(--u) * 20) calc(var(--u) * 74);
+  }
+  .eyelet, .list[data-density='hero'] .eyelet, .list[data-density='grid'] .eyelet {
+    left: calc(var(--u) * 22);
+    top: calc(var(--u) * 40);
+    translate: none;
+    width: calc(var(--u) * 22);
+    height: calc(var(--u) * 22);
   }
   .list .meta { flex-direction: row; align-items: center; }
   .list .since { font-size: calc(var(--u) * 20); }

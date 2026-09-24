@@ -96,6 +96,11 @@
   color: var(--text-muted);
 }
 .statDetail strong { color: var(--bone-100); font-variation-settings: 'wdth' 112, 'wght' 760; }
+/* Le chiffre principal de l'écran (la salle d'un guichet) : le libellé
+   grandit avec son volet, pour ne pas paraître posé à côté. */
+.stat[data-emphasis='true'] { gap: calc(var(--u) * 36); }
+.stat[data-emphasis='true'] .statLabel { font-size: calc(var(--u) * 56); letter-spacing: -0.02em; }
+.stat[data-emphasis='true'] .statDetail { font-size: calc(var(--u) * 30); }
 
 /* ----- Petits compteurs en ligne ----- */
 .minis {
@@ -316,6 +321,12 @@
   .aside { padding-left: 0; border-left: 0; padding-top: calc(var(--u) * 26); border-top: 1px solid var(--line); }
   .headLabel { font-size: calc(var(--u) * 18); }
   .headNote { font-size: calc(var(--u) * 17); }
+  /* En colonne, la note passe sous l'étiquette plutôt que de l'écraser. */
+  .head { flex-wrap: wrap; row-gap: calc(var(--u) * 8); }
+  .headLabel { white-space: nowrap; }
+  .headNote { white-space: normal; }
+  .stat[data-emphasis='true'] .statLabel { font-size: calc(var(--u) * 36); }
+  .stat[data-emphasis='true'] .statDetail { font-size: calc(var(--u) * 22); }
   .statLabel { font-size: calc(var(--u) * 30); }
   .statDetail { font-size: calc(var(--u) * 20); }
   .idleTitle { font-size: calc(var(--u) * 46); }
@@ -330,6 +341,12 @@
   .aside { padding-left: 0; border-left: 0; padding-top: calc(var(--u) * 26); border-top: 1px solid var(--line); }
   .headLabel { font-size: calc(var(--u) * 18); }
   .headNote { font-size: calc(var(--u) * 17); }
+  /* En colonne, la note passe sous l'étiquette plutôt que de l'écraser. */
+  .head { flex-wrap: wrap; row-gap: calc(var(--u) * 8); }
+  .headLabel { white-space: nowrap; }
+  .headNote { white-space: normal; }
+  .stat[data-emphasis='true'] .statLabel { font-size: calc(var(--u) * 36); }
+  .stat[data-emphasis='true'] .statDetail { font-size: calc(var(--u) * 22); }
   .statLabel { font-size: calc(var(--u) * 30); }
   .statDetail { font-size: calc(var(--u) * 20); }
   .idleTitle { font-size: calc(var(--u) * 46); }

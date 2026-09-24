@@ -25,8 +25,11 @@ import styles from './workshop.module.css';
  * atelier appareil : le numéro de dossier et le pictogramme, jamais le
  * modèle.
  *
- * À droite, l'atelier en chiffres : ce qui est en cours, la répartition
- * du planning (sans dire qui attend un devis), les dépôts du jour.
+ * À droite, l'atelier en chiffres : ce qui est en cours, sa répartition
+ * dans le planning (sans dire qui attend un devis), les dépôts et remises
+ * du jour. La barre ne découpe QUE le chiffre qu'elle soutient (« N en
+ * cours ») : les prêts sont déjà la scène de gauche, les y remettre
+ * ferait mentir la barre sous un « 0 en cours ».
  */
 
 function speechOf(row: WorkshopTvRow, device: boolean): string {
@@ -54,7 +57,6 @@ export function WorkshopTV({ snapshot, hint }: { snapshot: WorkshopDisplaySnapsh
     { key: 'intake', label: 'À prendre en charge', value: counts.intake },
     { key: 'workshop', label: device ? 'En réparation' : 'En atelier', value: counts.workshop },
     { key: 'waiting', label: 'En attente', value: counts.waiting },
-    { key: 'ready', label: 'Prêts', value: counts.ready },
   ] as const;
   const planningTotal = planning.reduce((sum, col) => sum + col.value, 0);
 
@@ -74,7 +76,12 @@ export function WorkshopTV({ snapshot, hint }: { snapshot: WorkshopDisplaySnapsh
           />
 
           {rows.length > 0 ? (
-            <ol className={styles.list} data-density={density} data-rows={Math.ceil(rows.length / 2)}>
+            <ol
+              className={styles.list}
+              data-density={density}
+              data-rows={Math.ceil(rows.length / 2)}
+              data-kind={device ? 'device' : 'vehicle'}
+            >
               {rows.map((row, index) => (
                 <li key={row.id} className={styles.card} data-latest={index === 0 ? 'true' : 'false'}>
                   <span className={styles.eyelet} aria-hidden="true" />
@@ -166,10 +173,9 @@ export function WorkshopTV({ snapshot, hint }: { snapshot: WorkshopDisplaySnapsh
         </section>
       </div>
 
-      <TvFoot
-        hint={hint}
-        today={<><strong className="t-num">{counts.handedOverToday}</strong> {plural(counts.handedOverToday, 'rendu', 'rendus')} aujourd’hui</>}
-      />
+      {/* Pas de compteur du jour au pied : « Rendus aujourd'hui » est déjà
+          une case du côté, le répéter ferait deux fois le même chiffre. */}
+      <TvFoot hint={hint} />
 
       <TvAnnounce
         phase={announce.phase}

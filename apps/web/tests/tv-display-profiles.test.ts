@@ -3,11 +3,15 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { TVBoard } from '../src/app/app/[org]/ecran/TVBoard';
 import {
+  DESK_SIDE_ROWS,
+  deskTilesOf,
   deskView,
   pickupView,
+  profileHintFor,
   sinceOf,
   statusLabelFor,
   tableView,
+  tvControlDescription,
   tvScreenFor,
   workshopView,
 } from '../src/app/app/[org]/ecran/tv/model';
@@ -270,6 +274,134 @@ describe('guichet : un numéro, jamais un nom', () => {
     expect(text).toContain('Ticket A-042');
     expect(text).toContain('Guichet 3');
     expect(text).toContain('12 personnes en attente');
+  });
+});
+
+describe('guichet : une personne appelée trouve toujours son numéro', () => {
+  const call = (n: number, minutes: number) => ({
+    id: `k${n}`,
+    ticketNo: `A-00${n}`,
+    deskLabel: `Guichet ${n}`,
+    calledAt: new Date(Date.UTC(2026, 8, 24, 14, minutes)).toISOString(),
+  });
+  // Six guichets qui appellent en même temps (le plafond de display_snapshot),
+  // cinq appels déjà servis : l'historique ne doit rien pousser dehors.
+  const busy: DeskDisplaySnapshot = {
+    ...desk,
+    desks: {
+      counts: { waiting: 8, called: 6, servedToday: 5 },
+      currentCalls: [6, 5, 4, 3, 2, 1].map((n) => call(n, 30 + n)),
+      recentCalls: [7, 8, 9, 10, 11].map((n) => ({ ...call(n, n), ticketNo: `B-0${n}` })),
+    },
+  };
+
+  it('garde les 6 appels en cours, l’historique n’a que la place qui reste', () => {
+    const view = deskView(busy);
+    const shown = [view.current, ...view.others].map((c) => c?.ticketNo);
+    expect(shown).toEqual(['A-006', 'A-005', 'A-004', 'A-003', 'A-002', 'A-001']);
+    expect(view.others.length + view.recent.length).toBeLessThanOrEqual(DESK_SIDE_ROWS);
+    expect(view.recent.length).toBeLessThanOrEqual(1);
+    expect(view.moreCalls).toBe(0);
+  });
+
+  it('rend les 6 numéros et leurs guichets, sans « autres appels »', () => {
+    const text = readable(render(busy));
+    for (let n = 1; n <= 6; n++) {
+      expect(text, `A-00${n} absent de l’écran`).toContain(`Ticket A-00${n}`);
+      expect(text).toContain(`Guichet ${n}`);
+    }
+    expect(text).not.toContain('autres appels en cours');
+  });
+
+  it('au-delà de ce que l’instantané détaille, dit combien', () => {
+    const more: DeskDisplaySnapshot = { ...busy, desks: { ...busy.desks, counts: { ...busy.desks.counts, called: 8 } } };
+    expect(deskView(more).moreCalls).toBe(2);
+    expect(readable(render(more))).toContain('+ 2 autres appels en cours');
+  });
+
+  it('une seule région vivante : l’annonce, pas le volet en plus', () => {
+    const html = render(busy);
+    // Le volet du panneau ne porte plus de région : seul TvAnnounce dit
+    // l'appel (la seconde région est le compteur d'attente, un autre fait).
+    expect(html).not.toMatch(/aria-live="polite"[^>]*>Ticket/);
+    expect(html.match(/aria-live=/g) ?? []).toHaveLength(2);
+    expect(html).toMatch(/<p class="sr-only" role="status" aria-live="polite" aria-atomic="true"><\/p>/);
+  });
+
+  it('règle la taille des volets sur la longueur du numéro', () => {
+    expect(deskTilesOf('A-042')).toBe(4);
+    expect(deskTilesOf('A-1042')).toBe(5);
+    expect(deskTilesOf('AB-042')).toBe(5);
+    expect(deskTilesOf('AB-1042')).toBe(6);
+  });
+
+  it('numéro long : la latte passe sur deux lignes, la destination n’est jamais coupée', () => {
+    const long: DeskDisplaySnapshot = {
+      ...desk,
+      desks: {
+        counts: { waiting: 5, called: 2, servedToday: 40 },
+        currentCalls: [
+          { id: 'l1', ticketNo: 'AB-1042', deskLabel: 'Guichet 12', calledAt: null },
+          { id: 'l2', ticketNo: 'AB-1041', deskLabel: 'Guichet 3', calledAt: null },
+        ],
+        recentCalls: [{ id: 'l3', ticketNo: 'A-040', deskLabel: 'Guichet 1', calledAt: null }],
+      },
+    };
+    const html = render(long);
+    // La mise en page à deux lignes (desk.module.css) s'accroche à data-tiles.
+    expect(html).toMatch(/<li[^>]*data-live="true"[^>]*data-tiles="6"/);
+    expect(html).toMatch(/<li[^>]*data-live="false"[^>]*data-tiles="4"/);
+    // La flèche et le libellé sont décoratifs : la destination est redite
+    // en clair pour un lecteur d'écran, sur le panneau comme dans la colonne.
+    expect(html).toContain('<span class="sr-only">, Guichet 12</span>');
+    expect(html).toContain('<span class="sr-only">, Guichet 3</span>');
+  });
+
+  it('dit l’état des guichets, en pause comme avec un appel en cours', () => {
+    const paused: DeskDisplaySnapshot = { ...desk, queue: { ...desk.queue, status: 'paused' } };
+    expect(readable(render(paused))).toContain('Guichets en pause');
+    const idle: DeskDisplaySnapshot = { ...paused, desks: { ...desk.desks, currentCalls: [] } };
+    const text = readable(render(idle));
+    expect(text).toContain('Guichets en pause, merci de patienter.');
+    expect(text).not.toContain('Le prochain numéro s’affiche ici.');
+  });
+});
+
+describe('textes selon le métier et l’état', () => {
+  it('la page de contrôle parle le métier de la file (jamais « prénom » au guichet)', () => {
+    const before = 'La file en grand, au mur de votre salon : qui est au comptoir (le prénom que le client a saisi, pour qu’il se reconnaisse), combien attendent, et les places à suivre en initiales seulement. L’aperçu ci-dessous est l’écran réel, en direct.';
+    expect(tvControlDescription(undefined)).toBe(before);
+    expect(tvControlDescription('walkin')).toBe(before);
+    expect(tvControlDescription('event')).toBe(before);
+    expect(tvControlDescription('desk')).toContain('jamais de nom');
+    expect(tvControlDescription('vehicle')).toContain('3 derniers caractères');
+    expect(tvControlDescription('device')).toContain('jamais le modèle');
+    for (const profile of ['vehicle', 'device', 'table', 'desk', 'retail'] as const) {
+      const text = tvControlDescription(profile);
+      expect(text, profile).not.toMatch(/prénom|salon|initiales/);
+      expect(text).toMatch(/’/);
+      expect(text).not.toMatch(/'/);
+    }
+  });
+
+  it('en pause ou fermée, le pied n’invite plus à s’inscrire', () => {
+    expect(profileHintFor('table', 'open')).toContain('vous inscrire sur la liste');
+    expect(profileHintFor('table', 'paused')).not.toContain('inscrire');
+    expect(profileHintFor('table', 'closed')).not.toContain('inscrire');
+    expect(profileHintFor('desk', 'paused')).not.toContain('prendre un numéro');
+    expect(profileHintFor('vehicle', 'paused')).toContain('suivre votre véhicule');
+    const bistrot: TableDisplaySnapshot = { ...table, queue: { ...table.queue, status: 'paused' }, tables: { ...table.tables, ready: [] } };
+    const text = readable(render(bistrot));
+    expect(text).toContain('La liste d’attente est en pause');
+    expect(text).not.toContain('vous inscrire sur la liste');
+  });
+
+  it('atelier : la barre découpe les véhicules en cours, sans les prêts ; pas de chiffre en double', () => {
+    const html = render(vehicle);
+    const bar = html.match(/aria-label="(À prendre en charge[^"]*)"/)?.[1] ?? '';
+    expect(bar).toBe('À prendre en charge : 2, En atelier : 3, En attente : 1');
+    const text = readable(html);
+    expect(text.match(/[Rr]endus? aujourd’hui/g)?.length).toBe(1);
   });
 });
 

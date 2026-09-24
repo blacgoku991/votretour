@@ -17,7 +17,7 @@ import {
   type TvQueueItem,
   type TvSlat,
 } from './tvSlats';
-import { statusLabelFor, tvScreenFor, type TvScreen } from './tv/model';
+import { profileHintFor, statusLabelFor, tvScreenFor, type TvScreen } from './tv/model';
 import { DeskTV } from './tv/DeskTV';
 import { PickupTV } from './tv/PickupTV';
 import { TableTV } from './tv/TableTV';
@@ -584,27 +584,18 @@ export function TVBoard({
   );
 }
 
-/** La consigne du pied de page, dans les mots du métier. */
-const PROFILE_HINT: Record<Exclude<TvScreen, 'walkin'>, string> = {
-  workshop: 'Approchez votre téléphone de la plaque Rangvia pour suivre votre véhicule.',
-  table: 'Approchez votre téléphone de la plaque Rangvia pour vous inscrire sur la liste.',
-  desk: 'Approchez votre téléphone de la plaque Rangvia pour prendre un numéro.',
-  pickup: 'Approchez votre téléphone de la plaque Rangvia pour rejoindre la file ou suivre votre commande.',
-};
-
 /**
  * Le corps d'un écran de métier. Le double contrôle (écran ET profil)
  * rétrécit le type sans conversion : chaque écran ne reçoit que sa forme.
  */
 function ProfileBody({ snapshot, screen }: { snapshot: DisplaySnapshot; screen: TvScreen }) {
+  // La consigne du pied dépend du métier ET de l'état de la file (tv/model.ts).
+  const hint = profileHintFor(snapshot.profile, snapshot.queue.status);
   if (screen === 'workshop' && (snapshot.profile === 'vehicle' || snapshot.profile === 'device')) {
-    const hint = snapshot.profile === 'device'
-      ? 'Approchez votre téléphone de la plaque Rangvia pour suivre votre appareil.'
-      : PROFILE_HINT.workshop;
     return <WorkshopTV snapshot={snapshot} hint={hint} />;
   }
-  if (screen === 'table' && snapshot.profile === 'table') return <TableTV snapshot={snapshot} hint={PROFILE_HINT.table} />;
-  if (screen === 'desk' && snapshot.profile === 'desk') return <DeskTV snapshot={snapshot} hint={PROFILE_HINT.desk} />;
-  if (screen === 'pickup' && snapshot.profile === 'retail') return <PickupTV snapshot={snapshot} hint={PROFILE_HINT.pickup} />;
+  if (screen === 'table' && snapshot.profile === 'table') return <TableTV snapshot={snapshot} hint={hint} />;
+  if (screen === 'desk' && snapshot.profile === 'desk') return <DeskTV snapshot={snapshot} hint={hint} />;
+  if (screen === 'pickup' && snapshot.profile === 'retail') return <PickupTV snapshot={snapshot} hint={hint} />;
   return null;
 }

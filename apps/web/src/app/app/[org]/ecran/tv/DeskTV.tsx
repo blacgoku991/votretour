@@ -4,8 +4,8 @@ import { useMemo } from 'react';
 import type { DeskDisplaySnapshot } from '@/server/display';
 import { TicketDestination, TicketNumber } from '@/components/objects/TicketNumber';
 import { TicketNumberFlap } from '@/components/objects/TicketNumberFlap';
-import { clockOf, deskView, plural, type DeskTvCall } from './model';
-import { TvAnnounce, TvFoot, TvHead, TvStat, useNow } from './TvParts';
+import { clockOf, DESK_ANNOUNCE_FLAP, DESK_BOARD_FLAP, deskTilesOf, deskView, plural, type DeskTvCall } from './model';
+import { TvAnnounce, TvFoot, TvHead, TvStat, TvTag, useNow } from './TvParts';
 import { useAnnouncements } from './useAnnouncements';
 import common from './tvProfile.module.css';
 import styles from './desk.module.css';
@@ -32,13 +32,18 @@ function speechOf(call: DeskTvCall): string {
 export function DeskTV({ snapshot, hint }: { snapshot: DeskDisplaySnapshot; hint: string }) {
   const view = useMemo(() => deskView(snapshot), [snapshot]);
   const now = useNow();
-  const { current, others, recent, counts } = view;
+  const { current, others, recent, moreCalls, counts } = view;
+  const status = snapshot.queue.status;
 
-  // Annonce : chaque nouvel appel, du plus ancien au plus récent.
+  // Annonce : chaque nouvel appel, du plus ancien au plus récent. TOUS les
+  // appels en cours y passent (deskView n'en coupe aucun).
   const calls = useMemo(() => (current ? [current, ...others] : others).slice().reverse(), [current, others]);
   const announce = useAnnouncements(calls, (call) => call.id);
   const shown = announce.current;
   const calledAt = now ? clockOf(current?.calledAt) : null;
+  // Un appel reste affiché quand les guichets passent en pause ou ferment :
+  // l'écran le dit, pour que la salle ne croie pas à un oubli.
+  const stateTag = status === 'paused' ? 'Guichets en pause' : status === 'closed' ? 'Guichets fermés' : null;
 
   return (
     <>
@@ -47,32 +52,51 @@ export function DeskTV({ snapshot, hint }: { snapshot: DeskDisplaySnapshot; hint
           <TvHead
             id="tv-appel"
             label="Appel en cours"
-            note={calledAt ? <>appelé à <strong>{calledAt}</strong></> : null}
+            note={current && (stateTag || calledAt) ? (
+              <span className={styles.note}>
+                {stateTag && <TvTag tone="copper">{stateTag}</TvTag>}
+                {calledAt && <span>appelé à <strong>{calledAt}</strong></span>}
+              </span>
+            ) : null}
           />
 
           <div className={styles.board} data-state={current ? 'call' : 'idle'}>
             {current ? (
               <>
-                <div className={styles.number}>
+                <div className={styles.number} data-tiles={current.ticketNo ? deskTilesOf(current.ticketNo) : undefined}>
+                  {/* Pas de `live` sur le volet : la région de TvAnnounce annonce
+                      déjà l'appel, deux régions le feraient entendre deux fois. */}
                   {current.ticketNo ? (
-                    <TicketNumberFlap value={current.ticketNo} size="calc(var(--u) * 236)" live />
+                    <TicketNumberFlap
+                      value={current.ticketNo}
+                      size={`calc(var(--u) * ${DESK_BOARD_FLAP[deskTilesOf(current.ticketNo)]})`}
+                    />
                   ) : (
                     <span className={styles.noNumber}>Personne suivante</span>
                   )}
                 </div>
                 <div className={styles.dest}>
+                  {/* La flèche et le libellé sont décoratifs (aria-hidden) : la
+                      destination est redite en clair pour un lecteur d'écran. */}
                   <TicketDestination destination={current.desk ?? 'Au guichet'} />
+                  <span className="sr-only">{current.desk ? `, ${current.desk}` : ', au guichet'}</span>
                 </div>
               </>
             ) : (
               <div className={styles.waitingBoard}>
                 <p className={styles.idleTitle}>
-                  {snapshot.queue.status === 'closed' ? 'Guichets fermés' : 'Le prochain numéro s’affiche ici.'}
+                  {status === 'closed'
+                    ? 'Guichets fermés'
+                    : status === 'paused'
+                      ? 'Guichets en pause, merci de patienter.'
+                      : 'Le prochain numéro s’affiche ici.'}
                 </p>
                 <p className={styles.idleLine}>
-                  {snapshot.queue.status === 'closed'
+                  {status === 'closed'
                     ? 'Merci de votre visite. À bientôt.'
-                    : 'Gardez votre ticket sous les yeux : votre téléphone vous prévient aussi.'}
+                    : status === 'paused'
+                      ? 'Les appels reprennent dans un instant. Gardez votre ticket : votre téléphone vous prévient aussi.'
+                      : 'Gardez votre ticket sous les yeux : votre téléphone vous prévient aussi.'}
                 </p>
               </div>
             )}
@@ -83,8 +107,9 @@ export function DeskTV({ snapshot, hint }: { snapshot: DeskDisplaySnapshot; hint
               value={counts.waiting}
               label={plural(counts.waiting, 'personne en attente', 'personnes en attente')}
               detail={counts.called > 1 ? <><strong>{counts.called}</strong> appels en cours</> : null}
-              size={150}
+              size={196}
               tone="signal"
+              emphasis
             />
           </div>
         </section>
@@ -103,6 +128,11 @@ export function DeskTV({ snapshot, hint }: { snapshot: DeskDisplaySnapshot; hint
           ) : (
             <p className={styles.logEmpty}>Les appels de la journée s’affichent ici.</p>
           )}
+          {moreCalls > 0 && (
+            <p className={styles.logMore}>
+              + <strong className="t-num">{moreCalls}</strong> {plural(moreCalls, 'autre appel en cours', 'autres appels en cours')}
+            </p>
+          )}
         </section>
       </div>
 
@@ -118,9 +148,12 @@ export function DeskTV({ snapshot, hint }: { snapshot: DeskDisplaySnapshot; hint
         speech={shown ? speechOf(shown) : null}
       >
         {shown && (
-          <div className={styles.announceCall}>
+          <div className={styles.announceCall} data-tiles={shown.ticketNo ? deskTilesOf(shown.ticketNo) : undefined}>
             {shown.ticketNo ? (
-              <TicketNumber value={shown.ticketNo} size="calc(var(--u) * 250)" />
+              <TicketNumber
+                value={shown.ticketNo}
+                size={`calc(var(--u) * ${DESK_ANNOUNCE_FLAP[deskTilesOf(shown.ticketNo)]})`}
+              />
             ) : (
               <span className={styles.noNumber}>Personne suivante</span>
             )}
@@ -137,7 +170,11 @@ export function DeskTV({ snapshot, hint }: { snapshot: DeskDisplaySnapshot; hint
 function CallRow({ call, live = false, now }: { call: DeskTvCall; live?: boolean; now: Date | null }) {
   const time = now ? clockOf(call.calledAt) : null;
   return (
-    <li className={styles.row} data-live={live ? 'true' : 'false'}>
+    <li
+      className={styles.row}
+      data-live={live ? 'true' : 'false'}
+      data-tiles={call.ticketNo ? deskTilesOf(call.ticketNo) : undefined}
+    >
       {call.ticketNo ? (
         <TicketNumber value={call.ticketNo} size="calc(var(--u) * 56)" className={styles.rowTicket} />
       ) : (
@@ -145,6 +182,7 @@ function CallRow({ call, live = false, now }: { call: DeskTvCall; live?: boolean
       )}
       <span className={styles.rowDesk}>
         <TicketDestination destination={call.desk ?? 'Guichet'} />
+        <span className="sr-only">{call.desk ? `, ${call.desk}` : ', au guichet'}</span>
       </span>
       <span className={styles.rowTime}>{live ? 'Appelé' : time ?? ''}</span>
     </li>

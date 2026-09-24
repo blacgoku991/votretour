@@ -88,7 +88,18 @@ export function TableTV({ snapshot, hint }: { snapshot: TableDisplaySnapshot; hi
                       </span>
                       <span className={styles.line}>
                         Votre table est prête
-                        {time && <span className={styles.time}> · appelé à <strong className="t-num">{time}</strong></span>}
+                        {/* L'heure est un bloc insécable, jamais « appelé à » seul en
+                            fin de ligne. En colonne, elle passe dessous et son point
+                            disparaît : aucun « · » orphelin en tête de ligne. */}
+                        {time && (
+                          <>
+                            {' '}
+                            <span className={styles.time}>
+                              <span className={styles.sep} aria-hidden="true">· </span>
+                              appelé à <strong className="t-num">{time}</strong>
+                            </span>
+                          </>
+                        )}
                       </span>
                     </span>
                   </li>

@@ -73,11 +73,13 @@
   font-variation-settings: 'wdth' 104, 'wght' 700;
   font-size: calc(var(--u) * 28);
   line-height: 1.2;
-  color: var(--accent);
+  /* En os, pas en vermillon : le vermillon est au chevalet seul, c'est
+     lui que la salle doit lire d'abord. */
+  color: var(--bone-100);
 }
 .list[data-density='hero'] .line { font-size: calc(var(--u) * 38); }
 .list[data-density='grid'] .line { font-size: calc(var(--u) * 21); }
-.time { color: var(--text-muted); font-variation-settings: 'wdth' 100, 'wght' 500; }
+.time { color: var(--text-muted); font-variation-settings: 'wdth' 100, 'wght' 500; white-space: nowrap; }
 .time strong { color: var(--bone-100); font-variation-settings: 'wdth' 112, 'wght' 760; }
 
 /* ----- Annonce ----- */
@@ -112,6 +114,8 @@
   }
   .card, .list[data-density='hero'] .card, .list[data-density='grid'] .card { padding: calc(var(--u) * 16) calc(var(--u) * 20); gap: calc(var(--u) * 20); }
   .list .line { font-size: calc(var(--u) * 20); }
+  .list .time { display: block; margin-top: calc(var(--u) * 4); }
+  .list .sep { display: none; }
   .announceRow { flex-direction: column; gap: calc(var(--u) * 28); }
   .announceRow .announceTent[data-size] { --tent-w: calc(var(--u) * 160); }
   .announceCall { align-items: center; }
@@ -126,6 +130,8 @@
   }
   .card, .list[data-density='hero'] .card, .list[data-density='grid'] .card { padding: calc(var(--u) * 16) calc(var(--u) * 20); gap: calc(var(--u) * 20); }
   .list .line { font-size: calc(var(--u) * 20); }
+  .list .time { display: block; margin-top: calc(var(--u) * 4); }
+  .list .sep { display: none; }
   .announceRow { flex-direction: column; gap: calc(var(--u) * 28); }
   .announceRow .announceTent[data-size] { --tent-w: calc(var(--u) * 160); }
   .announceCall { align-items: center; }

@@ -47,6 +47,7 @@ export function TvStat({
   detail,
   size = 168,
   tone = 'bone',
+  emphasis = false,
 }: {
   value: number;
   label: string;
@@ -54,9 +55,11 @@ export function TvStat({
   /** Hauteur de tuile, en --u. */
   size?: number;
   tone?: 'bone' | 'signal' | 'copper';
+  /** Libellé à l'échelle d'un grand volet : c'est le chiffre principal de l'écran. */
+  emphasis?: boolean;
 }) {
   return (
-    <div className={styles.stat} data-tone={tone}>
+    <div className={styles.stat} data-tone={tone} data-emphasis={emphasis ? 'true' : undefined}>
       <FlapNumber tile value={value} label={`${value} ${label}`} size={`calc(var(--u) * ${size})`} />
       <span className={styles.statText}>
         <span className={styles.statLabel}>{label}</span>
@@ -76,8 +79,11 @@ export function TvMini({ label, value }: { label: string; value: number }) {
   );
 }
 
-/** Le pied : la consigne (avec l'onde NFC) et le compteur du jour. */
-export function TvFoot({ hint, today }: { hint: string; today: ReactNode }) {
+/**
+ * Le pied : la consigne (avec l'onde NFC) et, s'il n'est pas déjà sur
+ * l'écran, le compteur du jour.
+ */
+export function TvFoot({ hint, today }: { hint: string; today?: ReactNode }) {
   return (
     <footer className={styles.foot}>
       <span className={styles.hintLine}>
@@ -91,7 +97,7 @@ export function TvFoot({ hint, today }: { hint: string; today: ReactNode }) {
         </svg>
         {hint}
       </span>
-      <span className={styles.today}>{today}</span>
+      {today ? <span className={styles.today}>{today}</span> : null}
     </footer>
   );
 }

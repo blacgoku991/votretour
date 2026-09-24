@@ -6,7 +6,7 @@ import type {
   WorkshopDisplaySnapshot,
 } from '@/server/display';
 import type { QueueStatus } from '@/lib/types';
-import type { DeviceKind } from '@/lib/profiles/types';
+import type { DeviceKind, QueueProfile } from '@/lib/profiles/types';
 import { asMaskedRegistration, type MaskedRegistration } from '@/lib/profiles/registration';
 
 /**
@@ -75,6 +75,62 @@ export function statusLabelFor(screen: TvScreen, status: QueueStatus): string {
   };
   const [open, paused, closed] = words[screen];
   return status === 'open' ? open : status === 'paused' ? paused : closed;
+}
+
+/**
+ * La consigne du pied de page, dans les mots du métier et selon l'état de
+ * la file : en pause ou fermée, on n'invite pas à s'inscrire (la plaque le
+ * refuserait), on dit quoi faire. L'atelier et le retrait gardent leur
+ * consigne de suivi : un véhicule ou une commande se suit même quand les
+ * dépôts sont en pause. L'écran walkin garde la sienne (TVBoard).
+ */
+export function profileHintFor(profile: QueueProfile | undefined, status: QueueStatus): string {
+  const tap = 'Approchez votre téléphone de la plaque Rangvia pour';
+  switch (profile) {
+    case 'vehicle':
+      return `${tap} suivre votre véhicule.`;
+    case 'device':
+      return `${tap} suivre votre appareil.`;
+    case 'table':
+      if (status === 'paused') return 'La liste d’attente est en pause : adressez-vous à l’accueil pour une table.';
+      if (status === 'closed') return 'La liste d’attente est fermée. Merci de votre visite, à bientôt.';
+      return `${tap} vous inscrire sur la liste.`;
+    case 'desk':
+      if (status === 'paused') return 'Prise de numéro en pause : les personnes déjà en attente seront appelées.';
+      if (status === 'closed') return 'Les guichets sont fermés. Merci de votre visite, à bientôt.';
+      return `${tap} prendre un numéro.`;
+    case 'retail':
+      if (status !== 'open') return `${tap} suivre votre commande.`;
+      return `${tap} rejoindre la file ou suivre votre commande.`;
+    default:
+      return `${tap} rejoindre la file.`;
+  }
+}
+
+/**
+ * Le texte de la page de contrôle (/app/[org]/ecran), au-dessus de
+ * l'aperçu : ce que l'écran de CE métier montre, dans le vocabulaire de
+ * l'écran lui-même. Un guichet ou un centre de santé ne doit pas y lire
+ * « prénom » ni « salon » : l'écran promet « jamais de nom ». walkin et
+ * event (aucune clé `profile` dans l'instantané) : le texte d'avant P5,
+ * au caractère près.
+ */
+export function tvControlDescription(profile: QueueProfile | null | undefined): string {
+  const live = 'L’aperçu ci-dessous est l’écran réel, en direct.';
+  switch (profile) {
+    case 'vehicle':
+      return `Les véhicules prêts, plaque masquée (3 derniers caractères), et l’atelier en chiffres. ${live}`;
+    case 'device':
+      return `Les appareils prêts, par numéro de dossier, jamais le modèle, et l’atelier en chiffres. ${live}`;
+    case 'table':
+      return `Les tables prêtes et la liste d’attente en groupes et couverts. ${live}`;
+    case 'desk':
+      return `Le tableau d’appel : le numéro et le guichet, jamais de nom. ${live}`;
+    case 'retail':
+      return `Les commandes prêtes (fin du numéro) et les appels au comptoir. ${live}`;
+    default:
+      return `La file en grand, au mur de votre salon : qui est au comptoir (le prénom que le client a saisi, pour qu’il se reconnaisse), combien attendent, et les places à suivre en initiales seulement. ${live}`;
+  }
 }
 
 /** « 14:32 ». Rendu APRÈS montage seulement (fuseau du téléviseur). */
@@ -196,15 +252,46 @@ export interface DeskTvCall {
 export interface DeskTvView {
   /** L'appel le plus récent, en grand. */
   current: DeskTvCall | null;
-  /** Les autres appels en cours (un guichet appelle pendant qu'un autre attend son client). */
+  /**
+   * Les autres appels en cours (un guichet appelle pendant qu'un autre
+   * attend son client). TOUS ceux que le serveur envoie : une personne
+   * appelée doit toujours trouver son numéro à l'écran.
+   */
   others: DeskTvCall[];
-  /** Derniers appels déjà pris en charge. */
+  /** Derniers appels déjà pris en charge, dans la place que laissent les appels en cours. */
   recent: DeskTvCall[];
+  /**
+   * Appels en cours que l'instantané ne détaille pas (display_snapshot en
+   * envoie 6 au plus) : l'écran dit combien, faute de pouvoir dire qui.
+   */
+  moreCalls: number;
   counts: DeskDisplaySnapshot['desks']['counts'];
 }
 
-/** Lignes de la colonne « Derniers appels » : ce que la colonne tient à 5 mètres. */
+/**
+ * Lignes de la colonne « Derniers appels » : ce que la colonne tient à 5
+ * mètres. Elle suffit aux 5 appels en cours que display_snapshot peut
+ * envoyer en plus de celui du panneau (6 au plus, migration 0036).
+ */
 export const DESK_SIDE_ROWS = 6;
+
+/**
+ * Largeur d'un numéro, en tuiles : « A-042 » en compte 4, « AB-1234 » 6
+ * (préfixe de 1 ou 2 lettres, 3 chiffres puis 4 au-delà de 999, 0034).
+ * Le panneau et l'annonce règlent la taille des volets sur ce nombre : un
+ * numéro long ne doit jamais sortir du panneau, un court doit le remplir.
+ */
+export type DeskTiles = 4 | 5 | 6;
+
+export function deskTilesOf(ticketNo: string): DeskTiles {
+  const n = Array.from(ticketNo.replace(/[-\s]/g, '')).length;
+  return n <= 4 ? 4 : n === 5 ? 5 : 6;
+}
+
+/** Hauteur des volets du panneau (en --u), par largeur de numéro. */
+export const DESK_BOARD_FLAP: Record<DeskTiles, number> = { 4: 256, 5: 216, 6: 184 };
+/** Même règle pour l'annonce, dont le panneau est plus large. */
+export const DESK_ANNOUNCE_FLAP: Record<DeskTiles, number> = { 4: 270, 5: 236, 6: 204 };
 
 function deskCall(row: { id: string; ticketNo: string | null; deskLabel: string | null; calledAt: string | null }): DeskTvCall {
   // Recopie champ par champ : aucune autre clé ne peut atteindre l'écran,
@@ -220,9 +307,14 @@ function deskCall(row: { id: string; ticketNo: string | null; deskLabel: string 
 export function deskView(snapshot: DeskDisplaySnapshot): DeskTvView {
   const calls = snapshot.desks.currentCalls.map(deskCall);
   const [current = null, ...rest] = calls;
-  const others = rest.slice(0, 3);
-  const recent = snapshot.desks.recentCalls.map(deskCall).slice(0, DESK_SIDE_ROWS - others.length);
-  return { current, others, recent, counts: snapshot.desks.counts };
+  // Priorité aux appels en cours : l'historique ne prend que la place
+  // qu'ils laissent. Couper un appel en cours pour garder un appel déjà
+  // servi cacherait son numéro à la personne qu'on attend au guichet.
+  const others = rest.slice(0, DESK_SIDE_ROWS);
+  const recent = snapshot.desks.recentCalls.map(deskCall).slice(0, Math.max(0, DESK_SIDE_ROWS - others.length));
+  const shownCalls = (current ? 1 : 0) + others.length;
+  const moreCalls = Math.max(0, snapshot.desks.counts.called - shownCalls);
+  return { current, others, recent, moreCalls, counts: snapshot.desks.counts };
 }
 
 /* ------------------------------------------------------------------ */
