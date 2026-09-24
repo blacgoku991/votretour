@@ -102,6 +102,20 @@ describe('SoftwareApplication', () => {
     expect(aggregateOffer([{ priceMonthCents: 1900, currency: 'euro' }])).toBeNull();
   });
 
+  it('balise les frais d’installation seulement s’ils sont communs à toutes les offres', () => {
+    const one = aggregateOffer([{ priceMonthCents: 5990, currency: 'EUR', setupFeeCents: 14900 }]);
+    expect(one?.priceSpecification).toEqual([
+      expect.objectContaining({ '@type': 'UnitPriceSpecification', unitCode: 'MON' }),
+      { '@type': 'PriceSpecification', name: 'Frais d’installation', price: '149.00', priceCurrency: 'EUR', valueAddedTaxIncluded: false },
+    ]);
+    // Sans frais, ou des frais qui diffèrent d'une offre à l'autre : seul le prix mensuel.
+    expect(aggregateOffer([{ priceMonthCents: 5990, currency: 'EUR' }])?.priceSpecification).toMatchObject({ '@type': 'UnitPriceSpecification' });
+    expect(aggregateOffer([
+      { priceMonthCents: 5990, currency: 'EUR', setupFeeCents: 14900 },
+      { priceMonthCents: 9990, currency: 'EUR', setupFeeCents: 0 },
+    ])?.priceSpecification).toMatchObject({ '@type': 'UnitPriceSpecification' });
+  });
+
   it('ne cite l’App Clip que s’il est publié', () => {
     expect(softwareApplication({ siteUrl: SITE, description: 'D' }).operatingSystem).toBe('Web');
     expect(softwareApplication({ siteUrl: SITE, description: 'D', appClip: true }).operatingSystem).toBe(

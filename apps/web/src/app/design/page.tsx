@@ -272,8 +272,8 @@ export default async function DesignPage() {
               </li>
               <li className="is-self">
                 <span className={styles.boardKey}>
-                  <span className="t-board">Pro</span>
-                  <span className="chip chip--signal">Le plus choisi</span>
+                  <span className="t-board">Rangvia</span>
+                  <span className="chip chip--signal">Offre unique</span>
                 </span>
                 <span className="t-body t-muted">1 établissement · 3 professionnels · 2 plaques</span>
                 <button type="button" className="btn btn--signal btn--sm">Essayer</button>
@@ -464,7 +464,7 @@ export default async function DesignPage() {
                 <span className="row g2 t-small"><span className="pip pip--off" />File fermée</span>
                 <span className="row g2 wrap">
                   <span className="chip">Ardoise</span>
-                  <span className="chip chip--signal">Le plus choisi</span>
+                  <span className="chip chip--signal">Offre unique</span>
                   <span className="chip chip--jade">Terminé</span>
                   <span className="chip chip--copper">Absent</span>
                   <span className="chip chip--brique">Retiré</span>

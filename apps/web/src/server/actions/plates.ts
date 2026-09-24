@@ -49,7 +49,7 @@ export async function createPlate(
     if (q && !q.allowed) {
       throw new AppError(
         'quota',
-        `Votre offre est limitée à ${q.limit} plaque${q.limit > 1 ? 's' : ''}. Passez à l'offre supérieure pour en ajouter.`,
+        `Votre offre est limitée à ${q.limit} plaque${q.limit > 1 ? 's' : ''}. Écrivez au support pour l'étendre.`,
         402,
       );
     }

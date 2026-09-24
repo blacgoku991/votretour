@@ -1067,7 +1067,7 @@ const garages: Metier = {
     {
       key: 'Plusieurs adresses',
       requires: 'core.multi_location',
-      text: 'Un garage, un centre auto : chaque établissement a sa file, piloté depuis le même compte, selon votre offre.',
+      text: 'Un garage, un centre auto : chaque établissement a sa file, piloté depuis le même compte.',
     },
   ],
   faq: [
@@ -1407,7 +1407,7 @@ const reparation: Metier = {
     {
       q: 'Dépôt et retrait, dans la même file ?',
       requires: 'core.multi_queue',
-      a: 'Oui, ou dans deux files séparées, selon votre offre : chaque file a son QR code et sa plaque.',
+      a: 'Oui, ou dans deux files séparées : chaque file a son QR code et sa plaque.',
       fallback: {
         q: 'Dépôt et retrait, dans la même file ?',
         a: 'Oui : tout le monde passe dans l’ordre d’arrivée, quel que soit le motif. Vous pouvez aussi créer des prestations dépôt, retrait et diagnostic, que le client choisit en s’inscrivant.',

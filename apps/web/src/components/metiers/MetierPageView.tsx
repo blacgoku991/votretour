@@ -146,7 +146,7 @@ export function MetierPageView({
           siteUrl,
           // Mêmes offres que le bandeau : un balisage de prix n'existe que
           // si la page affiche ces prix.
-          plans: plans ? plans.map((p) => ({ priceMonthCents: p.price_month_cents, currency: p.currency })) : null,
+          plans: plans ? plans.map((p) => ({ priceMonthCents: p.price_month_cents, currency: p.currency, setupFeeCents: p.setup_fee_cents })) : null,
           video,
           appClip,
         })}

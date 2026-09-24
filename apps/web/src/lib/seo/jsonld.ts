@@ -70,6 +70,8 @@ export interface OfferPlan {
   priceMonthCents: number;
   /** Code ISO 4217 (« EUR »). */
   currency: string;
+  /** Frais d'installation hors taxes, en centimes, payés une fois (0 : aucun). */
+  setupFeeCents?: number;
 }
 
 const formatPrice = (cents: number): string => (cents / 100).toFixed(2);
@@ -87,20 +89,34 @@ export function aggregateOffer(plans: readonly OfferPlan[] | null | undefined): 
   if (!currency || !/^[A-Z]{3}$/.test(currency)) return null;
   const prices = plans.map((plan) => plan.priceMonthCents);
   if (prices.some((cents) => !Number.isInteger(cents) || cents < 0)) return null;
+  const monthly: JsonLdNode = {
+    '@type': 'UnitPriceSpecification',
+    priceCurrency: currency,
+    // Les prix de Rangvia sont affichés hors taxes (« /mois HT »).
+    valueAddedTaxIncluded: false,
+    unitCode: 'MON',
+    unitText: 'mois',
+  };
+  // Frais d'installation : balisés seulement s'ils sont identiques pour
+  // toutes les offres (sinon, un seul montant serait faux pour les autres).
+  const fees = new Set(plans.map((plan) => plan.setupFeeCents ?? 0));
+  const [fee] = [...fees];
+  const setup: JsonLdNode | null = fees.size === 1 && fee !== undefined && Number.isInteger(fee) && fee > 0
+    ? {
+        '@type': 'PriceSpecification',
+        name: 'Frais d’installation',
+        price: formatPrice(fee),
+        priceCurrency: currency,
+        valueAddedTaxIncluded: false,
+      }
+    : null;
   return {
     '@type': 'AggregateOffer',
     priceCurrency: currency,
     lowPrice: formatPrice(Math.min(...prices)),
     highPrice: formatPrice(Math.max(...prices)),
     offerCount: plans.length,
-    priceSpecification: {
-      '@type': 'UnitPriceSpecification',
-      priceCurrency: currency,
-      // Les prix de Rangvia sont affichés hors taxes (« /mois HT »).
-      valueAddedTaxIncluded: false,
-      unitCode: 'MON',
-      unitText: 'mois',
-    },
+    priceSpecification: setup ? [monthly, setup] : monthly,
   };
 }
 
